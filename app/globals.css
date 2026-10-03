@@ -94,3 +94,21 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 }
 
 @theme inline { --color-background:var(--background);--color-foreground:var(--foreground);--color-border:var(--line);--color-ring:var(--green); }
+
+/* Workspace personalization and stable scrolling */
+.sidebar { position: fixed; inset: 0 auto 0 0; overflow-y: auto; }
+.main-content { margin-left: 246px; min-height: 100vh; }
+.help-card { border: 0; width: calc(100% - 8px); text-align: left; }
+.theme-blue { --green:#4277a7; --green-soft:#e9f2fa; }
+.theme-purple { --green:#7863a7; --green-soft:#f0ecfa; }
+.theme-orange { --green:#c27535; --green-soft:#fff1e4; }
+.customize-link { width:100%; border:1px solid var(--line); background:var(--green-soft); color:var(--green); border-radius:9px; padding:10px 12px; display:flex; align-items:center; gap:8px; font-weight:700; font-size:12px; margin-bottom:16px; }
+.customize-section { border-top:1px solid var(--line); padding-top:16px; margin-top:16px; }
+.theme-options { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
+.theme-swatch { border:1px solid var(--line); background:var(--card); border-radius:9px; padding:10px; display:flex; align-items:center; gap:8px; color:var(--foreground); font-size:12px; }
+.theme-swatch.selected { border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft); }
+.theme-swatch span { width:18px; height:18px; border-radius:50%; background:var(--green); }.theme-swatch.blue span{background:#4277a7}.theme-swatch.purple span{background:#7863a7}.theme-swatch.orange span{background:#c27535}
+.profile-picker { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }.profile-picker img { width:42px; height:42px; border-radius:12px; object-fit:cover; }.profile-image { object-fit:cover; }
+.help-hero { width:100%; height:150px; object-fit:cover; border-radius:12px; background:#f4f7f4; margin-bottom:16px; }.help-topics { display:grid; gap:10px; }.help-topics article { display:flex; gap:10px; padding:11px; border:1px solid var(--line); border-radius:10px; background:color-mix(in srgb, var(--card) 92%, var(--green-soft)); }.help-topics article > svg { flex:0 0 auto; color:var(--green); margin-top:2px; }.help-topics strong { font-size:12px; }.help-topics p { color:var(--muted); font-size:11px; line-height:1.45; margin:4px 0 0; }
+@media (max-width:700px){.sidebar{position:static}.main-content{margin-left:0}.help-modal{max-height:calc(100dvh - 16px)} }
+
