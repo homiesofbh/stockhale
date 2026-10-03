@@ -188,3 +188,15 @@ html, body { max-width: 100%; overflow-x: hidden; }
 @media (max-width:700px) { .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .overview-grid { grid-template-columns: minmax(0, 1fr); } .top-actions { gap: 8px; } }
 @media (max-width:420px) { .stats-grid { grid-template-columns: minmax(0, 1fr); } }
 
+/* Keep dashboard cards intact at compact desktop widths. */
+.stat-card { min-width: 0; display: flex; align-items: flex-start; gap: 14px; }
+.stat-copy { min-width: 0; flex: 1; }
+.stat-copy strong { display: block; white-space: nowrap; font-size: clamp(18px, 2vw, 24px); letter-spacing: -.045em; }
+.stat-copy span, .stat-copy small { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 1180px) and (min-width: 701px) {
+  .stats-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 700px) {
+  .stat-copy strong { font-size: 18px; }
+}
+
