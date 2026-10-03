@@ -96,7 +96,13 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 @theme inline { --color-background:var(--background);--color-foreground:var(--foreground);--color-border:var(--line);--color-ring:var(--green); }
 
 /* Workspace personalization and stable scrolling */
+.app-shell { background:var(--background); }
 .sidebar { position: fixed; inset: 0 auto 0 0; overflow-y: auto; }
+.profile-wrap { position:relative; }
+.profile { width:100%; border-left:0; border-right:0; border-bottom:0; text-align:left; }
+.profile-menu { position:absolute; left:0; right:0; bottom:calc(100% + 8px); padding:6px; border:1px solid var(--line); border-radius:10px; background:var(--card); box-shadow:0 12px 30px rgba(25,43,32,.12); z-index:5; }
+.profile-menu button { width:100%; justify-content:flex-start; border:0; background:transparent; color:var(--foreground); border-radius:7px; padding:9px 10px; font-size:12px; }
+.profile-menu button:hover { background:var(--green-soft); color:var(--green); }
 .main-content { margin-left: 246px; min-height: 100vh; }
 .help-card { border: 0; width: calc(100% - 8px); text-align: left; }
 .theme-blue { --green:#4277a7; --green-soft:#e9f2fa; }
@@ -104,6 +110,9 @@ button { display: inline-flex; align-items: center; justify-content: center; gap
 .theme-orange { --green:#c27535; --green-soft:#fff1e4; }
 .customize-link { width:100%; border:1px solid var(--line); background:var(--green-soft); color:var(--green); border-radius:9px; padding:10px 12px; display:flex; align-items:center; gap:8px; font-weight:700; font-size:12px; margin-bottom:16px; }
 .customize-section { border-top:1px solid var(--line); padding-top:16px; margin-top:16px; }
+.background-picker { display:grid; grid-template-columns:1fr auto; align-items:center; gap:8px; margin-top:14px; color:var(--muted); font-size:12px; }
+.background-picker input { width:42px; height:32px; min-height:32px; padding:2px; border:1px solid var(--line); border-radius:7px; background:var(--card); }
+.background-picker span { grid-column:1 / -1; color:var(--foreground); font-size:11px; font-family:monospace; }
 .theme-options { display:grid; grid-template-columns:repeat(2, minmax(0, 1fr)); gap:10px; }
 .theme-swatch { border:1px solid var(--line); background:var(--card); border-radius:9px; padding:10px; display:flex; align-items:center; gap:8px; color:var(--foreground); font-size:12px; }
 .theme-swatch.selected { border-color:var(--green); box-shadow:0 0 0 2px var(--green-soft); }
