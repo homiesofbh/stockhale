@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
   balance,
@@ -69,24 +70,24 @@ export function PaymentForm({
     >
       <div className="form-grid">
         <Field label="Payment type">
-          <select
+          <GlassSelect
             value={paymentKind}
-            onChange={(e) => {
-              setPaymentKind(e.target.value);
+            onValueChange={(e) => {
+              setPaymentKind(e);
               setSelectedContact("");
               setSelectedTrade("");
             }}
           >
             <option>Customer</option>
             <option>Supplier</option>
-          </select>
+          </GlassSelect>
         </Field>
         <Field label={paymentKind}>
-          <select
+          <GlassSelect
             required
             value={selectedContact}
-            onChange={(e) => {
-              setSelectedContact(e.target.value);
+            onValueChange={(e) => {
+              setSelectedContact(e);
               setSelectedTrade("");
             }}
           >
@@ -98,14 +99,14 @@ export function PaymentForm({
                 </option>
               ),
             )}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Bill / purchase with a pending balance or credit">
-          <select
+          <GlassSelect
             name="trade"
             required
             value={selectedTrade}
-            onChange={(e) => setSelectedTrade(e.target.value)}
+            onValueChange={(e) => setSelectedTrade(e)}
           >
             <option value="">Select transaction</option>
             {(paymentKind === "Customer" ? s.invoices : s.purchases)
@@ -118,7 +119,7 @@ export function PaymentForm({
                   {balance(s, t) < 0 ? "return credit" : "due"}
                 </option>
               ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Amount (PKR)">
           <input name="amount" type="number" step="0.01" min="0.01" required />
@@ -127,13 +128,13 @@ export function PaymentForm({
           <input type="date" name="date" required defaultValue={today()} />
         </Field>
         <Field label="Payment method">
-          <select name="method">
+          <GlassSelect name="method">
             <option>Cash</option>
             <option>Bank</option>
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Account head">
-          <select
+          <GlassSelect
             name="head"
             key={paymentKind}
             defaultValue={
@@ -145,7 +146,7 @@ export function PaymentForm({
             {s.heads.map((h) => (
               <option key={h}>{h}</option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Notes">
           <input name="notes" />

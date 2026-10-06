@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
   saveProduct,
@@ -54,11 +55,11 @@ export function ProductForm({
           />
         </Field>
         <Field label="Category">
-          <select name="category" defaultValue={editProduct?.category}>
+          <GlassSelect name="category" defaultValue={editProduct?.category}>
             {s.categories.map((c) => (
               <option key={c}>{c}</option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="SKU / Item code">
           <input name="sku" required defaultValue={editProduct?.sku} />

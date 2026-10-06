@@ -1,5 +1,7 @@
 # Workspace UI structure
 
+Development uses `next dev --webpack` to avoid the Turbopack hot-reload panic observed with Next.js 16.3.3 (`EcmascriptMergedChunkVersion` cells disappearing during HMR). Production builds also use Webpack. Run `npm run dev`; pass `-- --port 3001` when port 3000 is occupied.
+
 `app/page.tsx` is the route entry point and renders `WorkspaceApp`. It does not own interactive state or import icons.
 
 - `components/stockwell/workspace-app.tsx` coordinates workspace state, navigation, record mutations, and the selected view.

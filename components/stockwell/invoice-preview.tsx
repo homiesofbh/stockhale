@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   balance,
@@ -46,15 +47,15 @@ export function InvoicePreview({
           Close
         </button>
         <div>
-          <select
+          <GlassSelect
             aria-label="Printer paper size"
             value={paper}
-            onChange={(e) => setPaper(e.target.value as InvoicePaper)}
+            onValueChange={(e) => setPaper(e as InvoicePaper)}
           >
             <option value="A4">Standard printer · A4</option>
             <option value="80mm">Receipt printer · 80 mm</option>
             <option value="58mm">Receipt printer · 58 mm</option>
-          </select>
+          </GlassSelect>
           <button
             className="secondary-button"
             disabled={pdfBusy}

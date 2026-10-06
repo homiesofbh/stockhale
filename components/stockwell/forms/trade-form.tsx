@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field, Table } from "@/components/stockwell/ui";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
@@ -100,7 +101,7 @@ export function TradeForm({
     >
       <div className="form-grid">
         <Field label={modal === "Purchase" ? "Supplier" : "Customer"}>
-          <select name="contact" required={modal === "Purchase"}>
+          <GlassSelect name="contact" required={modal === "Purchase"}>
             <option value="">
               {modal === "Purchase" ? "Select supplier" : "Walk-in customer"}
             </option>
@@ -109,7 +110,7 @@ export function TradeForm({
                 {c.name}
               </option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Date">
           <input type="date" name="date" required defaultValue={today()} />
@@ -143,14 +144,14 @@ export function TradeForm({
         supported. Keep the scan field focused.
       </p>
       <Field label="Or choose a product">
-        <select value="" onChange={(e) => addLine(e.target.value)}>
+        <GlassSelect value="" onValueChange={(e) => addLine(e)}>
           <option value="">Select product to add</option>
           {s.products.map((p) => (
             <option value={p.id} key={p.id}>
               {p.name} · {p.sku} · {stock(s, p.id)} in stock
             </option>
           ))}
-        </select>
+        </GlassSelect>
       </Field>
       <div className="bill-lines">
         {lines.length ? (
@@ -262,20 +263,20 @@ export function TradeForm({
           />
         </Field>
         <Field label="Payment method">
-          <select name="method">
+          <GlassSelect name="method">
             <option>Cash</option>
             <option>Bank</option>
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Account head">
-          <select
+          <GlassSelect
             name="head"
             defaultValue={modal === "Bill" ? "Sales" : "Purchases"}
           >
             {s.heads.map((h) => (
               <option key={h}>{h}</option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
       </div>
       <p className="form-hint">

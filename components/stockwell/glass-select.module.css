@@ -1,0 +1,109 @@
+.trigger {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 46px;
+  padding: 12px 16px;
+  border: 1px solid #ffffffc7;
+  border-radius: 16px;
+  background: linear-gradient(135deg, #ffffff66, #eee8fa26);
+  -webkit-backdrop-filter: blur(20px) saturate(150%);
+  backdrop-filter: blur(20px) saturate(150%);
+  box-shadow:
+    inset 0 1px 0 #ffffffb3,
+    0 5px 18px #4a396012;
+  color: #40354d;
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: left;
+}
+.trigger:hover,
+.trigger[data-popup-open] {
+  background-color: #ffffff33;
+}
+.trigger:focus-visible {
+  outline: 2px solid #867094;
+  outline-offset: 3px;
+}
+.trigger[data-disabled] {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.value {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.icon {
+  display: flex;
+  flex-shrink: 0;
+  color: #62546f;
+}
+.positioner {
+  z-index: 80;
+  outline: none;
+}
+.popup {
+  min-width: var(--anchor-width);
+  max-width: min(520px, calc(100vw - 32px));
+  padding: 6px;
+  border: 1px solid #ffffffb8;
+  border-radius: 18px;
+  background: linear-gradient(135deg, #f9f6ff99, #e9e2f75c);
+  -webkit-backdrop-filter: blur(24px) saturate(160%);
+  backdrop-filter: blur(24px) saturate(160%);
+  box-shadow:
+    inset 0 1px 0 #ffffffc7,
+    0 16px 40px #40354d29;
+  color: #33283f;
+  transform-origin: var(--transform-origin);
+}
+.list {
+  max-height: min(300px, var(--available-height));
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 2px;
+}
+.item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 11px 12px;
+  min-height: 42px;
+  border-radius: 11px;
+  font-size: 14px;
+  line-height: 1.5;
+  cursor: pointer;
+  outline: none;
+  overflow-wrap: anywhere;
+}
+.item[data-highlighted] {
+  background: #ffffff80;
+}
+.item[data-selected] {
+  background: #ffffff52;
+  font-weight: 600;
+}
+.item[data-disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+.indicator {
+  display: flex;
+  flex-shrink: 0;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .trigger,
+  .popup {
+    background: #eeeaf5;
+  }
+}
+@media (max-width: 600px) {
+  .trigger {
+    font-size: 16px;
+  }
+}

@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import { adjustStock, stock, today, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
@@ -29,14 +30,14 @@ export function AdjustmentForm({ submit, commit, s, text, num }: Props) {
     >
       <div className="form-grid">
         <Field label="Product">
-          <select name="product" required>
+          <GlassSelect name="product" required>
             <option value="">Select product</option>
             {s.products.map((p) => (
               <option key={p.id} value={p.id}>
                 {p.name} · {stock(s, p.id)} in stock
               </option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Date">
           <input type="date" name="date" required defaultValue={today()} />

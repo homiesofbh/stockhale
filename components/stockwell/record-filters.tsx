@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { type Store } from "@/lib/stockwell/model";
 import { Search } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
@@ -59,48 +60,48 @@ export function RecordFilters({
         />
       </label>
       {["Purchases", "Billing", "Sales"].includes(module) && (
-        <select
+        <GlassSelect
           aria-label="Payment status"
           value={status}
-          onChange={(e) => setStatus(e.target.value)}
+          onValueChange={(e) => setStatus(e)}
         >
           {["All", "Paid", "Partial", "Unpaid", "Credit balance"].map((x) => (
             <option key={x}>{x}</option>
           ))}
-        </select>
+        </GlassSelect>
       )}
       {["Purchases", "Billing", "Sales"].includes(module) && (
-        <select
+        <GlassSelect
           aria-label="Payment method"
           value={paymentMethod}
-          onChange={(e) => setPaymentMethod(e.target.value)}
+          onValueChange={(e) => setPaymentMethod(e)}
         >
           <option value="All">All payments</option>
           <option>Cash</option>
           <option>Bank</option>
-        </select>
+        </GlassSelect>
       )}
       {module === "Inventory" && (
         <>
-          <select
+          <GlassSelect
             aria-label="Product category"
             value={category}
-            onChange={(e) => setCategory(e.target.value)}
+            onValueChange={(e) => setCategory(e)}
           >
             <option>All</option>
             {s.categories.map((c) => (
               <option key={c}>{c}</option>
             ))}
-          </select>
-          <select
+          </GlassSelect>
+          <GlassSelect
             aria-label="Stock status"
             value={status}
-            onChange={(e) => setStatus(e.target.value)}
+            onValueChange={(e) => setStatus(e)}
           >
             <option>All</option>
             <option>Low stock</option>
             <option>In stock</option>
-          </select>
+          </GlassSelect>
         </>
       )}
       {!["Inventory", "Suppliers", "Customers"].includes(module) && (

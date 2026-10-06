@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import { recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
@@ -49,27 +50,27 @@ export function ReturnForm({
     >
       <div className="form-grid">
         <Field label="Type">
-          <select
+          <GlassSelect
             value={returnKind}
-            onChange={(e) => {
-              setReturnKind(e.target.value);
+            onValueChange={(e) => {
+              setReturnKind(e);
               setSelectedTrade("");
             }}
           >
             <option>Sales return</option>
             <option>Purchase return</option>
             <option>Damaged stock</option>
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Date">
           <input type="date" name="date" required defaultValue={today()} />
         </Field>
         {returnKind !== "Damaged stock" && (
           <Field label="Original transaction">
-            <select
+            <GlassSelect
               required
               value={selectedTrade}
-              onChange={(e) => setSelectedTrade(e.target.value)}
+              onValueChange={(e) => setSelectedTrade(e)}
             >
               <option value="">Select transaction</option>
               {(returnKind === "Sales return" ? s.invoices : s.purchases).map(
@@ -79,11 +80,11 @@ export function ReturnForm({
                   </option>
                 ),
               )}
-            </select>
+            </GlassSelect>
           </Field>
         )}
         <Field label="Product">
-          <select
+          <GlassSelect
             name="product"
             required
             key={`${returnKind}-${selectedTrade}`}
@@ -102,7 +103,7 @@ export function ReturnForm({
                   {p.name}
                 </option>
               ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Quantity">
           <input name="qty" type="number" min="0.001" step="0.001" required />

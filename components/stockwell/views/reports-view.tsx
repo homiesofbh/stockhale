@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Badge, Field, Table } from "@/components/stockwell/ui";
 import { csv } from "@/lib/stockwell/downloads";
 import { type Store } from "@/lib/stockwell/model";
@@ -28,10 +29,10 @@ export function ReportsView({
       <div className="report-toolbar">
         <div>
           <Field label="Report">
-            <select
+            <GlassSelect
               value={report}
-              onChange={(e) => {
-                setReport(e.target.value);
+              onValueChange={(e) => {
+                setReport(e);
                 setReportContact("");
               }}
             >
@@ -52,15 +53,15 @@ export function ReportsView({
               ].map((r) => (
                 <option key={r}>{r}</option>
               ))}
-            </select>
+            </GlassSelect>
           </Field>
           {["Customer ledger", "Supplier ledger"].includes(report) && (
             <Field
               label={report === "Customer ledger" ? "Customer" : "Supplier"}
             >
-              <select
+              <GlassSelect
                 value={reportContact}
-                onChange={(e) => setReportContact(e.target.value)}
+                onValueChange={(e) => setReportContact(e)}
               >
                 <option value="">All contacts</option>
                 {(report === "Customer ledger" ? s.customers : s.suppliers).map(
@@ -70,7 +71,7 @@ export function ReportsView({
                     </option>
                   ),
                 )}
-              </select>
+              </GlassSelect>
             </Field>
           )}
         </div>

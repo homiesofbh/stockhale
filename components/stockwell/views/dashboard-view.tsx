@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { type Module } from "@/components/stockwell/navigation";
 import { StockArt } from "@/components/stockwell/stock-art";
 import { Badge, Empty, Stat, Table } from "@/components/stockwell/ui";
@@ -17,7 +18,6 @@ import {
 import {
   ArrowUpRight,
   Boxes,
-  ChevronDown,
   ChevronRight,
   CircleDollarSign,
   Package,
@@ -94,17 +94,16 @@ export function DashboardView({
         <div className="summary-sales">
           <label className="summary-period">
             <span className="sr-only">Dashboard period</span>
-            <select
+            <GlassSelect
               aria-label="Dashboard period"
               value={dashboardPeriod}
-              onChange={(e) => setDashboardPeriod(e.target.value)}
+              onValueChange={(e) => setDashboardPeriod(e)}
             >
               <option>This month</option>
               <option>This week</option>
               <option>Today</option>
               <option>All time</option>
-            </select>
-            <ChevronDown size={15} />
+            </GlassSelect>
           </label>
           <div className="summary-value">
             {money(dashboardProfit.revenue)}{" "}
@@ -204,10 +203,10 @@ export function DashboardView({
             />
           </svg>
           <div className="billing-hero-form">
-            <select
+            <GlassSelect
               aria-label="Quick bill product"
               value={quickProduct}
-              onChange={(e) => setQuickProduct(e.target.value)}
+              onValueChange={(e) => setQuickProduct(e)}
             >
               <option value="">Select a product</option>
               {s.products.map((p) => (
@@ -215,7 +214,7 @@ export function DashboardView({
                   {p.name}
                 </option>
               ))}
-            </select>
+            </GlassSelect>
             <button
               className="gradient-button"
               disabled={!!storageError}

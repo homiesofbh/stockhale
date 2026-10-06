@@ -1,4 +1,5 @@
 "use client";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import { round, today, uid, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
@@ -40,18 +41,18 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
     >
       <div className="form-grid">
         <Field label="Expense category">
-          <select name="category">
+          <GlassSelect name="category">
             {s.expenseCategories.map((c) => (
               <option key={c}>{c}</option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Account head">
-          <select name="head" defaultValue="Expenses">
+          <GlassSelect name="head" defaultValue="Expenses">
             {s.heads.map((h) => (
               <option key={h}>{h}</option>
             ))}
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Amount (PKR)">
           <input name="amount" type="number" min="0.01" step="0.01" required />
@@ -60,10 +61,10 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
           <input name="date" type="date" defaultValue={today()} required />
         </Field>
         <Field label="Paid from">
-          <select name="method">
+          <GlassSelect name="method">
             <option>Cash</option>
             <option>Bank</option>
-          </select>
+          </GlassSelect>
         </Field>
         <Field label="Notes / details">
           <input name="notes" />
