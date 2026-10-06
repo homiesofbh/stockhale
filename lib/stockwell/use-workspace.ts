@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState } from "react";
 import { cacheKey, type Cache, type Workspace } from "./workspace";
 import type { Store } from "./model";
+import { configureServiceWorker } from "./service-worker-client";
 export async function workspaceRequest(body?: unknown) {
   const res = await fetch("/api/workspace", {
     method: body ? "POST" : "GET",
@@ -24,6 +25,11 @@ export function useWorkspace() {
     busy = useRef(false);
   function save(value: Cache) {
     const key = cacheKey(value.workspace.id);
+    const previous = current.current;
+    if (previous && localStorage.getItem(key) !== JSON.stringify(previous))
+      throw new Error(
+        "Workspace changed in another tab. Reload to preserve pending records.",
+      );
     localStorage.setItem(key, JSON.stringify(value));
     localStorage.setItem("stockwell.active", value.workspace.id);
     current.current = value;
@@ -36,7 +42,11 @@ export function useWorkspace() {
       const c = current.current;
       const w: Workspace = await workspaceRequest(
         c?.queue.length
-          ? { action: "sync", revision: c.revision, changes: c.queue }
+          ? {
+              action: "sync",
+              revision: c.revision,
+              changes: c.queue.slice(0, 1),
+            }
           : undefined,
       );
       const latest = current.current;
@@ -44,14 +54,26 @@ export function useWorkspace() {
         setSyncStatus("Pending changes");
         return;
       }
-      save({ workspace: w, queue: [], revision: w.revision });
-      setSyncStatus("Synced");
+      if (c?.queue.length && w.revision !== c.revision + 1)
+        throw Object.assign(new Error("Server records changed during retry."), {
+          status: 409,
+        });
+      const remaining = c?.queue.slice(1) || [];
+      save({
+        workspace: remaining.length ? { ...w, store: c!.workspace.store } : w,
+        queue: remaining,
+        revision: w.revision,
+      });
+      setSyncStatus(remaining.length ? "Pending sync" : "Synced");
+      if (remaining.length) setTimeout(() => void sync(), 100);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 401) {
         setSyncStatus("Session expired · sign in to sync");
         if (!current.current) window.location.replace("/sign-in");
-      } else
+      } else if (e instanceof Error && e.message.includes("another tab"))
+        setSyncStatus("Reload required · another tab changed records");
+      else
         setSyncStatus(
           status === 409
             ? "Conflict · pending changes preserved"
@@ -81,8 +103,9 @@ export function useWorkspace() {
     const timer = setInterval(() => void sync(), 15000);
     const online = () => void sync();
     window.addEventListener("online", online);
-    if ("serviceWorker" in navigator)
-      void navigator.serviceWorker.register("/sw.js");
+    void configureServiceWorker().catch(() => {
+      // Workspace records still persist locally if offline asset setup fails.
+    });
     return () => {
       clearInterval(timer);
       window.removeEventListener("online", online);
@@ -102,6 +125,7 @@ export function useWorkspace() {
       queue: [
         ...c.queue,
         {
+          actorId: c.workspace.member.id,
           id: crypto.randomUUID(),
           module,
           action,
@@ -127,8 +151,12 @@ export function useWorkspace() {
     return w;
   }
   async function signout() {
-    if (current.current?.queue.length)
-      throw new Error("Sync or export pending records before signing out.");
+    const c = current.current;
+    const raw = c && localStorage.getItem(cacheKey(c.workspace.id));
+    if (c?.queue.length || (raw && JSON.parse(raw).queue?.length))
+      throw new Error(
+        "Sync pending records before signing out. They remain saved on this device.",
+      );
     await workspaceRequest({ action: "signout" });
     const id = current.current?.workspace.id;
     if (id) localStorage.removeItem(cacheKey(id));

@@ -1,4 +1,16 @@
-const CACHE = "stockwell-offline-v2";
+export const developmentWorker = `self.addEventListener("install", () => self.skipWaiting());
+self.addEventListener("activate", (event) => {
+  event.waitUntil((async () => {
+    const keys = await caches.keys();
+    await Promise.all(keys.filter((key) => key.startsWith("stockwell-offline-")).map((key) => caches.delete(key)));
+    await self.registration.unregister();
+    await self.clients.claim();
+  })());
+});
+// No fetch handler: development HTML and chunks always use the network.
+`;
+
+export const productionWorker = `const CACHE = "stockwell-offline-v3";
 self.addEventListener("install", (event) => {
   event.waitUntil(
     caches
@@ -61,3 +73,4 @@ self.addEventListener("fetch", (event) => {
     );
   }
 });
+`;

@@ -1141,12 +1141,17 @@ footer span:last-child {
   margin: 0 auto 20px;
 }
 .modal {
+  position: fixed;
+  inset: 0;
+  margin: auto;
   border: 1px solid #fff8;
   border-radius: 28px;
   padding: 30px;
   max-width: 800px;
   width: calc(100% - 36px);
   max-height: 90dvh;
+  overflow-y: auto;
+  overscroll-behavior: contain;
   color: var(--ink);
   background: linear-gradient(150deg, #efedf5, #e0dbe9);
   box-shadow: 0 24px 100px #65537644;
@@ -2795,4 +2800,140 @@ footer span:last-child {
   .workspace-tools {
     display: none !important;
   }
+}
+
+/* Consistent spacing and readable controls across workspace sizes. */
+:root { --muted: #625c70; }
+.workspace main { padding-bottom: 24px; }
+.dashboard-heroes, .dashboard-grid { gap: 18px; }
+.dashboard-heroes { margin-bottom: 18px; }
+.page-heading p, .section-head p, .summary-sales > p { color: #625b6e; font-size: 13px; }
+small, .eyebrow, .text-button { font-size: 12px; }
+.primary, .secondary-button, .filters select, .global-search input { font-size: 13px; }
+.inventory-hero { color: #363040; }
+.inventory-hero-copy h2 { white-space: normal; }
+.inventory-hero-copy p, .inventory-hero-copy small { color: #51495e; font-size: 12px; line-height: 1.6; }
+.billing-hero-copy p { color: #51495e; font-size: 12px; }
+.stock-orb > div { color: #393242; text-shadow: none; }
+.stock-orb span { color: #51495e; font-size: 10px; }
+.card th, .card td { font-size: 13px; }
+.card th { color: #5e566b; }
+.filters { align-items: center; margin-bottom: 22px; }
+.filters select { min-height: 44px; }
+.date-filter { flex-wrap: wrap; gap: 8px; }
+.toast { display: flex; align-items: center; gap: 16px; }
+.toast .icon-button { color: inherit; }
+.product-search-results { padding-bottom: 24px; }
+.top-navigation { gap: 2px; }
+@media (min-width: 901px) { .topbar { gap: clamp(8px, 1.4vw, 24px); } }
+@media (max-width: 600px) {
+  .topbar { min-height: 76px; height: auto; padding: 12px 18px; grid-template-columns: 1fr auto; }
+  .top-navigation { display: none; }
+  .workspace { min-height: calc(100dvh - 76px); }
+  .workspace main { padding: 0 18px 24px; }
+  .dashboard-summary { grid-template-columns: minmax(0, 1fr) 84px; gap: 16px; }
+  .summary-avatar { display: none; }
+  .summary-value { font-size: 25px; overflow-wrap: anywhere; }
+  .summary-period select, .summary-sales > p, .page-heading p { font-size: 12px; }
+  .summary-sales > p { max-width: none; }
+  .dashboard-heroes, .dashboard-grid { gap: 16px; }
+  .billing-hero { padding: 24px 20px; gap: 12px; }
+  .billing-hero select, .gradient-button { font-size: 12px; }
+  .billing-hero-copy p { font-size: 11px; }
+  .page-heading { flex-wrap: wrap; }
+  .filters > select { flex: 1; min-width: 130px; }
+  .date-filter input { font-size: 12px; padding: 12px 4px; }
+}
+
+/* Form controls keep labels, text, arrows, and errors clear of one another. */
+.field {
+  min-width: 0;
+  gap: 8px;
+}
+.field > span {
+  font-size: 13px;
+  color: #62546f;
+  line-height: 1.5;
+}
+.field input:not([type="checkbox"]):not([type="radio"]),
+.field select,
+.field textarea {
+  min-height: 46px;
+  padding: 12px 16px;
+  font-size: 14px;
+  line-height: 1.5;
+  border-radius: 16px;
+}
+.field select,
+.filters select,
+.invoice-controls select,
+.billing-hero select {
+  appearance: none;
+  padding-right: 44px;
+  background-color: rgba(248, 246, 253, 0.48);
+  border: 1px solid rgba(255, 255, 255, 0.78);
+  -webkit-backdrop-filter: blur(16px) saturate(130%);
+  backdrop-filter: blur(16px) saturate(130%);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.75),
+    0 4px 14px rgba(74, 57, 96, 0.08);
+  color: #40354d;
+  transition: background-color 0.2s, border-color 0.2s, box-shadow 0.2s;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%2362546f' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 16px center;
+  background-size: 16px;
+  text-overflow: ellipsis;
+}
+.field select:hover,
+.filters select:hover,
+.invoice-controls select:hover,
+.billing-hero select:hover {
+  background-color: rgba(255, 255, 255, 0.62);
+  border-color: rgba(255, 255, 255, 0.95);
+}
+.field select:focus-visible,
+.filters select:focus-visible,
+.invoice-controls select:focus-visible,
+.billing-hero select:focus-visible {
+  background-color: rgba(255, 255, 255, 0.7);
+  box-shadow: inset 0 1px 0 #ffffffcc, 0 0 0 3px #86709426;
+}
+@supports not (backdrop-filter: blur(1px)) {
+  .field select,
+  .filters select,
+  .invoice-controls select,
+  .billing-hero select { background-color: #eeeaf5; }
+}
+.field input::placeholder,
+.field textarea::placeholder,
+.scan-row input::placeholder {
+  color: #746a80;
+  opacity: 1;
+}
+.field select:has(option[value=""]:checked) { color: #746a80; }
+.field select option { color: var(--ink); background: #f5f2f9; }
+.field:has(select:required) > span:after {
+  content: " *";
+  color: #954655;
+}
+.form-error,
+.error-banner,
+.pdf-error {
+  margin: 0 0 20px;
+  padding: 14px 16px;
+  font-size: 13px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.pdf-error { margin-inline: auto; }
+.modal .form-hint { margin: 16px 0 20px; font-size: 12px; }
+.scan-row { flex-wrap: wrap; gap: 12px; }
+.scan-row input { min-width: 160px; min-height: 46px; line-height: 1.5; }
+@media (max-width: 600px) {
+  .field input:not([type="checkbox"]):not([type="radio"]),
+  .field select,
+  .field textarea { font-size: 16px; }
+  .field select { padding-right: 44px; }
+  .scan-row input { width: 100%; flex-basis: 100%; }
 }

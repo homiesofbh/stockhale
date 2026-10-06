@@ -1,0 +1,177 @@
+"use client";
+import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
+import {
+  balance,
+  paid,
+  returned,
+  round,
+  subtotal,
+  total,
+  type Store,
+  type Trade,
+} from "@/lib/stockwell/model";
+import { Boxes, Download, Printer, X } from "lucide-react";
+import type { Dispatch, SetStateAction } from "react";
+type Props = {
+  setInvoice: Dispatch<SetStateAction<Trade | null>>;
+  paper: InvoicePaper;
+  setPaper: Dispatch<SetStateAction<InvoicePaper>>;
+  pdfBusy: boolean;
+  saveInvoicePdf: () => Promise<void>;
+  pdfError: string;
+  invoice: Trade;
+  cName: (id: string, supplier?: boolean) => string;
+  s: Store;
+  paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid";
+  pName: (id: string) => string;
+};
+export function InvoicePreview({
+  setInvoice,
+  paper,
+  setPaper,
+  pdfBusy,
+  saveInvoicePdf,
+  pdfError,
+  invoice,
+  cName,
+  s,
+  paymentStatus,
+  pName,
+}: Props) {
+  return (
+    <div className="invoice-overlay">
+      <div className="invoice-controls">
+        <button className="secondary-button" onClick={() => setInvoice(null)}>
+          <X size={16} />
+          Close
+        </button>
+        <div>
+          <select
+            aria-label="Printer paper size"
+            value={paper}
+            onChange={(e) => setPaper(e.target.value as InvoicePaper)}
+          >
+            <option value="A4">Standard printer · A4</option>
+            <option value="80mm">Receipt printer · 80 mm</option>
+            <option value="58mm">Receipt printer · 58 mm</option>
+          </select>
+          <button
+            className="secondary-button"
+            disabled={pdfBusy}
+            onClick={saveInvoicePdf}
+          >
+            <Download size={17} />
+            {pdfBusy ? "Preparing PDF…" : "Download PDF"}
+          </button>
+          <button className="primary" onClick={() => window.print()}>
+            <Printer size={17} />
+            Print / Save PDF
+          </button>
+        </div>
+      </div>
+      {pdfError && (
+        <div className="pdf-error" role="alert">
+          {pdfError}
+        </div>
+      )}
+      <style>{`@media print { @page { size: ${paper === "A4" ? "A4" : paper + " 297mm"}; margin: ${paper === "A4" ? "12mm" : "2mm"}; } }`}</style>
+      <article
+        className={`print-sheet ${paper === "A4" ? "a4" : "receipt"}`}
+        style={paper === "A4" ? {} : { width: paper }}
+      >
+        <div className="invoice-brand">
+          <span className="brand-mark">
+            <Boxes size={24} />
+          </span>
+          <h2>
+            Stockwell<span>.</span>
+          </h2>
+        </div>
+        <div className="invoice-title">
+          <h1>
+            {invoice.number.startsWith("PUR") ? "Purchase record" : "Invoice"}
+          </h1>
+          <div>
+            <b>{invoice.number}</b>
+            <span>{invoice.date}</span>
+          </div>
+        </div>
+        <div className="invoice-customer">
+          <div>
+            <small>
+              {invoice.number.startsWith("PUR") ? "SUPPLIER" : "BILL TO"}
+            </small>
+            <b>{cName(invoice.contactId, invoice.number.startsWith("PUR"))}</b>
+            {(invoice.number.startsWith("PUR") ? s.suppliers : s.customers)
+              .filter((c) => c.id === invoice.contactId)
+              .map((c) => (
+                <p key={c.id}>
+                  {[c.address, c.phone, c.email].filter(Boolean).map((v, i) => (
+                    <span key={i}>{v}</span>
+                  ))}
+                </p>
+              ))}
+          </div>
+          <div>
+            <small>PAYMENT</small>
+            <b>{paymentStatus(invoice)}</b>
+            <span>{invoice.method}</span>
+          </div>
+        </div>
+        <table className="invoice-table">
+          <thead>
+            <tr>
+              <th>Item</th>
+              <th>Qty</th>
+              <th>Price</th>
+              <th>Amount</th>
+            </tr>
+          </thead>
+          <tbody>
+            {invoice.lines.map((l, i) => (
+              <tr key={i}>
+                <td>
+                  {pName(l.productId)}
+                  <small>
+                    {s.products.find((p) => p.id === l.productId)?.sku}
+                  </small>
+                </td>
+                <td>{l.qty}</td>
+                <td>{l.price.toFixed(2)}</td>
+                <td>{round(l.qty * l.price).toFixed(2)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+        <div className="invoice-totals">
+          {[
+            ["Subtotal", subtotal(invoice)],
+            ["Discount", -invoice.discount],
+            [
+              `Tax (${invoice.tax}%)`,
+              round(
+                ((subtotal(invoice) - invoice.discount) * invoice.tax) / 100,
+              ),
+            ],
+            ["Total (PKR)", total(invoice)],
+            ["Return credit", -returned(s, invoice.id)],
+            ["Paid", paid(s, invoice)],
+            ["Balance / credit", balance(s, invoice)],
+          ].map(([label, value]) => (
+            <div
+              key={label}
+              className={label === "Total (PKR)" ? "invoice-grand" : ""}
+            >
+              <span>{label}</span>
+              <b>{Number(value).toFixed(2)}</b>
+            </div>
+          ))}
+        </div>
+        <div className="invoice-thanks">
+          Thank you for your business.
+          <small>Generated with Stockwell</small>
+        </div>
+      </article>
+    </div>
+  );
+}

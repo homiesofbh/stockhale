@@ -27,7 +27,12 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   try {
     const origin = request.headers.get("origin");
-    if (!origin || (process.env.STOCKWELL_ORIGIN ? origin !== process.env.STOCKWELL_ORIGIN : new URL(origin).host !== request.headers.get("host")))
+    if (
+      !origin ||
+      (process.env.STOCKWELL_ORIGIN
+        ? origin !== process.env.STOCKWELL_ORIGIN
+        : new URL(origin).host !== request.headers.get("host"))
+    )
       return Response.json(
         { error: "Invalid request origin." },
         { status: 403 },

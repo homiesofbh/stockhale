@@ -43,6 +43,7 @@ export type Workspace = {
   emailConfigured: boolean;
 };
 export type Change = {
+  actorId: string;
   id: string;
   module: string;
   action: string;
@@ -98,10 +99,10 @@ export function verifyChange(before: Store, after: Store, module: string) {
 function recordDiff(a: unknown[], b: unknown[]) {
   const ids = (items: unknown[]) =>
     new Map(
-      items.map((v, i) => [
+      items.map((v) => [
         typeof v === "object" && v !== null && "id" in v
           ? String(v.id)
-          : String(i),
+          : String(v),
         JSON.stringify(v),
       ]),
     );
@@ -111,7 +112,7 @@ function recordDiff(a: unknown[], b: unknown[]) {
     .filter((id) => old.get(id) !== next.get(id))
     .map(
       (id) =>
-        `${!old.has(id) ? "added" : !next.has(id) ? "removed" : "updated"} ${id}${old.has(id) && next.has(id) ? fieldDiff(old.get(id)!, next.get(id)!) : ""}`,
+        `${!old.has(id) ? "added" : !next.has(id) ? "removed" : "updated"} ${id}${old.has(id) && next.has(id) ? fieldDiff(old.get(id)!, next.get(id)!) : recordLabel(next.get(id)||old.get(id)!)}`,
     )
     .join(", ");
 }
@@ -138,3 +139,5 @@ function fieldDiff(a: string, b: string) {
     ")"
   );
 }
+
+function recordLabel(raw:string){const value=JSON.parse(raw);if(typeof value!=="object"||!value)return "";const fields=["name","number","date","productId","tradeId","qty","amount","reason","notes"].filter(k=>value[k]!==undefined&&value[k]!=="");return fields.length?" ("+fields.map(k=>`${k}: ${String(value[k]).slice(0,100)}`).join(", ")+")":"";}

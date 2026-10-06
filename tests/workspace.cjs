@@ -87,6 +87,7 @@ test("sync persists records, attributes actor and changed record, retry is idemp
     5,
   );
   change = {
+    actorId: member.id,
     id: "qa-event",
     module: "Inventory",
     action: "Product saved",
@@ -160,12 +161,39 @@ test("profile persists, audit and email outbox retained without Resend configura
       ),
   );
 });
-test("Resend failures stay queued and retry with stable idempotency keys", async()=>{
- process.env.RESEND_API_KEY="test-key";process.env.RESEND_FROM="alerts@example.test";
- const original=global.fetch;let fail=true;const keys=[];
- global.fetch=async(url,options)=>{assert.equal(url,"https://api.resend.com/emails");const body=JSON.parse(options.body);assert.deepEqual(body.to,[owner.email]);keys.push(options.headers["Idempotency-Key"]);return new Response("{}",{status:fail?503:200});};
- try{await server.deliverEmails();assert.ok(server.snapshot(owner).audit.some(a=>a.emailStatus==="retrying"));server.db().exec("UPDATE events SET nextAttempt=0");fail=false;await server.deliverEmails();assert.ok(server.snapshot(owner).audit.every(a=>a.emailStatus==="sent"));assert.ok(keys.length>0);assert.equal(keys[0],keys[keys.length/2]);}finally{global.fetch=original;delete process.env.RESEND_API_KEY;delete process.env.RESEND_FROM;}
+test("Resend failures stay queued and retry with stable idempotency keys", async () => {
+  process.env.RESEND_API_KEY = "test-key";
+  process.env.RESEND_FROM = "alerts@example.test";
+  const original = global.fetch;
+  let fail = true;
+  const keys = [];
+  global.fetch = async (url, options) => {
+    assert.equal(url, "https://api.resend.com/emails");
+    const body = JSON.parse(options.body);
+    assert.deepEqual(body.to, [owner.email]);
+    keys.push(options.headers["Idempotency-Key"]);
+    return new Response("{}", { status: fail ? 503 : 200 });
+  };
+  try {
+    await server.deliverEmails();
+    assert.ok(
+      server.snapshot(owner).audit.some((a) => a.emailStatus === "retrying"),
+    );
+    server.db().exec("UPDATE events SET nextAttempt=0");
+    fail = false;
+    await server.deliverEmails();
+    assert.ok(
+      server.snapshot(owner).audit.every((a) => a.emailStatus === "sent"),
+    );
+    assert.ok(keys.length > 0);
+    assert.equal(keys[0], keys[keys.length / 2]);
+  } finally {
+    global.fetch = original;
+    delete process.env.RESEND_API_KEY;
+    delete process.env.RESEND_FROM;
+  }
 });
+test("pending records cannot be attributed to a different signed-in user",()=>{assert.throws(()=>server.mutate(owner,{action:"sync",revision:1,changes:[{...change,id:"wrong-actor",actorId:member.id}]}),e=>e.status===403);});
 test("logout revokes the server session", () => {
   server.logout(request(ownerToken));
   assert.throws(

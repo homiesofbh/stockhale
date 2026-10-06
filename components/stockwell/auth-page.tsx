@@ -22,6 +22,10 @@ export function AuthPage({ signup = false }: { signup?: boolean }) {
       });
       const existing = localStorage.getItem(cacheKey(w.id));
       const cached = existing ? JSON.parse(existing) : null;
+      if (cached?.queue?.length && cached.workspace.member.id !== w.member.id)
+        throw new Error(
+          "Pending records belong to another user. Sign in as that user to sync them first.",
+        );
       localStorage.setItem(
         cacheKey(w.id),
         JSON.stringify(

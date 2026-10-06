@@ -251,6 +251,11 @@ export function mutate(user: Row, body: Row) {
         revision = w.revision;
       const accepted: string[] = [];
       for (const c of body.changes) {
+        if (c.actorId !== user.id)
+          throw Object.assign(
+            new Error("Sign in as the user who created these pending changes."),
+            { status: 403 },
+          );
         if (
           row("SELECT id FROM events WHERE id=? AND workspace=?", c.id, w.id)
         ) {
