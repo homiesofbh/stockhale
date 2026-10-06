@@ -1,0 +1,140 @@
+import type { Store } from "./model";
+export const modules = [
+  "Dashboard",
+  "Inventory",
+  "Purchases",
+  "Billing",
+  "Sales",
+  "Accounts Heads",
+  "Expenses",
+  "Payments",
+  "Suppliers",
+  "Customers",
+  "Returns & Damage",
+  "Reports",
+] as const;
+export type Member = {
+  id: string;
+  name: string;
+  email: string;
+  role: "owner" | "member";
+  modules: string[];
+};
+export type Audit = {
+  id: string;
+  actor: string;
+  module: string;
+  action: string;
+  records: string;
+  occurredAt: string;
+  receivedAt: string;
+  emailStatus: string;
+};
+export type Workspace = {
+  id: string;
+  name: string;
+  image: string;
+  revision: number;
+  store: Store;
+  member: Member;
+  members: Member[];
+  audit: Audit[];
+  readEvent?: string;
+  emailConfigured: boolean;
+};
+export type Change = {
+  id: string;
+  module: string;
+  action: string;
+  occurredAt: string;
+  store: Store;
+};
+export type Cache = { workspace: Workspace; queue: Change[]; revision: number };
+export const cacheKey = (id: string) => `stockwell.workspace.${id}`;
+export const collectionModules: Record<string, string[]> = {
+  products: ["Inventory"],
+  categories: ["Inventory"],
+  movements: ["Inventory", "Purchases", "Billing", "Returns & Damage"],
+  customers: ["Customers"],
+  suppliers: ["Suppliers"],
+  heads: ["Accounts Heads"],
+  expenseCategories: ["Expenses"],
+  purchases: ["Purchases"],
+  invoices: ["Billing"],
+  payments: ["Payments"],
+  expenses: ["Expenses"],
+  returns: ["Returns & Damage"],
+};
+export function changesBetween(before: Store, after: Store) {
+  return Object.keys(collectionModules).filter(
+    (k) =>
+      JSON.stringify(before[k as keyof Store]) !==
+      JSON.stringify(after[k as keyof Store]),
+  );
+}
+export function verifyChange(before: Store, after: Store, module: string) {
+  if (!modules.includes(module as (typeof modules)[number]))
+    throw new Error("Unknown module.");
+  if (
+    !after ||
+    after.version !== 1 ||
+    Object.keys(after).some((k) => k !== "version" && !collectionModules[k])
+  )
+    throw new Error("Invalid records.");
+  for (const key of Object.keys(collectionModules))
+    if (!Array.isArray(after[key as keyof Store]))
+      throw new Error("Invalid record collection.");
+  const changed = changesBetween(before, after);
+  if (!changed.length) throw new Error("No records changed.");
+  if (changed.some((k) => !collectionModules[k].includes(module)))
+    throw new Error("This module cannot change those records.");
+  return changed
+    .map(
+      (k) =>
+        `${k}: ${JSON.stringify(after[k as keyof Store]) === JSON.stringify(before[k as keyof Store]) ? "unchanged" : recordDiff(before[k as keyof Store] as unknown[], after[k as keyof Store] as unknown[])}`,
+    )
+    .join("; ");
+}
+function recordDiff(a: unknown[], b: unknown[]) {
+  const ids = (items: unknown[]) =>
+    new Map(
+      items.map((v, i) => [
+        typeof v === "object" && v !== null && "id" in v
+          ? String(v.id)
+          : String(i),
+        JSON.stringify(v),
+      ]),
+    );
+  const old = ids(a),
+    next = ids(b);
+  return [...new Set([...old.keys(), ...next.keys()])]
+    .filter((id) => old.get(id) !== next.get(id))
+    .map(
+      (id) =>
+        `${!old.has(id) ? "added" : !next.has(id) ? "removed" : "updated"} ${id}${old.has(id) && next.has(id) ? fieldDiff(old.get(id)!, next.get(id)!) : ""}`,
+    )
+    .join(", ");
+}
+
+function fieldDiff(a: string, b: string) {
+  const before = JSON.parse(a),
+    after = JSON.parse(b);
+  if (
+    typeof before !== "object" ||
+    before === null ||
+    typeof after !== "object" ||
+    after === null
+  )
+    return ` (${a} → ${b})`;
+  return (
+    " (" +
+    [...new Set([...Object.keys(before), ...Object.keys(after)])]
+      .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
+      .map(
+        (k) =>
+          `${k}: ${JSON.stringify(before[k])?.slice(0, 100)} → ${JSON.stringify(after[k])?.slice(0, 100)}`,
+      )
+      .join(", ") +
+    ")"
+  );
+}
