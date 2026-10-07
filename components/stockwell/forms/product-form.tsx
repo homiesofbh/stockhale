@@ -67,6 +67,7 @@ export function ProductForm({
         <Field label="Barcode (scan or type)">
           <input
             name="barcode"
+            autoComplete="off"
             defaultValue={editProduct?.barcode}
             placeholder="Scan a product barcode here"
             onKeyDown={(e) => {

@@ -170,7 +170,19 @@ const assert = (ok: boolean, message: string) => {
   if (!ok) throw new Error(message);
 };
 const validNumber = (n: number, min = 0) => Number.isFinite(n) && n >= min;
+/** Preserve leading zeroes and reject ambiguous legacy product codes. */
+export function findProductByCode(products: Product[], input: string): Product {
+  const code = input.trim();
+  if (!code) throw new Error("Scan a barcode or enter an item code first.");
+  const matches = products.filter((p) =>
+    (p.barcode && p.barcode.trim() === code) || p.sku.trim().toLowerCase() === code.toLowerCase(),
+  );
+  if (!matches.length) throw new Error(`No product matches barcode or SKU “${code}”.`);
+  if (matches.length > 1) throw new Error("This code matches multiple products. Correct their barcode or SKU before scanning.");
+  return matches[0];
+}
 export function saveProduct(s: Store, p: Product, opening = 0): Store {
+  p = { ...p, sku: p.sku.trim(), barcode: p.barcode.trim() };
   assert(
     !!p.name.trim() && !!p.sku.trim(),
     "Product name and SKU are required.",
@@ -186,6 +198,13 @@ export function saveProduct(s: Store, p: Product, opening = 0): Store {
       !s.products.some((x) => x.id !== p.id && x.barcode === p.barcode),
     "This barcode is already assigned to a product.",
   );
+  assert(
+    !s.products.some((x) => x.id !== p.id &&
+      ((p.barcode && x.sku.trim().toLowerCase() === p.barcode.toLowerCase()) ||
+       (x.barcode && x.barcode.trim().toLowerCase() === p.sku.toLowerCase()))),
+    "A barcode cannot match another product's SKU.",
+  );
+  assert(!/[\x00-\x1f\x7f]/.test(p.barcode), "Barcode must not contain control characters.");
   assert(
     [p.cost, p.price, p.low, opening].every((n) => validNumber(n)),
     "Prices, thresholds, and opening stock must be non-negative numbers.",

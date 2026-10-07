@@ -10,13 +10,35 @@ self.addEventListener("activate", (event) => {
 // No fetch handler: development HTML and chunks always use the network.
 `;
 
-export const productionWorker = `const CACHE = "stockwell-offline-v3";
+export const productionWorker = `const CACHE = "stockwell-offline-v5";
 self.addEventListener("install", (event) => {
-  event.waitUntil(
-    caches
-      .open(CACHE)
-      .then((cache) => cache.addAll(["/", "/sign-in", "/sign-up"])),
-  );
+  event.waitUntil((async () => {
+    const cache = await caches.open(CACHE);
+    const routes = ["/", "/sign-in", "/sign-up", "/team-sign-up"];
+    await cache.addAll([...routes, "/fonts/stockwell-unicode.ttf"]);
+    // The first page's scripts loaded before this worker took control.
+    // Warm them and CSS dependencies so the very next reload works offline.
+    const assets = new Set();
+    for (const route of routes) {
+      const response = await cache.match(route);
+      const html = await response.text();
+      for (const match of html.matchAll(/(?:src|href)=["']([^"']+)["']/g)) {
+        const url = new URL(match[1].replace(/&amp;/g, "&"), location.origin);
+        if (url.origin === location.origin && url.pathname.startsWith("/_next/static/")) assets.add(url.href);
+      }
+    }
+    await cache.addAll([...assets]);
+    for (const asset of assets) {
+      if (!new URL(asset).pathname.endsWith(".css")) continue;
+      const css = await (await cache.match(asset)).text();
+      const dependencies = [];
+      for (const match of css.matchAll(/url\\((?:["'])?([^\\)"']+)(?:["'])?\\)/g)) {
+        const url = new URL(match[1], asset);
+        if (url.origin === location.origin && url.pathname.startsWith("/_next/static/")) dependencies.push(url.href);
+      }
+      await cache.addAll(dependencies);
+    }
+  })());
   self.skipWaiting();
 });
 self.addEventListener("activate", (event) => {
@@ -48,7 +70,7 @@ self.addEventListener("fetch", (event) => {
         .then((res) => {
           if (res.ok) {
             const copy = res.clone();
-            caches.open(CACHE).then((c) => c.put(req, copy));
+            event.waitUntil(caches.open(CACHE).then((c) => c.put(req, copy)));
           }
           return res;
         })
@@ -65,7 +87,7 @@ self.addEventListener("fetch", (event) => {
           fetch(req).then((res) => {
             if (res.ok) {
               const copy = res.clone();
-              caches.open(CACHE).then((c) => c.put(req, copy));
+              event.waitUntil(caches.open(CACHE).then((c) => c.put(req, copy)));
             }
             return res;
           }),

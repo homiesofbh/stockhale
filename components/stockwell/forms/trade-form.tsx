@@ -175,6 +175,8 @@ export function TradeForm({
         <Barcode size={23} />
         <input
           ref={scanInput}
+          autoFocus
+          autoComplete="off"
           value={scan}
           onChange={(e) => setScan(e.target.value)}
           onKeyDown={(e) => {

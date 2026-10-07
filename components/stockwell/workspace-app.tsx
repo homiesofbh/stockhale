@@ -2,6 +2,7 @@
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balance,
+  findProductByCode,
   emptyStore,
   financialRows,
   money,
@@ -23,8 +24,9 @@ import {
 import { ChevronRight, Plus, Search, X } from "lucide-react";
 import { descriptions, type Module } from "./navigation";
 import { Badge, Empty, Field, Modal, Table } from "./ui";
-import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
+import { downloadInvoicePdf, type InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import { WorkspaceSettings } from "@/components/stockwell/workspace-settings";
+import { accessibleModule, canAccessModule } from "@/lib/stockwell/workspace";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import { AdjustmentForm } from "@/components/stockwell/forms/adjustment-form";
 import { ContactForm } from "@/components/stockwell/forms/contact-form";
@@ -62,7 +64,7 @@ export function WorkspaceApp() {
   const [s, setS] = useState<Store>(emptyStore);
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
-  const [module, setModule] = useState<Module>("Dashboard");
+  const [requestedModule, setModule] = useState<Module>("Dashboard");
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -103,20 +105,18 @@ export function WorkspaceApp() {
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);
   const account = workspace.cache?.workspace;
-  const canAccess = (name: string) =>
-    !!account &&
-    (account.member.role === "owner" || account.member.modules.includes(name));
+  const canAccess = (name: string) => !!account && canAccessModule(account.member, name);
+  const module = (account ? accessibleModule(account.member, requestedModule) : "Dashboard") as Module;
+  const modalModule = useRef<Module | null>(null);
   useEffect(() => {
-    if (
-      account &&
-      !canAccess(module) &&
-      module !== "Settings" &&
-      module !== "Notifications"
-    ) {
-      const first = account.member.modules[0];
-      if (first) setModule(first as Module);
+    if (account && !canAccess(requestedModule)) {
+      if (module) setModule(module);
+      setProductSearch("");
     }
-  }, [account]);
+    if (modalModule.current && !canAccess(modalModule.current)) setModal("");
+    if (invoice && !canAccess(invoice.number.startsWith("PUR") ? "Purchases" : "Billing") &&
+      (invoice.number.startsWith("PUR") || !canAccess("Sales"))) setInvoice(null);
+  }, [account, requestedModule]);
   useEffect(() => {
     const timer = setTimeout(() => setNotice(""), 4500);
     return () => clearTimeout(timer);
@@ -155,6 +155,7 @@ export function WorkspaceApp() {
     }
     if (target !== module) setModule(target as Module);
     setError("");
+    modalModule.current = target as Module;
     setModal(name);
     setSelectedContact("");
     setSelectedTrade("");
@@ -228,19 +229,14 @@ export function WorkspaceApp() {
     setError("");
   }
   function scanProduct() {
-    const code = scan.trim();
-    if (!code) {
-      setError("Scan a barcode or enter an item code first.");
+    try {
+      addLine(findProductByCode(s.products, scan).id);
+    } catch (error) {
+      setError(error instanceof Error ? error.message : "Could not scan product.");
+      scanInput.current?.focus();
+      scanInput.current?.select();
       return;
     }
-    const p = s.products.find(
-      (p) => p.barcode === code || p.sku.toLowerCase() === code.toLowerCase(),
-    );
-    if (!p) {
-      setError(`No product matches barcode or SKU “${code}”.`);
-      return;
-    }
-    addLine(p.id);
     setScan("");
     scanInput.current?.focus();
   }
@@ -345,8 +341,6 @@ export function WorkspaceApp() {
     setPdfBusy(true);
     setPdfError("");
     try {
-      const { downloadInvoicePdf } =
-        await import("@/lib/stockwell/invoice-pdf");
       const result = await downloadInvoicePdf(s, invoice, paper);
       setNotice(
         `PDF downloaded · ${(result.bytes / 1024).toFixed(1)} KB · ${result.pages} page${result.pages === 1 ? "" : "s"}`,
@@ -370,7 +364,7 @@ export function WorkspaceApp() {
   if (
     account &&
     account.member.role !== "owner" &&
-    !account.member.modules.length
+    !module
   )
     return (
       <div className="loading">
@@ -443,7 +437,7 @@ export function WorkspaceApp() {
                       <p>{descriptions[module]}</p>
                     </div>
                     <div className="heading-actions">
-                      {module === "Dashboard" && (
+                      {module === "Dashboard" && canAccess("Billing") && (
                         <button
                           className="primary"
                           onClick={() => {
@@ -489,6 +483,7 @@ export function WorkspaceApp() {
                   )}
                   {module === "Dashboard" ? (
                     <DashboardView
+                      canAccess={canAccess}
                       dashboardPeriod={dashboardPeriod}
                       setDashboardPeriod={setDashboardPeriod}
                       dashboardProfit={dashboardProfit}
@@ -633,7 +628,7 @@ export function WorkspaceApp() {
           </main>
         </div>
       </div>
-      {modal && (
+      {modal && modalModule.current && canAccess(modalModule.current) && (
         <Modal
           title={
             modal === "Bill"
@@ -805,7 +800,7 @@ export function WorkspaceApp() {
           )}
         </Modal>
       )}
-      {invoice && (
+      {invoice && (canAccess(invoice.number.startsWith("PUR") ? "Purchases" : "Billing") || (!invoice.number.startsWith("PUR") && canAccess("Sales"))) && (
         <InvoicePreview
           setInvoice={setInvoice}
           paper={paper}

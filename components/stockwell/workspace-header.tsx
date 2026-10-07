@@ -40,7 +40,7 @@ export function WorkspaceHeader({
         href="#"
         onClick={(e) => {
           e.preventDefault();
-          go("Dashboard");
+          go(canAccess("Dashboard") ? "Dashboard" : module);
         }}
       >
         <span className="brand-mark">

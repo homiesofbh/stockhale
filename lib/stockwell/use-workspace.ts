@@ -50,17 +50,17 @@ export function useWorkspace() {
           : undefined,
       );
       const latest = current.current;
-      if (latest && latest !== c) {
-        setSyncStatus("Pending changes");
-        return;
-      }
       if (c?.queue.length && w.revision !== c.revision + 1)
         throw Object.assign(new Error("Server records changed during retry."), {
           status: 409,
         });
-      const remaining = c?.queue.slice(1) || [];
+      // A scan/save can happen while a request is in flight. Acknowledge only
+      // the submitted change, keeping every newer local snapshot queued.
+      const remaining = c?.queue.length
+        ? (latest?.queue || c.queue).filter((change) => change.id !== c.queue[0].id)
+        : latest?.queue || [];
       save({
-        workspace: remaining.length ? { ...w, store: c!.workspace.store } : w,
+        workspace: remaining.length ? { ...w, store: latest!.workspace.store } : w,
         queue: remaining,
         revision: w.revision,
       });

@@ -66,7 +66,7 @@ export async function POST(request: Request) {
     const body = JSON.parse(text);
     if (!body || typeof body !== "object" || Array.isArray(body))
       throw new Error("Invalid request body.");
-    if (["signin", "signup"].includes(body.action)) {
+    if (["signin", "signup", "team-signup"].includes(body.action)) {
       const { user, headers: authHeaders } = await authenticate(body, request);
       return Response.json(await snapshot(user), {
         headers: sessionHeaders(authHeaders),

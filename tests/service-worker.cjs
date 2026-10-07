@@ -63,3 +63,26 @@ test("production setup registers the offline worker without using cached worker 
     assert.deepEqual(calls, [["/sw.js", { updateViaCache: "none" }]]);
   });
 });
+
+test("production installation warms initial scripts, styles, CSS fonts, and PDF font", async () => {
+  const handlers = {}, added = [];
+  const pages = {
+    "/": '<script src="/_next/static/app.js"></script><link href="/_next/static/app.css" rel="stylesheet">',
+    "/sign-in": "", "/sign-up": "",
+    "http://localhost/_next/static/app.css": 'body{src:url(./font.woff2)}',
+  };
+  const cache = {
+    addAll: async urls => added.push(...urls),
+    match: async url => ({ text: async () => pages[url] || "" }),
+  };
+  vm.runInNewContext(productionWorker, {
+    self: { addEventListener: (type, handler) => handlers[type] = handler, skipWaiting: () => {} },
+    caches: { open: async () => cache }, URL, Set, location: { origin: "http://localhost" },
+  });
+  let completion;
+  handlers.install({ waitUntil: promise => completion = promise });
+  await completion;
+  assert.ok(added.includes("http://localhost/_next/static/app.js"));
+  assert.ok(added.includes("http://localhost/_next/static/font.woff2"));
+  assert.ok(added.includes("/fonts/stockwell-unicode.ttf"));
+});

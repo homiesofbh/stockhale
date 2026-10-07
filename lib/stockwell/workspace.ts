@@ -20,6 +20,16 @@ export type Member = {
   role: "owner" | "member";
   modules: string[];
 };
+export function canAccessModule(member: Member, module: string) {
+  if (module === "Settings" || module === "Notifications") return member.role === "owner";
+  return modules.includes(module as (typeof modules)[number]) &&
+    (member.role === "owner" || member.modules.includes(module));
+}
+/** Resolve before rendering, including the initial load and permission changes. */
+export function accessibleModule(member: Member, requested: string): string | null {
+  if (canAccessModule(member, requested)) return requested;
+  return modules.find((module) => canAccessModule(member, module)) || null;
+}
 export type Audit = {
   id: string;
   actor: string;

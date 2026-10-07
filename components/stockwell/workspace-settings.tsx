@@ -21,8 +21,10 @@ export function WorkspaceSettings({
     try {
       const result = await action(body);
       setNotice("Workspace updated.");
-      if (result.invite)
-        setInvite(`${location.origin}/sign-up?invite=${result.invite}`);
+      if (result.invite) {
+        setInvite(`${location.origin}/team-sign-up?invite=${encodeURIComponent(result.invite)}`);
+        setNotice("Team member added. Share the setup link so they can create their password.");
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Update failed");
     } finally {
@@ -97,16 +99,15 @@ export function WorkspaceSettings({
           </form>
         </section>
         <section className="panel">
-          <h2>Invite a team member</h2>
+          <h2>Add a team member</h2>
           <p>
-            Give authority for selected modules. Only you can manage
-            permissions.
+            Assign their email and select the modules they can use. They will sign up with that email and choose their own password.
           </p>
           <form
             onSubmit={(e: FormEvent<HTMLFormElement>) => {
               e.preventDefault();
               void run({
-                action: "invite",
+                action: "add-member",
                 email: new FormData(e.currentTarget).get("email"),
                 modules: permissions(e.currentTarget),
               });
@@ -125,13 +126,13 @@ export function WorkspaceSettings({
               ))}
             </div>
             <button disabled={busy} className="primary">
-              Create invitation
+              Add team member
             </button>
           </form>
           {invite && (
             <label className="field">
               <span>
-                Share this invitation with the member (expires in 7 days)
+                Share this signup link with the member (expires in 7 days)
               </span>
               <input
                 readOnly

@@ -1,9 +1,9 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
+import { findProductByCode, recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   commit: (next: Store, message: string) => void;
@@ -26,6 +26,24 @@ export function ReturnForm({
   setReturnKind,
   setSelectedTrade,
 }: Props) {
+  const [product, setProduct] = useState("");
+  const [scan, setScan] = useState("");
+  const [scanError, setScanError] = useState("");
+  const eligible = s.products.filter((p) => returnKind === "Damaged stock" ||
+    (returnKind === "Sales return" ? s.invoices : s.purchases)
+      .find((t) => t.id === selectedTrade)?.lines.some((l) => l.productId === p.id));
+  function scanProduct() {
+    try {
+      const match = findProductByCode(s.products, scan);
+      if (!eligible.some((p) => p.id === match.id))
+        throw new Error("Select an original transaction containing this product first.");
+      setProduct(match.id);
+      setScan("");
+      setScanError("");
+    } catch (error) {
+      setScanError(error instanceof Error ? error.message : "Could not scan product.");
+    }
+  }
   return (
     <form
       onSubmit={(e) =>
@@ -48,11 +66,20 @@ export function ReturnForm({
         )
       }
     >
+      <div className="scan-row mb-10">
+        <input autoComplete="off" aria-label="Return barcode scanner input" placeholder="Scan barcode or enter SKU, then press Enter"
+          value={scan} onChange={(e) => setScan(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanProduct(); } }} />
+        <button type="button" className="secondary-button" onClick={scanProduct}>Select item</button>
+      </div>
+      {scanError && <p role="alert" className="form-error">{scanError}</p>}
       <div className="form-grid">
         <Field label="Type">
           <GlassSelect
             value={returnKind}
             onValueChange={(e) => {
+              setProduct("");
+              setScanError("");
               setReturnKind(e);
               setSelectedTrade("");
             }}
@@ -70,7 +97,7 @@ export function ReturnForm({
             <GlassSelect
               required
               value={selectedTrade}
-              onValueChange={(e) => setSelectedTrade(e)}
+              onValueChange={(e) => { setSelectedTrade(e); setProduct(""); setScanError(""); }}
             >
               <option value="">Select transaction</option>
               {(returnKind === "Sales return" ? s.invoices : s.purchases).map(
@@ -87,18 +114,11 @@ export function ReturnForm({
           <GlassSelect
             name="product"
             required
-            key={`${returnKind}-${selectedTrade}`}
+            value={product}
+            onValueChange={setProduct}
           >
             <option value="">Select product</option>
-            {s.products
-              .filter(
-                (p) =>
-                  returnKind === "Damaged stock" ||
-                  (returnKind === "Sales return" ? s.invoices : s.purchases)
-                    .find((t) => t.id === selectedTrade)
-                    ?.lines.some((l) => l.productId === p.id),
-              )
-              .map((p) => (
+            {eligible.map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>

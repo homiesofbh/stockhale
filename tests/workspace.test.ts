@@ -200,10 +200,12 @@ test("Postgres and Better Auth workspace integration", async (t) => {
       },
     );
     await t.test(
-      "email-bound invitations cannot be mismatched or reused",
+      "added team members set their own password and receive only assigned modules",
       async () => {
+        await assert.rejects(server.authenticate({ action: "team-signup", email: "clerk@example.test", name: "Clerk", password }, request()), /signup link/);
+        await assert.rejects(server.mutate(owner, { action: "add-member", email: "clerk@example.test", modules: [] }), /at least one module/);
         const result = await server.mutate(owner, {
-          action: "invite",
+          action: "add-member",
           email: "clerk@example.test",
           modules: ["Inventory"],
         });
@@ -211,7 +213,7 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         await assert.rejects(
           server.authenticate(
             {
-              action: "signup",
+              action: "team-signup",
               email: "wrong@example.test",
               name: "Wrong",
               invite,
@@ -224,22 +226,24 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         member = (
           await server.authenticate(
             {
-              action: "signup",
+              action: "team-signup",
               email: "clerk@example.test",
               name: "Clerk",
               invite,
-              password,
+              password: "clerk-own-password-2026",
             },
             request(),
           )
         ).user;
+        const signedIn = await server.authenticate({ action: "signin", email: member.email, password: "clerk-own-password-2026" }, request());
+        assert.equal(signedIn.user.id, member.id);
         assert.deepEqual((await server.snapshot(member)).member.modules, [
           "Inventory",
         ]);
         await assert.rejects(
           server.authenticate(
             {
-              action: "signup",
+              action: "team-signup",
               email: member.email,
               name: "Clerk",
               invite,
@@ -582,7 +586,7 @@ test("Postgres and Better Auth workspace integration", async (t) => {
       "expired sessions reject authorization; signout clears and revokes the cookie",
       async () => {
         const result = await server.authenticate(
-          { action: "signin", email: member.email, password },
+          { action: "signin", email: member.email, password: "clerk-own-password-2026" },
           request(),
         );
         await query(

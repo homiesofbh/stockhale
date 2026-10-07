@@ -158,7 +158,7 @@ export async function authenticate(body: Row, request: Request) {
     );
   return transaction(async (client) => {
     const auth = getAuth(client);
-    if (body.action !== "signup") {
+    if (body.action !== "signup" && body.action !== "team-signup") {
       const result = await auth.api.signInEmail({
         body: { email: mail, password },
         headers: request.headers,
@@ -167,6 +167,8 @@ export async function authenticate(body: Row, request: Request) {
       await query("DELETE FROM limits WHERE key=$1", [key]);
       return { user: result.response.user, headers: result.headers };
     }
+    if (body.action === "team-signup" && !body.invite)
+      throw new Error("Open the signup link provided by your workspace owner.");
     const name = required(body.name);
     const storeName = body.invite ? "" : required(body.storeName);
     const invite = body.invite
@@ -309,15 +311,17 @@ export async function mutate(user: Row, body: Row) {
         "Store profile updated",
         `Store name: ${name}; image ${image ? "set" : "removed"}`,
       );
-    } else if (body.action === "invite") {
+    } else if (["invite", "add-member"].includes(body.action)) {
       const mail = email(body.email);
       const allowed = validateModules(body.modules);
+      if (!allowed.length) throw new Error("Select at least one module for the team member.");
       const existing = await row("SELECT * FROM users WHERE email=$1", mail);
       if (existing)
         throw new Error(
-          "This email already has an account. Use a new email for this workspace invitation.",
+          "This email already has an account. Use a new email for this team member.",
         );
       const token = randomBytes(32).toString("hex");
+      await query("DELETE FROM invites WHERE workspace=$1 AND email=$2", [w.id, mail]);
       await query("INSERT INTO invites VALUES($1,$2,$3,$4,$5)", [
         digest(token),
         w.id,
@@ -329,7 +333,7 @@ export async function mutate(user: Row, body: Row) {
         w,
         user,
         "Settings",
-        "Member invited",
+        "Team member added",
         `${mail}: ${allowed.join(", ")}`,
       );
       return { invite: token };

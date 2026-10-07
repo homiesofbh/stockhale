@@ -13,6 +13,7 @@ type Props = {
 };
 
 export function ProductSearch({ store, query, onChange, canSearch }: Props) {
+  if (!canSearch) return null;
   return (
     <>
       <form

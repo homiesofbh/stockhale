@@ -24,6 +24,7 @@ import {
 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
+  canAccess: (module: string) => boolean;
   dashboardPeriod: string;
   setDashboardPeriod: Dispatch<SetStateAction<string>>;
   dashboardProfit: {
@@ -61,6 +62,7 @@ type Props = {
   pName: (id: string) => string;
 };
 export function DashboardView({
+  canAccess,
   dashboardPeriod,
   setDashboardPeriod,
   dashboardProfit,
@@ -167,7 +169,7 @@ export function DashboardView({
         </div>
       </section>
       <section className="dashboard-heroes" aria-label="Inventory and billing">
-        <button className="inventory-hero" onClick={() => go("Inventory")}>
+        {canAccess("Inventory") && <button className="inventory-hero" onClick={() => go("Inventory")}>
           <StockArt />
           <div className="inventory-hero-copy">
             <Package size={33} strokeWidth={1.3} />
@@ -182,8 +184,8 @@ export function DashboardView({
             <small>Current stock value</small>
           </div>
           <ChevronRight className="hero-arrow" size={22} />
-        </button>
-        <div className="billing-hero">
+        </button>}
+        {canAccess("Billing") && <div className="billing-hero">
           <svg
             className="billing-shape"
             viewBox="0 0 720 220"
@@ -243,10 +245,10 @@ export function DashboardView({
             </h2>
             <p>Your next sale, in good order.</p>
           </div>
-        </div>
+        </div>}
       </section>
       <div className="dashboard-grid primary-records">
-        <section className="card recent">
+        {canAccess("Billing") && <section className="card recent">
           <div className="section-head">
             <div>
               <h2>Recent invoices</h2>
@@ -274,8 +276,8 @@ export function DashboardView({
               ])}
             empty="Ready for your first sale"
           />
-        </section>
-        <section className="card stock-card">
+        </section>}
+        {canAccess("Inventory") && <section className="card stock-card">
           <div className="section-head">
             <div>
               <h2>Stock watch</h2>
@@ -306,7 +308,7 @@ export function DashboardView({
           <button className="full-link" onClick={() => go("Inventory")}>
             Manage inventory <ChevronRight size={16} />
           </button>
-        </section>
+        </section>}
       </div>
       <div className="section-label">
         THE FINANCIAL PICTURE <span>All recorded transactions</span>
@@ -334,7 +336,7 @@ export function DashboardView({
         />
       </div>
       <div className="dashboard-grid">
-        <section className="card">
+        {canAccess("Purchases") && <section className="card">
           <div className="section-head">
             <h2>Recent purchases</h2>
             <button className="text-button" onClick={() => go("Purchases")}>
@@ -352,8 +354,8 @@ export function DashboardView({
                 money(total(t)),
               ])}
           />
-        </section>
-        <section className="card">
+        </section>}
+        {canAccess("Sales") && <section className="card">
           <div className="section-head">
             <h2>Recent sales</h2>
             <button className="text-button" onClick={() => go("Sales")}>
@@ -369,7 +371,7 @@ export function DashboardView({
                 t.lines.map((l) => [t.date, pName(l.productId), l.qty]),
               )}
           />
-        </section>
+        </section>}
       </div>
     </>
   );

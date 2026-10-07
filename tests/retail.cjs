@@ -250,3 +250,18 @@ test("rounding of repeated returns never exceeds original invoice value", () => 
   assert.equal(m.returned(s, "t1"), 0.17);
   assert.equal(m.balance(s, s.invoices[0]), 0);
 });
+
+test("barcode lookup preserves leading zeroes, trims scanner terminators, and rejects ambiguity", () => {
+  const p = { ...product, barcode: "001234" };
+  assert.equal(m.findProductByCode([p], " 001234\r\n").id, p.id);
+  assert.equal(m.findProductByCode([p], "rice").id, p.id);
+  assert.throws(() => m.findProductByCode([p], "1234"), /No product/);
+  assert.throws(() => m.findProductByCode([p, { ...product, id: "p2", sku: "001234", barcode: "" }], "001234"), /multiple products/);
+});
+test("product codes are normalized and barcode/SKU collisions cannot be saved", () => {
+  const s = fixture();
+  assert.throws(() => m.saveProduct(s, { ...product, id: "p2", sku: "OTHER", barcode: " rice " }), /another product/);
+  assert.throws(() => m.saveProduct(s, { ...product, id: "p2", sku: "123456", barcode: "" }), /another product/);
+  const next = m.saveProduct(s, { ...product, barcode: " 001234 " });
+  assert.equal(next.products[0].barcode, "001234");
+});
