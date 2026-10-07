@@ -1,4 +1,4 @@
-# Stockwell
+# Stockwell - Product Management System
 
 An inventory management system with offline workspaces, Neon-compatible PostgreSQL storage, and Better Auth email/password sessions. The Vercel application does not write database files to its local filesystem.
 
