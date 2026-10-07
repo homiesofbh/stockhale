@@ -88,7 +88,8 @@ export function GlassSelect({
           <ChevronDown size={17} />
         </Select.Icon>
       </Select.Trigger>
-      <Select.Portal container={portalContainer}>
+      {/* Explicit null delays portal rendering; undefined uses document.body. */}
+      <Select.Portal container={portalContainer ?? undefined}>
         <Select.Positioner
           className={styles.positioner}
           sideOffset={8}

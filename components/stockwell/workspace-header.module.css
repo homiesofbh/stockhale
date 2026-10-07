@@ -4,6 +4,13 @@
   z-index: 30;
   min-width: 0;
 }
+.profileMenu .notificationCounter {
+  background: #954655;
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+  min-width: 36px;
+}
 .profileMenu > summary {
   display: flex;
   align-items: center;

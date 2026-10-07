@@ -5,7 +5,8 @@ import { cacheKey } from "@/lib/stockwell/workspace";
 export function AuthPage({ signup = false }: { signup?: boolean }) {
   const [error, setError] = useState(""),
     [busy, setBusy] = useState(false),
-    [invite, setInvite] = useState("");
+    [invite, setInvite] = useState(""),
+    [showPassword, setShowPassword] = useState(false);
   useEffect(() => {
     setInvite(new URLSearchParams(location.search).get("invite") || "");
   }, []);
@@ -88,17 +89,31 @@ export function AuthPage({ signup = false }: { signup?: boolean }) {
             <span>Email</span>
             <input name="email" type="email" required autoComplete="email" />
           </label>
-          <label className="field">
-            <span>Password</span>
-            <input
-              name="password"
-              type="password"
-              required
-              minLength={signup ? 12 : 1}
-              maxLength={128}
-              autoComplete={signup ? "new-password" : "current-password"}
-            />
-          </label>
+          <div className="field">
+            <span>
+              <label htmlFor="auth-password">Password</label>
+            </span>
+            <div className="auth-password-input">
+              <input
+                id="auth-password"
+                name="password"
+                type={showPassword ? "text" : "password"}
+                required
+                minLength={signup ? 12 : 1}
+                maxLength={128}
+                autoComplete={signup ? "new-password" : "current-password"}
+              />
+              <button
+                type="button"
+                className="auth-password-toggle"
+                aria-label={showPassword ? "Hide password" : "Show password"}
+                aria-controls="auth-password"
+                onClick={() => setShowPassword((visible) => !visible)}
+              >
+                {showPassword ? "Hide" : "Show"}
+              </button>
+            </div>
+          </div>
           {signup && <small>At least 12 characters.</small>}
           {error && (
             <p className="form-error" role="alert">

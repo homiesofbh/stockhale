@@ -2717,6 +2717,47 @@ footer span:last-child {
   display: grid;
   gap: 20px;
 }
+.inline-supplier {
+  margin: 16px 0;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 18px;
+  background: rgba(255, 255, 255, 0.2);
+}
+.inline-supplier legend {
+  padding: 0 8px;
+  font-weight: 600;
+  color: var(--deep);
+}
+.auth-password-input {
+  position: relative;
+}
+.auth-card .auth-password-input input:not([type="checkbox"]):not([type="radio"]) {
+  width: 100%;
+  padding-right: 76px;
+}
+.auth-password-toggle {
+  position: absolute;
+  top: 0;
+  right: 4px;
+  bottom: 0;
+  min-width: 64px;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 12px;
+  background: transparent;
+  color: var(--deep);
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.auth-password-toggle:hover {
+  background: rgba(112, 103, 127, 0.08);
+}
+.auth-password-toggle:focus-visible {
+  outline: 2px solid var(--deep);
+  outline-offset: -4px;
+}
 .auth-card .primary {
   margin-top: 8px;
 }

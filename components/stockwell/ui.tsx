@@ -12,15 +12,13 @@ export function Field({
   children,
 }: {
   label: string;
-  children: ReactNode;
+  children: ReactElement<{ "aria-label"?: string }>;
 }) {
   return (
     <label className="field">
       <span>{label}</span>
       {cloneElement(
-        children as ReactElement<{
-          "aria-label"?: string;
-        }>,
+        children,
         {
           "aria-label": label,
         },

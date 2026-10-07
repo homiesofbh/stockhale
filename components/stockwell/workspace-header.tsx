@@ -29,6 +29,10 @@ export function WorkspaceHeader({
   setModule,
   setNotice,
 }: Props) {
+  const readIndex = account.audit.findIndex((event) => event.id === account.readEvent);
+  const unreadCount = account.member.role === "owner"
+    ? readIndex < 0 ? account.audit.length : readIndex
+    : 0;
   return (
     <header className="topbar">
       <a
@@ -74,10 +78,12 @@ export function WorkspaceHeader({
             e.currentTarget.open = false;
         }}
       >
-        <summary className="top-profile" aria-label="Profile and navigation">
+        <summary className="top-profile" aria-label={`Profile and navigation${unreadCount ? `, ${unreadCount} unread notifications` : ""}`}>
           <span>{account.name}</span>
-          <span className="profile-orb">
-            {account.image ? (
+          <span className={`profile-orb ${unreadCount ? styles.notificationCounter : ""}`}>
+            {unreadCount ? (
+              <span aria-hidden="true">{unreadCount > 99 ? "99+" : unreadCount}</span>
+            ) : account.image ? (
               <img src={account.image} alt={account.name} />
             ) : (
               account.name.slice(0, 1)
@@ -120,9 +126,8 @@ export function WorkspaceHeader({
                 }}
               >
                 <Bell size={16} /> Notifications & logs{" "}
-                {account.audit.length &&
-                account.audit[0].id !== account.readEvent ? (
-                  <span className="badge paid">New</span>
+                {unreadCount ? (
+                  <span className="badge paid">{unreadCount} unread</span>
                 ) : null}
               </button>
               <button

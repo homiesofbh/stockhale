@@ -11,12 +11,13 @@ import {
   today,
   uid,
   type Line,
+  type Contact,
   type Store,
   type Trade,
 } from "@/lib/stockwell/model";
 import { Barcode, X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   text: (f: FormData, key: string) => string;
@@ -40,6 +41,8 @@ type Props = {
   setTax: Dispatch<SetStateAction<number>>;
   billTotal: number;
   setModal: Dispatch<SetStateAction<string>>;
+  canAddSupplier: boolean;
+  addSupplier: (supplier: Contact) => void;
 };
 export function TradeForm({
   submit,
@@ -64,11 +67,33 @@ export function TradeForm({
   setTax,
   billTotal,
   setModal,
+  canAddSupplier,
+  addSupplier,
 }: Props) {
+  const [contact, setContact] = useState("");
+  const [addingSupplier, setAddingSupplier] = useState(false);
+  const [supplierError, setSupplierError] = useState("");
+  const [supplier, setSupplier] = useState({ name: "", phone: "", email: "", address: "" });
+  function saveSupplier() {
+    try {
+      const draft = Object.fromEntries(Object.entries(supplier).map(([key, value]) => [key, value.trim()])) as typeof supplier;
+      if (!draft.name) throw new Error("Supplier name is required.");
+      if (draft.email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(draft.email)) throw new Error("Enter a valid supplier email.");
+      const created = { ...draft, id: uid() };
+      addSupplier(created);
+      setContact(created.id);
+      setAddingSupplier(false);
+      setSupplier({ name: "", phone: "", email: "", address: "" });
+      setSupplierError("");
+    } catch (error) {
+      setSupplierError(error instanceof Error ? error.message : "Could not add supplier.");
+    }
+  }
   return (
     <form
       onSubmit={(e) =>
         submit(e, (f) => {
+          if (addingSupplier) throw new Error("Save or cancel the new supplier before saving the purchase.");
           const t: Trade = {
             id: uid(),
             number: "",
@@ -100,8 +125,9 @@ export function TradeForm({
       }
     >
       <div className="form-grid">
-        <Field label={modal === "Purchase" ? "Supplier" : "Customer"}>
-          <GlassSelect name="contact" required={modal === "Purchase"}>
+        <div>
+          <Field label={modal === "Purchase" ? "Supplier" : "Customer"}>
+          <GlassSelect name="contact" value={contact} onValueChange={setContact} required={modal === "Purchase"}>
             <option value="">
               {modal === "Purchase" ? "Select supplier" : "Walk-in customer"}
             </option>
@@ -111,11 +137,40 @@ export function TradeForm({
               </option>
             ))}
           </GlassSelect>
-        </Field>
+          </Field>
+          {modal === "Purchase" && canAddSupplier && !addingSupplier && (
+            <button type="button" className="secondary-button" onClick={() => { setAddingSupplier(true); setSupplierError(""); }}>
+              Add supplier
+            </button>
+          )}
+        </div>
         <Field label="Date">
           <input type="date" name="date" required defaultValue={today()} />
         </Field>
       </div>
+      {modal === "Purchase" && addingSupplier && (
+        <fieldset className="inline-supplier">
+          <legend>New supplier</legend>
+          <div className="form-grid">
+            {(["name", "phone", "email", "address"] as const).map((key) => (
+              <Field key={key} label={key === "name" ? "Supplier name" : key[0].toUpperCase() + key.slice(1)}>
+                <input
+                  type={key === "email" ? "email" : key === "phone" ? "tel" : "text"}
+                  value={supplier[key]}
+                  maxLength={key === "address" ? 500 : 200}
+                  autoFocus={key === "name"}
+                  onChange={(event) => setSupplier({ ...supplier, [key]: event.target.value })}
+                />
+              </Field>
+            ))}
+          </div>
+          {supplierError && <p className="form-error" role="alert">{supplierError}</p>}
+          <div className="form-foot">
+            <button type="button" className="secondary-button" onClick={() => { setAddingSupplier(false); setSupplierError(""); }}>Cancel supplier</button>
+            <button type="button" className="primary" onClick={saveSupplier}>Save supplier</button>
+          </div>
+        </fieldset>
+      )}
       <div className="scan-row">
         <Barcode size={23} />
         <input
@@ -306,7 +361,7 @@ export function TradeForm({
         >
           Cancel
         </button>
-        <button className="primary" disabled={!lines.length}>
+        <button className="primary" disabled={!lines.length || addingSupplier}>
           Save {modal === "Bill" ? "bill" : "purchase"}
         </button>
       </div>

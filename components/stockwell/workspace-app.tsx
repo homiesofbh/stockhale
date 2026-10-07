@@ -755,6 +755,15 @@ export function WorkspaceApp() {
               setTax={setTax}
               billTotal={billTotal}
               setModal={setModal}
+              canAddSupplier={canAccess("Suppliers")}
+              addSupplier={(supplier) => {
+                if (storageError) throw new Error(storageError);
+                const next = { ...s, suppliers: [...s.suppliers, supplier] };
+                workspace.commit(next, "Suppliers", "Supplier added from purchase form.");
+                setS(next);
+                setNotice("Supplier saved and selected.");
+                setError("");
+              }}
             />
           )}
           {modal === "Expense" && (
