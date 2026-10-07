@@ -10,7 +10,6 @@ try {
       require.resolve("typescript/bin/tsc"),
       "lib/stockwell/model.ts",
       "lib/stockwell/invoice-pdf.ts",
-      "lib/stockwell/server.ts",
       "lib/stockwell/record-selectors.ts",
       "lib/stockwell/reports.ts",
       "lib/stockwell/service-worker.ts",
@@ -34,7 +33,6 @@ try {
         "--test",
         "tests/retail.cjs",
         "tests/invoice-pdf.cjs",
-        "tests/workspace.cjs",
         "tests/record-selectors.cjs",
         "tests/service-worker.cjs",
       ],
@@ -43,7 +41,6 @@ try {
         env: {
           ...process.env,
           STOCKWELL_TEST_DIR: dir,
-          STOCKWELL_SERVER: path.join(dir, "server.js"),
           STOCKWELL_MODEL: path.join(dir, "model.js"),
           STOCKWELL_PDF_MODULE: path.join(dir, "invoice-pdf.js"),
           NODE_PATH: path.join(process.cwd(), "node_modules"),

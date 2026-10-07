@@ -100,15 +100,22 @@ export function useWorkspace() {
       setSyncStatus("Device cache could not be loaded");
     }
     void sync();
-    const timer = setInterval(() => void sync(), 15000);
+    const timer = setInterval(() => {
+      if (!document.hidden) void sync();
+    }, 15000);
     const online = () => void sync();
+    const visible = () => {
+      if (!document.hidden) void sync();
+    };
     window.addEventListener("online", online);
+    document.addEventListener("visibilitychange", visible);
     void configureServiceWorker().catch(() => {
       // Workspace records still persist locally if offline asset setup fails.
     });
     return () => {
       clearInterval(timer);
       window.removeEventListener("online", online);
+      document.removeEventListener("visibilitychange", visible);
     };
   }, []);
   function commit(store: Store, module: string, action: string) {

@@ -26,7 +26,7 @@ Source: Abdul Muqeet v1.pdf. Its listed functionality is the scope reference; co
 
 ## Data and calculation behavior
 
-- Records persist in a server-backed SQLite workspace with authenticated accounts and owner-controlled module authority. Browser caches and a durable pending queue support offline use. See [workspace setup and sync behavior](WORKSPACE.md) for deployment, permissions, Resend configuration, and conflict handling.
+- Records persist in a PostgreSQL-backed workspace with Better Auth sessions with authenticated accounts and owner-controlled module authority. Browser caches and a durable pending queue support offline use. See [workspace setup and sync behavior](WORKSPACE.md) for deployment, permissions, Resend configuration, and conflict handling.
 - Start with an empty workspace. No fictional transactions are seeded in the user's workspace.
 - Stock is derived from an append-only movement history. Bills never deduct stock twice through the sales view.
 - Sales profit uses the cost stored on each sales line. Revenue excludes sales tax and is reduced by discounts/returns. Expenses and damaged-stock cost reduce profit.
