@@ -1,4 +1,5 @@
 "use client";
+import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field, Table } from "@/components/stockwell/ui";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
@@ -15,7 +16,7 @@ import {
   type Store,
   type Trade,
 } from "@/lib/stockwell/model";
-import { Barcode, X } from "lucide-react";
+import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
 type Props = {
@@ -30,7 +31,7 @@ type Props = {
   scanInput: RefObject<HTMLInputElement | null>;
   scan: string;
   setScan: Dispatch<SetStateAction<string>>;
-  scanProduct: () => void;
+  scanProduct: (code?: string) => void;
   addLine: (id: string) => void;
   lines: Line[];
   pName: (id: string) => string;
@@ -171,35 +172,7 @@ export function TradeForm({
           </div>
         </fieldset>
       )}
-      <div className="scan-row">
-        <Barcode size={23} />
-        <input
-          ref={scanInput}
-          autoFocus
-          autoComplete="off"
-          value={scan}
-          onChange={(e) => setScan(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === "Enter") {
-              e.preventDefault();
-              scanProduct();
-            }
-          }}
-          placeholder="Scan barcode or enter SKU, then press Enter"
-          aria-label="Barcode scanner input"
-        />
-        <button
-          type="button"
-          className="secondary-button"
-          onClick={scanProduct}
-        >
-          Add item
-        </button>
-      </div>
-      <p className="form-hint">
-        USB and Bluetooth scanners that type the barcode and send Enter are
-        supported. Keep the scan field focused.
-      </p>
+      <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
       <Field label="Or choose a product">
         <GlassSelect value="" onValueChange={(e) => addLine(e)}>
           <option value="">Select product to add</option>

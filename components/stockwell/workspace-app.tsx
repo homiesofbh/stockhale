@@ -228,9 +228,9 @@ export function WorkspaceApp() {
     });
     setError("");
   }
-  function scanProduct() {
+  function scanProduct(code = scan) {
     try {
-      addLine(findProductByCode(s.products, scan).id);
+      addLine(findProductByCode(s.products, code).id);
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not scan product.");
       scanInput.current?.focus();

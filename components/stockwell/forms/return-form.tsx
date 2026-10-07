@@ -1,4 +1,5 @@
 "use client";
+import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import { findProductByCode, recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
@@ -32,9 +33,9 @@ export function ReturnForm({
   const eligible = s.products.filter((p) => returnKind === "Damaged stock" ||
     (returnKind === "Sales return" ? s.invoices : s.purchases)
       .find((t) => t.id === selectedTrade)?.lines.some((l) => l.productId === p.id));
-  function scanProduct() {
+  function scanProduct(code = scan) {
     try {
-      const match = findProductByCode(s.products, scan);
+      const match = findProductByCode(s.products, code);
       if (!eligible.some((p) => p.id === match.id))
         throw new Error("Select an original transaction containing this product first.");
       setProduct(match.id);
@@ -66,12 +67,8 @@ export function ReturnForm({
         )
       }
     >
-      <div className="scan-row mb-10">
-        <input autoComplete="off" aria-label="Return barcode scanner input" placeholder="Scan barcode or enter SKU, then press Enter"
-          value={scan} onChange={(e) => setScan(e.target.value)}
-          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); scanProduct(); } }} />
-        <button type="button" className="secondary-button" onClick={scanProduct}>Select item</button>
-      </div>
+      <BarcodeInput value={scan} onChange={setScan} onScan={scanProduct}
+        label="Return barcode scanner input" action="Select item" />
       {scanError && <p role="alert" className="form-error">{scanError}</p>}
       <div className="form-grid">
         <Field label="Type">

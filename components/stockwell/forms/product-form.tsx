@@ -1,4 +1,5 @@
 "use client";
+import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
@@ -8,7 +9,7 @@ import {
   type Store,
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   editProduct: Product | null;
@@ -27,6 +28,7 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
+  const [barcode, setBarcode] = useState(editProduct?.barcode || "");
   return (
     <form
       onSubmit={(e) =>
@@ -51,7 +53,6 @@ export function ProductForm({
             name="name"
             required
             defaultValue={editProduct?.name}
-            autoFocus
           />
         </Field>
         <Field label="Category">
@@ -64,17 +65,14 @@ export function ProductForm({
         <Field label="SKU / Item code">
           <input name="sku" required defaultValue={editProduct?.sku} />
         </Field>
-        <Field label="Barcode (scan or type)">
-          <input
-            name="barcode"
-            autoComplete="off"
-            defaultValue={editProduct?.barcode}
-            placeholder="Scan a product barcode here"
-            onKeyDown={(e) => {
-              if (e.key === "Enter") e.preventDefault();
-            }}
+        <div className="field">
+          <span>Barcode (scan or type)</span>
+          <BarcodeInput
+            name="barcode" label="Barcode (scan or type)"
+            value={barcode} onChange={setBarcode} onScan={(code) => setBarcode(code.trim())}
+            action="Use code" placeholder="Scan a product barcode here"
           />
-        </Field>
+        </div>
         <Field label="Cost price (PKR)">
           <input
             name="cost"
