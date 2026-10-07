@@ -127,14 +127,14 @@ export function TradeForm({
     >
       <div className="form-grid">
         <div>
-          <Field label={modal === "Purchase" ? "Supplier" : "Customer"}>
+          <Field label={modal === "Purchase" ? "Supplier" : "Customer (walk-in or company)"}>
           <GlassSelect name="contact" value={contact} onValueChange={setContact} required={modal === "Purchase"}>
             <option value="">
               {modal === "Purchase" ? "Select supplier" : "Walk-in customer"}
             </option>
             {(modal === "Purchase" ? s.suppliers : s.customers).map((c) => (
               <option key={c.id} value={c.id}>
-                {c.name}
+                {modal === "Purchase" ? c.name : `Company · ${c.name}`}
               </option>
             ))}
           </GlassSelect>

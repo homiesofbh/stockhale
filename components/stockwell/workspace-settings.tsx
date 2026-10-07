@@ -1,5 +1,6 @@
 "use client";
-import { useState, type FormEvent } from "react";
+import { Check, Copy, Link2 } from "lucide-react";
+import { useRef, useState, type FormEvent } from "react";
 import { modules, type Workspace } from "@/lib/stockwell/workspace";
 export function WorkspaceSettings({
   workspace,
@@ -13,7 +14,20 @@ export function WorkspaceSettings({
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [invite, setInvite] = useState(""),
-    [busy, setBusy] = useState(false);
+    [busy, setBusy] = useState(false),
+    [copied, setCopied] = useState(false);
+  const inviteInput = useRef<HTMLInputElement>(null);
+  async function copyInvite() {
+    try {
+      await navigator.clipboard.writeText(invite);
+      setCopied(true);
+    } catch {
+      setCopied(false);
+      inviteInput.current?.focus();
+      inviteInput.current?.select();
+      setNotice("Link selected. Copy it to share with your team member.");
+    }
+  }
   async function run(body: unknown) {
     setBusy(true);
     setError("");
@@ -22,6 +36,7 @@ export function WorkspaceSettings({
       const result = await action(body);
       setNotice("Workspace updated.");
       if (result.invite) {
+        setCopied(false);
         setInvite(`${location.origin}/team-sign-up?invite=${encodeURIComponent(result.invite)}`);
         setNotice("Team member added. Share the setup link so they can create their password.");
       }
@@ -130,16 +145,19 @@ export function WorkspaceSettings({
             </button>
           </form>
           {invite && (
-            <label className="field">
-              <span>
-                Share this signup link with the member (expires in 7 days)
-              </span>
-              <input
-                readOnly
-                value={invite}
-                onFocus={(e) => e.target.select()}
-              />
-            </label>
+            <section className="team-signup-link" aria-label="Team member signup link">
+              <div className="team-signup-link-heading">
+                <span className="team-link-icon"><Link2 size={18} /></span>
+                <div><h3>Member signup link</h3><p>Share with the assigned member · expires in 7 days</p></div>
+              </div>
+              <div className="team-signup-link-controls">
+                <input ref={inviteInput} aria-label="Member signup link" readOnly value={invite} onFocus={(e) => e.target.select()} />
+                <button type="button" className="secondary-button" onClick={() => void copyInvite()}>
+                  {copied ? <Check size={16} /> : <Copy size={16} />}{copied ? "Copied" : "Copy link"}
+                </button>
+              </div>
+              <small role="status">{copied ? "Link copied. Ready to share." : "The member uses their assigned email and creates their own password."}</small>
+            </section>
           )}
         </section>
       </div>
@@ -190,7 +208,7 @@ export function WorkspaceSettings({
       <section className="panel">
         <h2>Previous browser records</h2>
         <p>
-          Import records from the earlier Stockwell version into a new empty
+          Import records from the earlier StockHale version into a new empty
           workspace. The original browser copy is retained.
         </p>
         <button

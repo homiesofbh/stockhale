@@ -358,7 +358,7 @@ export function WorkspaceApp() {
   if (!ready)
     return (
       <div className="loading">
-        Stockwell<span>Opening your workspace…</span>
+        StockHale<span>Opening your workspace…</span>
       </div>
     );
   if (
@@ -375,7 +375,7 @@ export function WorkspaceApp() {
   if (!account)
     return (
       <div className="loading">
-        Stockwell<a href="/sign-in">Sign in to open your workspace</a>
+        StockHale<a href="/sign-in">Sign in to open your workspace</a>
       </div>
     );
   return (
@@ -620,7 +620,7 @@ export function WorkspaceApp() {
                   )}
                 </div>
                 <footer>
-                  Stockwell <span>Retail Inventory & Operations</span>
+                  StockHale <span>Retail Inventory & Operations</span>
                   <span>All amounts in PKR</span>
                 </footer>
               </>

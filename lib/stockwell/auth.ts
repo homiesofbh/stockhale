@@ -16,7 +16,7 @@ function createAuth(database: BetterAuthOptions["database"]) {
       { status: 503 },
     );
   return betterAuth({
-    appName: "Stockwell",
+    appName: "StockHale",
     secret,
     baseURL,
     trustedOrigins: [new URL(baseURL).origin],

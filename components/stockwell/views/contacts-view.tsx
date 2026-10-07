@@ -36,17 +36,18 @@ export function ContactsView({
       <section className="card">
         <Table
           headers={[
-            "Name",
+            module === "Customers" ? "Company name" : "Supplier name",
             "Contact details",
             "Address",
             "Outstanding balance",
             "",
           ]}
           rows={(module === "Suppliers" ? s.suppliers : s.customers)
-            .filter((c) => matches(c.name, c.phone, c.email, c.address))
+            .filter((c) => matches(c.name, c.phone, c.email, c.address, c.ntn))
             .map((c) => [
               <button className="link" onClick={() => setDetailContact(c)}>
                 {c.name}
+                {c.ntn && <small>NTN: {c.ntn}</small>}
               </button>,
               <>
                 {c.phone || "—"}
@@ -78,8 +79,7 @@ export function ContactsView({
             <div>
               <h2>{detailContact.name}</h2>
               <p>
-                {detailContact.phone} · {detailContact.email} ·{" "}
-                {detailContact.address}
+                {[detailContact.phone, detailContact.email, detailContact.address, detailContact.ntn ? `NTN: ${detailContact.ntn}` : ""].filter(Boolean).join(" · ") || "No optional details provided."}
               </p>
             </div>
             <button

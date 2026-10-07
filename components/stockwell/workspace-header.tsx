@@ -46,7 +46,7 @@ export function WorkspaceHeader({
         <span className="brand-mark">
           <span>S</span>
         </span>
-        STOCKWELL<span className="brand-dot">.</span>
+        STOCKHALE<span className="brand-dot">.</span>
       </a>
       <span className="retail-pill">RETAIL</span>
       <nav className="top-navigation" aria-label="Main navigation">

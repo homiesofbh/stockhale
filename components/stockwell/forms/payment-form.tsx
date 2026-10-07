@@ -154,7 +154,7 @@ export function PaymentForm({
       </div>
       <p className="form-hint">
         Selecting a return credit records a customer refund or money received
-        back from a supplier. Enter a positive amount; Stockwell applies the
+        back from a supplier. Enter a positive amount; StockHale applies the
         correct direction.
       </p>
       <div className="form-foot">

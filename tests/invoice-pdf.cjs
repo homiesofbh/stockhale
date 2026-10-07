@@ -124,3 +124,15 @@ if (process.env.STOCKWELL_PDF_QA) {
     Buffer.from(createInvoicePdf(s, t).output("arraybuffer")),
   );
 }
+
+test("company invoices include optional NTN and work with name-only customer profiles", () => {
+  const { s, t } = fixture();
+  s.customers[0] = { id: "c1", name: "Hale Trading", phone: "", email: "", address: "", ntn: "0012345-6" };
+  const pdf = Buffer.from(createInvoicePdf(s, t, "A4", { compress: false }).output("arraybuffer")).toString("latin1");
+  assert.ok(pdf.includes("Hale Trading"));
+  assert.ok(pdf.includes("NTN: 0012345-6"));
+  delete s.customers[0].ntn;
+  const nameOnly = Buffer.from(createInvoicePdf(s, t, "A4", { compress: false }).output("arraybuffer")).toString("latin1");
+  assert.ok(nameOnly.includes("Hale Trading"));
+  assert.ok(!nameOnly.includes("NTN:"));
+});

@@ -85,7 +85,7 @@ export function InvoicePreview({
             <Boxes size={24} />
           </span>
           <h2>
-            Stockwell<span>.</span>
+            StockHale<span>.</span>
           </h2>
         </div>
         <div className="invoice-title">
@@ -107,7 +107,7 @@ export function InvoicePreview({
               .filter((c) => c.id === invoice.contactId)
               .map((c) => (
                 <p key={c.id}>
-                  {[c.address, c.phone, c.email].filter(Boolean).map((v, i) => (
+                  {[c.address, c.phone, c.email, c.ntn ? `NTN: ${c.ntn}` : ""].filter(Boolean).map((v, i) => (
                     <span key={i}>{v}</span>
                   ))}
                 </p>
@@ -170,7 +170,7 @@ export function InvoicePreview({
         </div>
         <div className="invoice-thanks">
           Thank you for your business.
-          <small>Generated with Stockwell</small>
+          <small>Generated with StockHale</small>
         </div>
       </article>
     </div>

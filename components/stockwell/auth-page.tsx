@@ -50,7 +50,7 @@ export function AuthPage({ signup = false, team = false }: { signup?: boolean; t
     <main className="auth-shell">
       <section className="auth-intro">
         <a className="brand" href="/">
-          STOCKWELL.
+          STOCKHALE.
         </a>
         <span className="eyebrow">YOUR STORE. IN GOOD ORDER.</span>
         <h1>
@@ -73,7 +73,7 @@ export function AuthPage({ signup = false, team = false }: { signup?: boolean; t
         <p>
           {signup
             ? teamSignup ? "Use the email assigned by your workspace owner and create your own password." : "Enter your details to get started."
-            : "Use your account to open Stockwell."}
+            : "Use your account to open StockHale."}
         </p>
         <form onSubmit={submit}>
           {signup && (
@@ -133,7 +133,7 @@ export function AuthPage({ signup = false, team = false }: { signup?: boolean; t
           </button>
         </form>
         <p>
-          {signup ? "Already have an account?" : "New to Stockwell?"}{" "}
+          {signup ? "Already have an account?" : "New to StockHale?"}{" "}
           <a href={signup ? "/sign-in" : "/sign-up"}>
             {signup ? "Sign in" : "Sign up"}
           </a>

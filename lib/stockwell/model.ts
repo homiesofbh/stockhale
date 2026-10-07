@@ -14,6 +14,7 @@ export type Contact = {
   phone: string;
   email: string;
   address: string;
+  ntn?: string;
 };
 export type Line = {
   productId: string;
@@ -180,6 +181,21 @@ export function findProductByCode(products: Product[], input: string): Product {
   if (!matches.length) throw new Error(`No product matches barcode or SKU “${code}”.`);
   if (matches.length > 1) throw new Error("This code matches multiple products. Correct their barcode or SKU before scanning.");
   return matches[0];
+}
+export function saveContact(s: Store, kind: "Customer" | "Supplier", contact: Contact): Store {
+  const c = {
+    ...contact,
+    name: contact.name.trim(),
+    phone: (contact.phone || "").trim(),
+    email: (contact.email || "").trim(),
+    address: (contact.address || "").trim(),
+    ntn: (contact.ntn || "").trim(),
+  };
+  assert(!!c.name, kind === "Customer" ? "Company name is required." : "Supplier name is required.");
+  assert(!c.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email), "Enter a valid email or leave it blank.");
+  const key = kind === "Customer" ? "customers" : "suppliers";
+  return { ...s, [key]: s[key].some((x) => x.id === c.id)
+    ? s[key].map((x) => x.id === c.id ? c : x) : [...s[key], c] };
 }
 export function saveProduct(s: Store, p: Product, opening = 0): Store {
   p = { ...p, sku: p.sku.trim(), barcode: p.barcode.trim() };

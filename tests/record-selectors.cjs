@@ -33,3 +33,9 @@ test("product search matches name, SKU, barcode, category, and clears to all pro
   for (const query of ["basmati", "rice-01", "12345", "grocery", ""]) assert.equal(searchProducts(store.products, query).length, 1);
   assert.equal(searchProducts(store.products, "missing").length, 0);
 });
+
+test("billing search can find a company's optional NTN without changing legacy customers", () => {
+  const companyStore = { ...store, customers: [{ ...store.customers[0], ntn: "0012345-6" }] };
+  assert.equal(filterTrades(companyStore, companyStore.invoices, { ...filters, query: "0012345-6" }).length, 4);
+  assert.equal(filterTrades(store, store.invoices, { ...filters, query: "0012345-6" }).length, 0);
+});

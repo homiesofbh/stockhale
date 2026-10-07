@@ -48,6 +48,7 @@ export function ProductForm({
       }
     >
       <div className="form-grid">
+        <div className="form-wide">
         <Field label="Product name">
           <input
             name="name"
@@ -55,6 +56,7 @@ export function ProductForm({
             defaultValue={editProduct?.name}
           />
         </Field>
+        </div>
         <Field label="Category">
           <GlassSelect name="category" defaultValue={editProduct?.category}>
             {s.categories.map((c) => (
@@ -65,14 +67,6 @@ export function ProductForm({
         <Field label="SKU / Item code">
           <input name="sku" required defaultValue={editProduct?.sku} />
         </Field>
-        <div className="field">
-          <span>Barcode (scan or type)</span>
-          <BarcodeInput
-            name="barcode" label="Barcode (scan or type)"
-            value={barcode} onChange={setBarcode} onScan={(code) => setBarcode(code.trim())}
-            action="Use code" placeholder="Scan a product barcode here"
-          />
-        </div>
         <Field label="Cost price (PKR)">
           <input
             name="cost"
@@ -93,6 +87,7 @@ export function ProductForm({
             defaultValue={editProduct?.price || 0}
           />
         </Field>
+        <div className={editProduct ? "form-wide" : undefined}>
         <Field label="Low-stock threshold">
           <input
             name="low"
@@ -103,6 +98,7 @@ export function ProductForm({
             defaultValue={editProduct?.low ?? 5}
           />
         </Field>
+        </div>
         {!editProduct && (
           <Field label="Opening stock">
             <input
@@ -115,6 +111,14 @@ export function ProductForm({
           </Field>
         )}
       </div>
+        <div className="field">
+          <span>Barcode (scan or type)</span>
+          <BarcodeInput
+            name="barcode" label="Barcode (scan or type)"
+            value={barcode} onChange={setBarcode} onScan={(code) => setBarcode(code.trim())}
+            action="Use code" placeholder="Scan a product barcode here"
+          />
+        </div>
       <p className="form-hint">
         Stock changes after creation are recorded through purchases, billing,
         returns, or stock adjustments.

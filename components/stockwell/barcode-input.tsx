@@ -60,7 +60,7 @@ export function BarcodeInput({
   }, [scannerMode]);
 
   return (
-    <div>
+    <div className="barcode-control">
       <div className="scan-row">
         <input
           ref={ref} name={name} value={value} aria-label={label}
@@ -78,7 +78,7 @@ export function BarcodeInput({
         <button type="button" className="secondary-button" onClick={() => finishScan(value)}>{action}</button>
       </div>
       <button
-        type="button" className="secondary-button" aria-pressed={scannerMode}
+        type="button" className="secondary-button scanner-mode-button" aria-pressed={scannerMode}
         onClick={() => {
           buffer.current = "";
           setScannerMode(!scannerMode);

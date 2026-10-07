@@ -25,6 +25,7 @@ export function invoiceText(s: Store, t: Trade) {
     contact?.phone || "",
     contact?.email || "",
     contact?.address || "",
+    contact?.ntn || "",
     ...t.lines.flatMap((l) => {
       const p = s.products.find((p) => p.id === l.productId);
       return [p?.name || "Unknown item", p?.sku || ""];
@@ -61,10 +62,10 @@ export function createInvoicePdf(
   if (needsUnicodeFont(texts) && !options.unicodeFont)
     throw new Error("Unicode font required to preserve invoice text.");
   if (options.unicodeFont) {
-    doc.addFileToVFS("StockwellUnicode.ttf", options.unicodeFont);
-    doc.addFont("StockwellUnicode.ttf", "StockwellUnicode", "normal");
+    doc.addFileToVFS("StockHaleUnicode.ttf", options.unicodeFont);
+    doc.addFont("StockHaleUnicode.ttf", "StockHaleUnicode", "normal");
   }
-  const font = options.unicodeFont ? "StockwellUnicode" : "helvetica";
+  const font = options.unicodeFont ? "StockHaleUnicode" : "helvetica";
   const size = receipt ? 9 : 10;
   const leading = receipt ? 4.2 : 5;
   let y = margin;
@@ -80,10 +81,10 @@ export function createInvoicePdf(
   };
   setFont();
   doc.setProperties({
-    title: `${t.number} - Stockwell`,
+    title: `${t.number} - StockHale`,
     subject: "Retail invoice",
-    creator: "Stockwell",
-    author: "Stockwell",
+    creator: "StockHale",
+    author: "StockHale",
   });
   const rule = () => {
     doc.setDrawColor(211, 208, 224);
@@ -97,7 +98,7 @@ export function createInvoicePdf(
     currentHeight = maxHeight;
     y = margin;
     setFont(receipt ? 8 : 9);
-    doc.text(`Stockwell / ${t.number} / continued`, margin, y + 3);
+    doc.text(`StockHale / ${t.number} / continued`, margin, y + 3);
     y += receipt ? 9 : 12;
   };
   const ensure = (height: number) => {
@@ -146,7 +147,7 @@ export function createInvoicePdf(
     doc.text(value, x, baseline, { align });
   };
   setFont(receipt ? 20 : 29, true);
-  doc.text("Stockwell", receipt ? width / 2 : margin, y + (receipt ? 7 : 10), {
+  doc.text("StockHale", receipt ? width / 2 : margin, y + (receipt ? 7 : 10), {
     align: receipt ? "center" : "left",
   });
   y += receipt ? 15 : 22;
@@ -165,7 +166,7 @@ export function createInvoicePdf(
   text(t.number.startsWith("PUR") ? "SUPPLIER" : "BILL TO", receipt ? 7 : 8);
   y += 1;
   text(contact?.name || "Walk-in customer", size, true);
-  for (const value of [contact?.address, contact?.phone, contact?.email].filter(
+  for (const value of [contact?.address, contact?.phone, contact?.email, contact?.ntn ? `NTN: ${contact.ntn}` : ""].filter(
     Boolean,
   ))
     text(value!, receipt ? 8 : 9);
@@ -311,7 +312,7 @@ export function createInvoicePdf(
   y += 5;
   setFont(receipt ? 7 : 8);
   doc.setTextColor(126, 121, 141);
-  doc.text("Generated with Stockwell", width / 2, y + 3, { align: "center" });
+  doc.text("Generated with StockHale", width / 2, y + 3, { align: "center" });
   y += 8;
   documentPages.push({ height: currentHeight, used: y });
   for (let page = 1; page <= doc.getNumberOfPages(); page++) {

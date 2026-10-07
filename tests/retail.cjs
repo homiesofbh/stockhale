@@ -265,3 +265,15 @@ test("product codes are normalized and barcode/SKU collisions cannot be saved", 
   const next = m.saveProduct(s, { ...product, barcode: " 001234 " });
   assert.equal(next.products[0].barcode, "001234");
 });
+
+test("company customers require only a name and preserve optional NTN on edits", () => {
+  let s = m.saveContact(m.emptyStore(), "Customer", { id: "company", name: "  Hale Trading  ", phone: "", email: "", address: "" });
+  assert.equal(s.customers[0].name, "Hale Trading");
+  assert.equal(s.customers[0].ntn, "");
+  s = m.saveContact(s, "Customer", { ...s.customers[0], ntn: " 0012345-6 " });
+  assert.equal(s.customers.length, 1);
+  assert.equal(s.customers[0].ntn, "0012345-6");
+  s = m.saveContact(s, "Customer", { ...s.customers[0], ntn: "" });
+  assert.equal(s.customers[0].ntn, "");
+  assert.throws(() => m.saveContact(s, "Customer", { ...s.customers[0], name: " " }), /Company name is required/);
+});

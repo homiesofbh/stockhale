@@ -101,7 +101,7 @@ export function Modal({
     <dialog ref={dialog} onCancel={close} className="modal">
       <div className="modal-head">
         <div>
-          <span className="eyebrow">STOCKWELL / NEW RECORD</span>
+          <span className="eyebrow">STOCKHALE / NEW RECORD</span>
           <h2>{title}</h2>
         </div>
         <button

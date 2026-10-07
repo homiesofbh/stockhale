@@ -2986,3 +2986,64 @@ small, .eyebrow, .text-button { font-size: 12px; }
 .invoice-controls .glass-select { width: auto; min-width: 200px; }
 .field:has(.glass-select[aria-required="true"]) > span:first-child:after { content: " *"; color: #954655; }
 @media (max-width: 600px) { .filters > .glass-select { flex: 1; } .invoice-controls .glass-select { width: 100%; } }
+
+/* Consistent form rhythm, including scanner panels and long team setup links. */
+.modal > form {
+  display: grid;
+  gap: 20px;
+  padding-top: 0;
+}
+.form-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; }
+.form-grid > *, .field, .settings-grid > .panel { min-width: 0; }
+.form-wide { grid-column: 1 / -1; }
+.modal .form-grid { margin: 0; }
+.modal .form-hint { margin: 0; }
+.modal .form-foot { margin: 0; padding-top: 20px; flex-wrap: wrap; }
+.modal .bill-lines, .modal .inline-supplier { margin: 0; }
+.modal .bill-summary { margin-top: 0; }
+.inline-supplier { display: grid; gap: 16px; }
+.barcode-control { display: grid; gap: 12px; min-width: 0; }
+.barcode-control .scan-row { margin: 0; padding: 12px; gap: 10px; border-radius: 16px; }
+.barcode-control .scan-row input { width: auto; min-width: 0; flex: 1 1 180px; }
+.barcode-control .scan-row button { flex: 0 0 auto; }
+.barcode-control .scanner-mode-button { justify-self: start; }
+.barcode-control .form-hint { margin: 0; }
+.barcode-control .scanner-mode-button[aria-pressed="true"] { background: #ded4e9; border-color: #ae9bc1; }
+.settings-grid { align-items: start; margin-bottom: 24px; }
+.settings-grid > .panel { margin-bottom: 0; }
+.settings-page .member-authority { gap: 16px; }
+.settings-page .member-authority p { margin: 0; }
+.permission-grid label { min-width: 0; line-height: 1.5; }
+.permission-grid input { flex: 0 0 18px; padding: 0; }
+.team-signup-link {
+  display: grid;
+  gap: 14px;
+  margin-top: 24px;
+  padding: 18px;
+  border: 1px solid #c6b7d7;
+  border-radius: 18px;
+  background: #cfc1df33;
+}
+.team-signup-link-heading { display: flex; align-items: center; gap: 12px; }
+.team-link-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 12px; background: #ffffff80; color: var(--deep); }
+.team-signup-link h3 { margin: 0; font-size: 14px; font-weight: 600; }
+.settings-page .team-signup-link p { margin: 4px 0 0; font-size: 12px; line-height: 1.5; color: #746a80; }
+.team-signup-link-controls { display: flex; gap: 10px; min-width: 0; }
+.team-signup-link-controls input { width: 0; flex: 1 1 0; min-width: 0; font-size: 12px; text-overflow: ellipsis; }
+.team-signup-link-controls button { display: inline-flex; align-items: center; justify-content: center; gap: 8px; flex: 0 0 auto; white-space: nowrap; }
+.team-signup-link small { color: #746a80; font-size: 12px; line-height: 1.6; }
+.team-signup-link button:focus-visible { outline: 2px solid var(--deep); outline-offset: 3px; }
+@media (max-width: 600px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .modal { padding: 22px 18px; }
+  .modal > form { gap: 18px; }
+  .modal .form-foot > button { flex: 1 1 120px; }
+  .barcode-control .scan-row input { width: 100%; flex-basis: 100%; font-size: 16px; }
+  .barcode-control .scan-row button { width: 100%; }
+  .settings-page .panel { padding: 20px; }
+  .permission-grid { gap: 12px 10px; }
+  .team-signup-link { padding: 16px; }
+  .team-signup-link-controls { flex-direction: column; }
+  .team-signup-link-controls input { width: 100%; flex: auto; font-size: 16px; }
+  .team-signup-link-controls button { width: 100%; }
+}

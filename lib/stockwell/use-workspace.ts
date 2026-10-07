@@ -178,7 +178,7 @@ export function useWorkspace() {
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = "stockwell-pending-changes.json";
+    a.download = "stockhale-pending-changes.json";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

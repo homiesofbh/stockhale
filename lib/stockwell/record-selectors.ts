@@ -34,9 +34,8 @@ export function filterTrades(
 ) {
   const contacts = supplier ? store.suppliers : store.customers;
   return trades.filter((trade) => {
-    const contact =
-      contacts.find((item) => item.id === trade.contactId)?.name ||
-      "Walk-in customer";
+    const profile = contacts.find((item) => item.id === trade.contactId);
+    const contact = profile?.name || "Walk-in customer";
     const products = trade.lines.map(
       (line) =>
         store.products.find((item) => item.id === line.productId)?.name ||
@@ -44,7 +43,7 @@ export function filterTrades(
     );
     return (
       periodMatch(trade.date, filters.from, filters.to) &&
-      matchesQuery(filters.query, trade.number, contact, ...products) &&
+      matchesQuery(filters.query, trade.number, contact, profile?.ntn, ...products) &&
       (filters.status === "All" ||
         getPaymentStatus(store, trade) === filters.status) &&
       (filters.paymentMethod === "All" ||

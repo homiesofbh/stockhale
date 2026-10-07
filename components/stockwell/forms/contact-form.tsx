@@ -1,7 +1,7 @@
 "use client";
 import { type Module } from "@/components/stockwell/navigation";
 import { Field } from "@/components/stockwell/ui";
-import { uid, type Contact, type Store } from "@/lib/stockwell/model";
+import { saveContact, uid, type Contact, type Store } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { type FormEvent } from "react";
 type Props = {
@@ -34,24 +34,16 @@ export function ContactForm({
             phone: text(f, "phone"),
             email: text(f, "email"),
             address: text(f, "address"),
+            ntn: module === "Suppliers" ? editContact?.ntn : text(f, "ntn"),
           };
-          const key = module === "Suppliers" ? "suppliers" : "customers";
-          if (!c.name) throw new Error("Name is required.");
-          commit(
-            {
-              ...s,
-              [key]: editContact
-                ? s[key].map((x) => (x.id === c.id ? c : x))
-                : [...s[key], c],
-            },
-            "Contact saved.",
-          );
+          commit(saveContact(s, module === "Suppliers" ? "Supplier" : "Customer", c), "Contact saved.");
           if (detailContact?.id === c.id) setDetailContact(c);
         })
       }
     >
       <div className="form-grid">
-        <Field label="Name">
+        <div className="form-wide">
+        <Field label={module === "Suppliers" ? "Supplier name" : "Company name"}>
           <input
             name="name"
             required
@@ -59,16 +51,21 @@ export function ContactForm({
             autoFocus
           />
         </Field>
-        <Field label="Phone">
+        </div>
+        <Field label="Phone (optional)">
           <input name="phone" type="tel" defaultValue={editContact?.phone} />
         </Field>
-        <Field label="Email">
+        <Field label="Email (optional)">
           <input name="email" type="email" defaultValue={editContact?.email} />
         </Field>
-        <Field label="Address">
+        <Field label="Address (optional)">
           <input name="address" defaultValue={editContact?.address} />
         </Field>
+        {module === "Customers" && <Field label="NTN (optional)">
+          <input name="ntn" defaultValue={editContact?.ntn || ""} />
+        </Field>}
       </div>
+      {module === "Customers" && <p className="form-hint">Only the company name is required. For walk-in sales, choose Walk-in customer when creating a bill; no customer profile is needed.</p>}
       <div className="form-foot">
         <button className="primary">Save profile</button>
       </div>
