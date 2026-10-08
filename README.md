@@ -8,6 +8,7 @@ Requires Node 24+ and PostgreSQL (Neon or a local database).
 
 1. Install dependencies with `pnpm install`.
 2. Copy `.env.example` to `.env.local`. Set `DATABASE_URL`, `BETTER_AUTH_SECRET` (at least 32 characters), and `BETTER_AUTH_URL`.
+   Set `DISABLE_PUBLIC_SIGNUP=true` to hide and reject public workspace signup while keeping invited team member signup available.
 3. Run `pnpm db:migrate` to create Better Auth and workspace tables.
 4. Run `pnpm dev`, then create an account at `/sign-up`.
 

@@ -5,7 +5,11 @@ import { scryptSync, timingSafeEqual } from "node:crypto";
 import type { PoolClient } from "pg";
 import { db } from "./database";
 
-function createAuth(database: BetterAuthOptions["database"]) {
+function publicSignupDisabled() {
+  return process.env.DISABLE_PUBLIC_SIGNUP === "true";
+}
+
+function createAuth(database: BetterAuthOptions["database"], allowTeamSignup = false) {
   const secret = process.env.BETTER_AUTH_SECRET;
   const baseURL = process.env.BETTER_AUTH_URL || process.env.STOCKWELL_ORIGIN;
   if (!secret || secret.length < 32 || !baseURL)
@@ -32,6 +36,9 @@ function createAuth(database: BetterAuthOptions["database"]) {
     },
     emailAndPassword: {
       enabled: true,
+      // Better Auth blocks its sign-up API when public signup is disabled.
+      // Invited team members use a separately scoped instance that permits signup.
+      disableSignUp: publicSignupDisabled() && !allowTeamSignup,
       minPasswordLength: 12,
       maxPasswordLength: 128,
       password: {
@@ -57,7 +64,7 @@ function createAuth(database: BetterAuthOptions["database"]) {
 }
 
 let auth: ReturnType<typeof createAuth> | undefined;
-export function getAuth(client?: PoolClient) {
+export function getAuth(client?: PoolClient, allowTeamSignup = false) {
   if (!client) return (auth ??= createAuth(db()));
   // Account, credential, session and workspace creation share one transaction.
   // The outer transaction owns this connection and its release/commit lifecycle.
@@ -78,5 +85,5 @@ export function getAuth(client?: PoolClient) {
     }),
     type: "postgres",
     transaction: false,
-  });
+  }, allowTeamSignup);
 }

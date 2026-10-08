@@ -1,8 +1,8 @@
-import { randomBytes, randomUUID, createHash } from "node:crypto";
-import { emptyStore } from "./model";
-import { verifyChange, modules, type Member } from "./workspace";
-import { query, transaction } from "./database";
+import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getAuth } from "./auth";
+import { query, transaction } from "./database";
+import { emptyStore } from "./model";
+import { modules, verifyChange, type Member } from "./workspace";
 export { db } from "./database";
 type Row = Record<string, any>;
 const row = async (sql: string, ...args: unknown[]) =>
@@ -131,6 +131,12 @@ async function readSnapshot(user: Row) {
   };
 }
 export async function authenticate(body: Row, request: Request) {
+  const publicSignupDisabled =
+    process.env.DISABLE_PUBLIC_SIGNUP === "true";
+  if (body.action === "signup" && publicSignupDisabled)
+    throw Object.assign(new Error("New account signup is currently unavailable."), {
+      status: 403,
+    });
   const mail = email(body.email);
   if (
     typeof body.password !== "string" ||
@@ -157,7 +163,7 @@ export async function authenticate(body: Row, request: Request) {
       { status: 429 },
     );
   return transaction(async (client) => {
-    const auth = getAuth(client);
+    const auth = getAuth(client, body.action === "team-signup");
     if (body.action !== "signup" && body.action !== "team-signup") {
       const result = await auth.api.signInEmail({
         body: { email: mail, password },
