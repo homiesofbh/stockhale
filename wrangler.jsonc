@@ -31,6 +31,7 @@
     }
   ],
   "vars": {
+    "BETTER_AUTH_SECRET": "gvM0Q26Kfi0MiLhO2r/7wOXVeKSilUk3q/0qDk9nhg/XEoHiCLRYT02FtjREdDOE",
     "BETTER_AUTH_URL": "https://stockhale.app",
     "DISABLE_PUBLIC_SIGNUP": "false",
     "STOCKHALE_RUNTIME": "cloudflare"
