@@ -75,6 +75,10 @@ web_modules/
 .parcel-cache
 
 # Next.js build output
+.open-next/
+.wrangler/
+.dev.vars
+.dev.vars.*
 .next
 out
 
@@ -368,3 +372,4 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+.neon

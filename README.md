@@ -14,6 +14,38 @@ Requires Node 24+ and PostgreSQL (Neon or a local database).
 
 No demo account is seeded. Sign-in requires an account created in the configured database.
 
+## Deploy on Cloudflare Workers with Neon and Better Auth
+
+`wrangler.jsonc` targets the `stockhale` Worker and `https://stockhale.dev`.
+`open-next.config.ts` uses an R2 incremental cache. The existing self-managed
+Better Auth implementation uses Neon PostgreSQL; enabling managed Neon Auth
+is not required.
+
+1. Add `stockhale.dev` as an active zone in your Cloudflare account and configure
+   the registrar's nameservers as Cloudflare instructs.
+2. Run `pnpm exec wrangler login`, then
+   `pnpm exec wrangler r2 bucket create stockhale-opennext-cache` once.
+3. Store the Neon pooled connection string with
+   `pnpm exec wrangler secret put DATABASE_URL`. Store a stable, random secret
+   of at least 32 characters with `pnpm exec wrangler secret put BETTER_AUTH_SECRET`.
+   Enter values at the prompts; never commit secrets to Wrangler configuration.
+4. Configure your local `.env.local` for the intended Neon branch and run
+   `pnpm db:migrate`. Use `DATABASE_MIGRATION_URL` for a direct migration connection.
+5. Run `pnpm deploy`. Wrangler binds the custom domain configured in the file.
+   Verify signup, signin, session restoration, and workspace writes on the deployed Worker.
+
+For Worker preview, put `DATABASE_URL`, `BETTER_AUTH_SECRET`,
+`BETTER_AUTH_URL=http://localhost:8787`, and `STOCKHALE_RUNTIME=cloudflare` in
+the ignored `.dev.vars` file, using an isolated Neon development branch. Run
+`pnpm preview`; update the local auth URL if Wrangler uses another port.
+Use `.env.local` and `pnpm dev` for ordinary Next.js development.
+Run `pnpm cf-typegen` to generate Cloudflare binding types.
+
+Optional mail delivery needs `RESEND_API_KEY` and `RESEND_FROM` Worker secrets.
+Workers drain the durable email outbox through API activity instead of a persistent timer.
+The configuration alone does not provision Neon, apply migrations, create the R2
+bucket, configure registrar DNS, or deploy the Worker.
+
 ## Deploy on Vercel with Neon
 
 1. Create a Neon project, starting on its Free plan. Choose a database region close to the Vercel function region. Leave scale-to-zero enabled.
@@ -28,9 +60,9 @@ Better Auth runs inside `/api/workspace` through its server APIs. This keeps exi
 
 ## Linked Neon project
 
-This directory is linked to `bitter-voice-14099151`, branch `production`. [neon.ts](neon.ts) declares the private `invoices` bucket using the requested `preview.buckets` syntax. The CLI currently accepts this syntax and recommends the top-level `buckets` key for new configurations.
+This directory is linked to `lucky-butterfly-25452958` (Stockhale), branch `production`. [neon.ts](neon.ts) declares the private `invoices` bucket using the requested `preview.buckets` syntax.
 
-Run `neon deploy` to apply the backend policy and refresh Neon variables in `.env.local`. The `.neon` context and `.env.local` are ignored by Git. Local Better Auth configuration is also in `.env.local`; use the production website origin when configuring Vercel. Neon deployment does not publish the frontend or update Vercel environment variables.
+Run `neon deploy` to apply the backend policy and refresh Neon variables in `.env`. The `.neon` context and `.env` are ignored by Git. Local Better Auth configuration is also in `.env`; use `https://stockhale.dev` for the production website origin. Neon deployment does not publish the frontend or update hosting environment variables.
 
 ## Existing SQLite data
 
@@ -78,5 +110,3 @@ when it regains focus. The browser controls the final save location and may ask 
 the app cannot verify a completed save or run downloads when closed. If a download is
 cancelled or blocked, retry from Settings. These workbooks are downloadable copies; there
 is currently no Excel restore/import flow.
-
-
