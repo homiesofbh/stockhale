@@ -7,6 +7,7 @@ export type Product = {
   cost: number;
   price: number;
   low: number;
+  unit?: string;
 };
 export type Contact = {
   id: string;
@@ -18,6 +19,7 @@ export type Contact = {
 };
 export type Line = {
   productId: string;
+  unit?: string;
   qty: number;
   price: number;
   cost: number;
@@ -32,9 +34,16 @@ export type Trade = {
   discount: number;
   tax: number;
   paid: number;
-  method: "Cash" | "Bank";
+  method: string;
   head: string;
+  walkInName?: string;
+  walkInCompany?: string;
+  walkInPhone?: string;
+  chequeNumber?: string;
+  chequeBank?: string;
+  chequeDate?: string;
 };
+export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet" };
 export type Movement = {
   id: string;
   productId: string;
@@ -52,9 +61,13 @@ export type Payment = {
   contactId: string;
   tradeId: string;
   amount: number;
-  method: "Cash" | "Bank";
+  method: string;
   head: string;
   notes: string;
+  chequeNumber?: string;
+  chequeBank?: string;
+  chequeDate?: string;
+  chequeStatus?: "pending" | "cleared" | "bounced";
 };
 export type Expense = {
   id: string;
@@ -62,7 +75,7 @@ export type Expense = {
   category: string;
   head: string;
   amount: number;
-  method: "Cash" | "Bank";
+  method: string;
   notes: string;
 };
 export type ReturnRecord = {
@@ -91,6 +104,8 @@ export type Store = {
   payments: Payment[];
   expenses: Expense[];
   returns: ReturnRecord[];
+  financialAccounts?: FinancialAccount[];
+  units?: string[];
 };
 export const today = () => new Date().toLocaleDateString("en-CA");
 export const uid = () => crypto.randomUUID();
@@ -130,6 +145,12 @@ export const emptyStore = (): Store => ({
   payments: [],
   expenses: [],
   returns: [],
+  financialAccounts: [
+    { id: "jazzcash", name: "JazzCash", type: "Wallet" },
+    { id: "easypaisa", name: "EasyPaisa", type: "Wallet" },
+    { id: "nayapay", name: "NayaPay", type: "Wallet" },
+  ],
+  units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"],
 });
 export const stock = (s: Store, id: string) =>
   round(
@@ -149,7 +170,7 @@ export const paid = (s: Store, t: Trade) =>
   round(
     t.paid +
       s.payments
-        .filter((p) => p.tradeId === t.id)
+        .filter((p) => p.tradeId === t.id && (!p.chequeStatus || p.chequeStatus === "cleared"))
         .reduce((n, p) => n + p.amount, 0),
   );
 // A negative balance is a credit owed back to the customer, or due back from the supplier.
@@ -198,7 +219,7 @@ export function saveContact(s: Store, kind: "Customer" | "Supplier", contact: Co
     ? s[key].map((x) => x.id === c.id ? c : x) : [...s[key], c] };
 }
 export function saveProduct(s: Store, p: Product, opening = 0): Store {
-  p = { ...p, sku: p.sku.trim(), barcode: p.barcode.trim() };
+  p = { ...p, sku: p.sku.trim(), barcode: p.barcode.trim(), unit: (p.unit || "piece").trim() };
   assert(
     !!p.name.trim() && !!p.sku.trim(),
     "Product name and SKU are required.",
@@ -292,6 +313,12 @@ export function recordTrade(
     "Date and account head are required.",
   );
   assert(
+    t.method === "Cash" || t.method === "Bank" || t.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === t.method),
+    "Select a valid payment method.",
+  );
+  if (t.method === "Cheque")
+    assert(!!t.chequeNumber?.trim() && !!t.chequeBank?.trim() && !!t.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
+  assert(
     kind === "Sale"
       ? !t.contactId || s.customers.some((c) => c.id === t.contactId)
       : s.suppliers.some((c) => c.id === t.contactId),
@@ -309,8 +336,8 @@ export function recordTrade(
     "Paid amount must be between zero and the net total.",
   );
   assert(
-    kind !== "Sale" || !!t.contactId || t.paid === total(t),
-    "Select a customer for a credit or partially paid bill.",
+    kind !== "Sale" || !!t.contactId || t.paid === total(t) || !!(t.walkInName?.trim() || t.walkInCompany?.trim() || t.walkInPhone?.trim()),
+    "Enter a walk-in customer name, company, or contact number for a credit bill.",
   );
   const demand = new Map<string, number>();
   t.lines.forEach((l) => {
@@ -337,6 +364,7 @@ export function recordTrade(
     ...t,
     createdAt: Date.now(),
     number: `${prefix}-${String(list.length + 1).padStart(5, "0")}`,
+    paid: t.method === "Cheque" ? 0 : t.paid,
   };
   const moves: Movement[] = trade.lines.map((l) => ({
     id: uid(),
@@ -351,6 +379,9 @@ export function recordTrade(
     ...s,
     [kind === "Sale" ? "invoices" : "purchases"]: [...list, trade],
     movements: [...s.movements, ...moves],
+    payments: t.method === "Cheque" && t.paid > 0
+      ? [...s.payments, { id: uid(), date: t.date, kind: kind === "Sale" ? "Customer" : "Supplier", contactId: t.contactId, tradeId: trade.id, amount: t.paid, method: "Cheque", head: t.head, notes: "Cheque received with bill", chequeNumber: t.chequeNumber, chequeBank: t.chequeBank, chequeDate: t.chequeDate, chequeStatus: "pending" as const }]
+      : s.payments,
     products:
       kind === "Purchase"
         ? s.products.map((p) => {
@@ -378,13 +409,29 @@ export function recordPayment(s: Store, p: Payment): Store {
     "Payment must be greater than zero.",
   );
   const due = t ? balance(s, t) : 0;
+  const pendingCheques = s.payments
+    .filter((payment) => payment.tradeId === p.tradeId && payment.chequeStatus === "pending")
+    .reduce((sum, payment) => sum + Math.abs(payment.amount), 0);
   assert(
-    (due > 0 && p.amount > 0 && p.amount <= due) ||
+    (due > 0 && p.amount > 0 && p.amount + pendingCheques <= due) ||
       (due < 0 && p.amount < 0 && p.amount >= due),
     "Payment or credit settlement exceeds the remaining balance.",
   );
   assert(s.heads.includes(p.head), "Select a valid account head.");
+  assert(
+    p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === p.method),
+    "Select a valid payment method.",
+  );
+  if (p.method === "Cheque") {
+    assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
+    p.chequeStatus = "pending";
+  }
   return { ...s, payments: [...s.payments, { ...p, createdAt: Date.now() }] };
+}
+export function clearCheque(s: Store, paymentId: string): Store {
+  const payment = s.payments.find((p) => p.id === paymentId && p.chequeStatus === "pending");
+  assert(!!payment, "This cheque is no longer pending.");
+  return { ...s, payments: s.payments.map((p) => p.id === paymentId ? { ...p, chequeStatus: "cleared", date: today() } : p) };
 }
 export function recordReturn(s: Store, r: ReturnRecord): Store {
   assert(
@@ -488,7 +535,7 @@ export function financialRows(s: Store): FinancialRow[] {
       method,
       amount: round(amount),
       cash: method === "Cash" ? round(flow) : 0,
-      bank: method === "Bank" ? round(flow) : 0,
+      bank: method !== "Cash" && method !== "Credit adjustment" ? round(flow) : 0,
       contactId,
     });
   s.invoices.forEach((t) =>
@@ -526,7 +573,7 @@ export function financialRows(s: Store): FinancialRow[] {
       -e.amount,
     ),
   );
-  s.payments.forEach((p) =>
+  s.payments.filter((p) => !p.chequeStatus || p.chequeStatus === "cleared").forEach((p) =>
     push(
       p.date,
       (p.kind === "Customer" ? s.invoices : s.purchases).find(

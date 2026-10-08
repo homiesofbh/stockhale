@@ -2,12 +2,17 @@
 import { Check, Copy, Link2 } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { modules, type Workspace } from "@/lib/stockwell/workspace";
+import { uid, type Store } from "@/lib/stockwell/model";
 export function WorkspaceSettings({
   workspace,
   action,
+  store,
+  commitStore,
 }: {
   workspace: Workspace;
   action: (body: unknown) => Promise<any>;
+  store: Store;
+  commitStore: (store: Store) => void;
 }) {
   const [name, setName] = useState(workspace.name),
     [image, setImage] = useState(workspace.image),
@@ -17,6 +22,8 @@ export function WorkspaceSettings({
     [busy, setBusy] = useState(false),
     [copied, setCopied] = useState(false);
   const inviteInput = useRef<HTMLInputElement>(null);
+  const [accountName, setAccountName] = useState("");
+  const [accountType, setAccountType] = useState<"Bank" | "Wallet">("Bank");
   async function copyInvite() {
     try {
       await navigator.clipboard.writeText(invite);
@@ -204,6 +211,28 @@ export function WorkspaceSettings({
             )}
           </form>
         ))}
+      </section>
+      <section className="panel">
+        <h2>Bank and wallet accounts</h2>
+        <p>Add each account your business uses. These appear as payment methods when recording bills, payments, and expenses.</p>
+        <form className="form-grid" onSubmit={(e) => {
+          e.preventDefault();
+          const name = accountName.trim();
+          if (!name) return;
+          const accounts = store.financialAccounts || [];
+          if (accounts.some((account) => account.name.toLowerCase() === name.toLowerCase())) {
+            setError("That payment account already exists.");
+            return;
+          }
+          commitStore({ ...store, financialAccounts: [...accounts, { id: uid(), name, type: accountType }] });
+          setAccountName("");
+          setNotice("Payment account added.");
+        }}>
+          <label className="field"><span>Account name</span><input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="e.g. HBL Business Account" maxLength={120} required /></label>
+          <label className="field"><span>Account type</span><select value={accountType} onChange={(e) => setAccountType(e.target.value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></select></label>
+          <button className="primary" disabled={busy}>Add account</button>
+        </form>
+        <div className="permission-grid">{(store.financialAccounts || []).map((account) => <div key={account.id}>{account.name} · {account.type}<button type="button" className="link" onClick={() => commitStore({ ...store, financialAccounts: (store.financialAccounts || []).filter((item) => item.id !== account.id) })}>Remove</button></div>)}</div>
       </section>
       <section className="panel">
         <h2>Previous browser records</h2>

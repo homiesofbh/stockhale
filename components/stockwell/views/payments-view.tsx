@@ -1,6 +1,6 @@
 "use client";
 import { Badge, Stat, Table } from "@/components/stockwell/ui";
-import { money, type Store } from "@/lib/stockwell/model";
+import { clearCheque, money, type Store } from "@/lib/stockwell/model";
 type Props = {
   receivables: number;
   payables: number;
@@ -10,6 +10,7 @@ type Props = {
   cName: (id: string, supplier?: boolean) => string;
   inRange: (date: string) => boolean;
   matches: (...values: unknown[]) => boolean;
+  commit: (next: Store, message: string) => void;
 };
 export function PaymentsView({
   receivables,
@@ -20,6 +21,7 @@ export function PaymentsView({
   cName,
   inRange,
   matches,
+  commit,
 }: Props) {
   return (
     <>
@@ -54,18 +56,23 @@ export function PaymentsView({
             "Type",
             "Amount",
             "Method",
+            "Cheque details",
             "Account head",
+            "Action",
           ]}
           rows={[
             ...s.invoices
               .filter((t) => t.paid > 0)
               .map((t) => ({
                 date: t.date,
-                contact: cName(t.contactId),
+                contact: t.contactId ? cName(t.contactId) : [t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer",
                 reference: t.number,
                 kind: "Customer",
                 amount: t.paid,
                 method: t.method,
+                cheque: "",
+                chequeStatus: undefined,
+                paymentId: "",
                 head: t.head,
               })),
             ...s.purchases
@@ -77,6 +84,9 @@ export function PaymentsView({
                 kind: "Supplier",
                 amount: t.paid,
                 method: t.method,
+                cheque: "",
+                chequeStatus: undefined,
+                paymentId: "",
                 head: t.head,
               })),
             ...s.payments.map((p) => ({
@@ -87,14 +97,17 @@ export function PaymentsView({
                   ?.number || "",
               kind: p.kind,
               amount: p.amount,
-              method: p.method,
+              method: p.chequeStatus ? `Cheque ${p.chequeStatus}` : p.method,
+              cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}` : "",
+              chequeStatus: p.chequeStatus,
+              paymentId: p.id,
               head: p.head,
             })),
           ]
             .filter(
               (p) =>
                 inRange(p.date) &&
-                matches(p.contact, p.reference, p.kind, p.head),
+                matches(p.contact, p.reference, p.kind, p.head, p.cheque),
             )
             .sort((a, b) => b.date.localeCompare(a.date))
             .map((p) => [
@@ -106,7 +119,9 @@ export function PaymentsView({
               </Badge>,
               money(p.amount),
               p.method,
+              p.cheque,
               p.head,
+              p.chequeStatus === "pending" ? <button className="link" onClick={() => commit(clearCheque(s, p.paymentId), "Cheque cleared. Bill balance updated.")}>Mark cleared</button> : "",
             ])}
         />
       </section>

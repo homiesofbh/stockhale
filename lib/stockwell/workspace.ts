@@ -65,22 +65,24 @@ export const cacheKey = (id: string) => `stockwell.workspace.${id}`;
 export const collectionModules: Record<string, string[]> = {
   products: ["Inventory"],
   categories: ["Inventory"],
+  units: ["Inventory"],
   movements: ["Inventory", "Purchases", "Billing", "Returns & Damage"],
   customers: ["Customers"],
   suppliers: ["Suppliers"],
   heads: ["Accounts Heads"],
+  financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],
   invoices: ["Billing"],
-  payments: ["Payments"],
+  payments: ["Payments", "Billing", "Purchases"],
   expenses: ["Expenses"],
   returns: ["Returns & Damage"],
 };
 export function changesBetween(before: Store, after: Store) {
   return Object.keys(collectionModules).filter(
     (k) =>
-      JSON.stringify(before[k as keyof Store]) !==
-      JSON.stringify(after[k as keyof Store]),
+      JSON.stringify(before[k as keyof Store] ?? []) !==
+      JSON.stringify(after[k as keyof Store] ?? []),
   );
 }
 export function verifyChange(before: Store, after: Store, module: string) {
@@ -93,7 +95,7 @@ export function verifyChange(before: Store, after: Store, module: string) {
   )
     throw new Error("Invalid records.");
   for (const key of Object.keys(collectionModules))
-    if (!Array.isArray(after[key as keyof Store]))
+    if (after[key as keyof Store] !== undefined && !Array.isArray(after[key as keyof Store]))
       throw new Error("Invalid record collection.");
   const changed = changesBetween(before, after);
   if (!changed.length) throw new Error("No records changed.");

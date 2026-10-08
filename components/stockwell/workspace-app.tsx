@@ -220,6 +220,7 @@ export function WorkspaceApp() {
             ...old,
             {
               productId: id,
+              unit: p.unit || "piece",
               qty: 1,
               price: modal === "Purchase" ? p.cost : p.price,
               cost: p.cost,
@@ -289,7 +290,7 @@ export function WorkspaceApp() {
         {t.number}
         <small>{t.date}</small>
       </button>,
-      cName(t.contactId, supplier),
+      t.contactId ? cName(t.contactId, supplier) : [t.walkInName, t.walkInCompany].filter(Boolean).join(" · ") || "Walk-in customer",
       `${t.lines.reduce((n, l) => n + l.qty, 0)} units`,
       money(total(t)),
       <Badge tone={balance(s, t) === 0 ? "green" : "amber"}>
@@ -401,6 +402,11 @@ export function WorkspaceApp() {
               <WorkspaceSettings
                 workspace={account}
                 action={workspace.action}
+                store={s}
+                commitStore={(next) => {
+                  workspace.commit(next, "Accounts Heads", "Payment accounts updated.");
+                  setS(next);
+                }}
               />
             ) : module === "Notifications" &&
               account.member.role === "owner" ? (
@@ -583,6 +589,7 @@ export function WorkspaceApp() {
                           cName={cName}
                           inRange={inRange}
                           matches={matches}
+                          commit={commit}
                         />
                       )}
                       {(module === "Customers" || module === "Suppliers") && (

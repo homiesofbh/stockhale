@@ -72,6 +72,7 @@ export function TradeForm({
   addSupplier,
 }: Props) {
   const [contact, setContact] = useState("");
+  const [method, setMethod] = useState("Cash");
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [supplierError, setSupplierError] = useState("");
   const [supplier, setSupplier] = useState({ name: "", phone: "", email: "", address: "" });
@@ -104,8 +105,14 @@ export function TradeForm({
             discount,
             tax,
             paid: num(f, "paid"),
-            method: text(f, "method") as "Cash" | "Bank",
+            method: text(f, "method"),
             head: text(f, "head"),
+            chequeNumber: text(f, "chequeNumber"),
+            chequeBank: text(f, "chequeBank"),
+            chequeDate: text(f, "chequeDate"),
+            walkInName: modal === "Bill" && !text(f, "contact") ? text(f, "walkInName") : "",
+            walkInCompany: modal === "Bill" && !text(f, "contact") ? text(f, "walkInCompany") : "",
+            walkInPhone: modal === "Bill" && !text(f, "contact") ? text(f, "walkInPhone") : "",
           };
           const next = recordTrade(
             s,
@@ -139,6 +146,13 @@ export function TradeForm({
             ))}
           </GlassSelect>
           </Field>
+          {modal === "Bill" && !contact && (
+            <>
+              <Field label="Walk-in customer name (optional)"><input name="walkInName" maxLength={200} /></Field>
+              <Field label="Company name (optional)"><input name="walkInCompany" maxLength={200} /></Field>
+              <Field label="Contact number (optional)"><input name="walkInPhone" type="tel" maxLength={40} /></Field>
+            </>
+          )}
           {modal === "Purchase" && canAddSupplier && !addingSupplier && (
             <button type="button" className="secondary-button" onClick={() => { setAddingSupplier(true); setSupplierError(""); }}>
               Add supplier
@@ -197,7 +211,7 @@ export function TradeForm({
               <>
                 {pName(l.productId)}
                 <small>
-                  {s.products.find((p) => p.id === l.productId)?.sku}
+                  {s.products.find((p) => p.id === l.productId)?.sku} · {l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece"}
                 </small>
               </>,
               <input
@@ -249,7 +263,7 @@ export function TradeForm({
                 <X size={16} />
               </button>,
             ])}
-          />
+              />
         ) : (
           <div className="line-placeholder">
             Scan or select a product to start your{" "}
@@ -280,7 +294,7 @@ export function TradeForm({
             required
           />
         </Field>
-        <Field label="Amount paid (PKR)">
+        <Field label={method === "Cheque" ? "Cheque amount (PKR)" : "Amount paid (PKR)"}>
           <input
             key={billTotal}
             name="paid"
@@ -293,11 +307,17 @@ export function TradeForm({
           />
         </Field>
         <Field label="Payment method">
-          <GlassSelect name="method">
+          <GlassSelect name="method" value={method} onValueChange={setMethod}>
             <option>Cash</option>
-            <option>Bank</option>
+            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            <option>Cheque</option>
           </GlassSelect>
         </Field>
+        {method === "Cheque" && <>
+          <Field label="Cheque number"><input name="chequeNumber" maxLength={80} required /></Field>
+          <Field label="Cheque bank"><input name="chequeBank" maxLength={120} required /></Field>
+          <Field label="Expected clearance date"><input name="chequeDate" type="date" min={today()} required /></Field>
+        </>}
         <Field label="Account head">
           <GlassSelect
             name="head"
@@ -311,7 +331,8 @@ export function TradeForm({
       </div>
       <p className="form-hint">
         Use zero paid for credit; a partial amount leaves a pending balance. A
-        customer is required for credit bills.
+        customer is required for credit bills. Cheques remain pending until
+        marked cleared in Payments, then they reduce the balance.
       </p>
       <div className="bill-summary">
         <span>

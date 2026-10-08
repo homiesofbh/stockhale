@@ -1,5 +1,4 @@
 "use client";
-import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
@@ -9,7 +8,7 @@ import {
   type Store,
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
-import { useState, type FormEvent } from "react";
+import { type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   editProduct: Product | null;
@@ -28,7 +27,6 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
-  const [barcode, setBarcode] = useState(editProduct?.barcode || "");
   return (
     <form
       onSubmit={(e) =>
@@ -38,6 +36,7 @@ export function ProductForm({
             name: text(f, "name"),
             sku: text(f, "sku"),
             barcode: text(f, "barcode"),
+            unit: text(f, "unit") || "piece",
             category: text(f, "category"),
             cost: num(f, "cost"),
             price: num(f, "price"),
@@ -66,6 +65,11 @@ export function ProductForm({
         </Field>
         <Field label="SKU / Item code">
           <input name="sku" required defaultValue={editProduct?.sku} />
+        </Field>
+        <Field label="Measurement unit">
+          <GlassSelect name="unit" defaultValue={editProduct?.unit || "piece"}>
+            {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"]).map((unit) => <option key={unit}>{unit}</option>)}
+          </GlassSelect>
         </Field>
         <Field label="Cost price (PKR)">
           <input
@@ -112,12 +116,8 @@ export function ProductForm({
         )}
       </div>
         <div className="field">
-          <span>Barcode (scan or type)</span>
-          <BarcodeInput
-            name="barcode" label="Barcode (scan or type)"
-            value={barcode} onChange={setBarcode} onScan={(code) => setBarcode(code.trim())}
-            action="Use code" placeholder="Scan a product barcode here"
-          />
+          <span>Barcode (optional)</span>
+          <input name="barcode" defaultValue={editProduct?.barcode || ""} placeholder="Leave blank if you do not use barcodes" />
         </div>
       <p className="form-hint">
         Stock changes after creation are recorded through purchases, billing,

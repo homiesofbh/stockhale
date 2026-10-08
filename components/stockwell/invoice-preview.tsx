@@ -102,7 +102,8 @@ export function InvoicePreview({
             <small>
               {invoice.number.startsWith("PUR") ? "SUPPLIER" : "BILL TO"}
             </small>
-            <b>{cName(invoice.contactId, invoice.number.startsWith("PUR"))}</b>
+            <b>{invoice.contactId ? cName(invoice.contactId, invoice.number.startsWith("PUR")) : invoice.walkInName || invoice.walkInCompany || "Walk-in customer"}</b>
+            {!invoice.contactId && <p>{[invoice.walkInName, invoice.walkInCompany, invoice.walkInPhone].filter(Boolean).map((v) => <span key={v}>{v}</span>)}</p>}
             {(invoice.number.startsWith("PUR") ? s.suppliers : s.customers)
               .filter((c) => c.id === invoice.contactId)
               .map((c) => (
@@ -137,7 +138,7 @@ export function InvoicePreview({
                     {s.products.find((p) => p.id === l.productId)?.sku}
                   </small>
                 </td>
-                <td>{l.qty}</td>
+                <td>{l.qty} {l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece"}</td>
                 <td>{l.price.toFixed(2)}</td>
                 <td>{round(l.qty * l.price).toFixed(2)}</td>
               </tr>

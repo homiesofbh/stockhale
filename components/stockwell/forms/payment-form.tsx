@@ -12,6 +12,7 @@ import {
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { type FormEvent } from "react";
+import { useState } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   commit: (next: Store, message: string) => void;
@@ -38,6 +39,7 @@ export function PaymentForm({
   setSelectedContact,
   setSelectedTrade,
 }: Props) {
+  const [method, setMethod] = useState("Cash");
   return (
     <form
       onSubmit={(e) =>
@@ -47,7 +49,7 @@ export function PaymentForm({
               id: uid(),
               date: text(f, "date"),
               kind: paymentKind as "Customer" | "Supplier",
-              contactId: selectedContact,
+              contactId: selectedContact.startsWith("walkin:") ? "" : selectedContact,
               tradeId: text(f, "trade"),
               amount:
                 round(num(f, "amount")) *
@@ -62,6 +64,9 @@ export function PaymentForm({
               method: text(f, "method") as "Cash" | "Bank",
               head: text(f, "head"),
               notes: text(f, "notes"),
+              chequeNumber: text(f, "chequeNumber"),
+              chequeBank: text(f, "chequeBank"),
+              chequeDate: text(f, "chequeDate"),
             }),
             "Payment recorded. Balance updated.",
           ),
@@ -84,7 +89,6 @@ export function PaymentForm({
         </Field>
         <Field label={paymentKind}>
           <GlassSelect
-            required
             value={selectedContact}
             onValueChange={(e) => {
               setSelectedContact(e);
@@ -99,6 +103,7 @@ export function PaymentForm({
                 </option>
               ),
             )}
+            {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
           </GlassSelect>
         </Field>
         <Field label="Bill / purchase with a pending balance or credit">
@@ -111,7 +116,7 @@ export function PaymentForm({
             <option value="">Select transaction</option>
             {(paymentKind === "Customer" ? s.invoices : s.purchases)
               .filter(
-                (t) => t.contactId === selectedContact && balance(s, t) !== 0,
+                (t) => (selectedContact.startsWith("walkin:") ? `walkin:${t.id}` === selectedContact : t.contactId === selectedContact) && balance(s, t) !== 0,
               )
               .map((t) => (
                 <option key={t.id} value={t.id}>
@@ -128,11 +133,17 @@ export function PaymentForm({
           <input type="date" name="date" required defaultValue={today()} />
         </Field>
         <Field label="Payment method">
-          <GlassSelect name="method">
+          <GlassSelect name="method" value={method} onValueChange={setMethod}>
             <option>Cash</option>
-            <option>Bank</option>
+            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            <option>Cheque</option>
           </GlassSelect>
         </Field>
+        {method === "Cheque" && <>
+          <Field label="Cheque number"><input name="chequeNumber" required maxLength={80} /></Field>
+          <Field label="Cheque bank"><input name="chequeBank" required maxLength={120} /></Field>
+          <Field label="Expected clearance date"><input name="chequeDate" type="date" required /></Field>
+        </>}
         <Field label="Account head">
           <GlassSelect
             name="head"
@@ -155,7 +166,7 @@ export function PaymentForm({
       <p className="form-hint">
         Selecting a return credit records a customer refund or money received
         back from a supplier. Enter a positive amount; StockHale applies the
-        correct direction.
+        correct direction. Cheque payments stay pending until marked cleared in Payments.
       </p>
       <div className="form-foot">
         <button className="primary">Record payment</button>

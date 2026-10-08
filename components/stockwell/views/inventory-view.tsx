@@ -80,7 +80,7 @@ export function InventoryView({
                 <small>{p.barcode || "No barcode assigned"}</small>
               </>,
               p.category,
-              <b>{stock(s, p.id)}</b>,
+              <b>{stock(s, p.id)} {p.unit || "piece"}</b>,
               money(p.cost),
               money(p.price),
               <Badge tone={stock(s, p.id) <= p.low ? "amber" : "green"}>

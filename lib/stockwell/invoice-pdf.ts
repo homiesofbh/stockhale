@@ -26,9 +26,12 @@ export function invoiceText(s: Store, t: Trade) {
     contact?.email || "",
     contact?.address || "",
     contact?.ntn || "",
+    t.walkInName || "",
+    t.walkInCompany || "",
+    t.walkInPhone || "",
     ...t.lines.flatMap((l) => {
       const p = s.products.find((p) => p.id === l.productId);
-      return [p?.name || "Unknown item", p?.sku || ""];
+      return [p?.name || "Unknown item", p?.sku || "", l.unit || p?.unit || "piece"];
     }),
   ].map(clean);
 }
@@ -165,8 +168,8 @@ export function createInvoicePdf(
   );
   text(t.number.startsWith("PUR") ? "SUPPLIER" : "BILL TO", receipt ? 7 : 8);
   y += 1;
-  text(contact?.name || "Walk-in customer", size, true);
-  for (const value of [contact?.address, contact?.phone, contact?.email, contact?.ntn ? `NTN: ${contact.ntn}` : ""].filter(
+  text(contact?.name || t.walkInName || t.walkInCompany || "Walk-in customer", size, true);
+  for (const value of [contact?.address, contact?.phone, contact?.email, contact?.ntn ? `NTN: ${contact.ntn}` : "", !contact ? t.walkInCompany : "", !contact ? t.walkInPhone : ""].filter(
     Boolean,
   ))
     text(value!, receipt ? 8 : 9);
@@ -246,7 +249,7 @@ export function createInvoicePdf(
       ensure(7);
       const a = amount(round(line.qty * line.price));
       fit(
-        `${line.qty} x ${amount(line.price)}`,
+        `${line.qty} ${line.unit || s.products.find((product) => product.id === line.productId)?.unit || "piece"} x ${amount(line.price)}`,
         margin,
         y + 3,
         contentWidth * 0.53,

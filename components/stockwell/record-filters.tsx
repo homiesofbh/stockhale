@@ -79,6 +79,8 @@ export function RecordFilters({
           <option value="All">All payments</option>
           <option>Cash</option>
           <option>Bank</option>
+          <option>Cheque</option>
+          {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
         </GlassSelect>
       )}
       {module === "Inventory" && (

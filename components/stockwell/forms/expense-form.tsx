@@ -63,7 +63,7 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
         <Field label="Paid from">
           <GlassSelect name="method">
             <option>Cash</option>
-            <option>Bank</option>
+            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
           </GlassSelect>
         </Field>
         <Field label="Notes / details">
