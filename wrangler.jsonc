@@ -3,24 +3,39 @@
   "name": "stockhale",
   "main": ".open-next/worker.js",
   "compatibility_date": "2026-10-08",
-  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "compatibility_flags": [
+    "nodejs_compat",
+    "global_fetch_strictly_public"
+  ],
   "assets": {
     "directory": ".open-next/assets",
     "binding": "ASSETS"
   },
   "services": [
-    { "binding": "WORKER_SELF_REFERENCE", "service": "stockhale" }
+    {
+      "binding": "WORKER_SELF_REFERENCE",
+      "service": "stockhale"
+    }
   ],
   "r2_buckets": [
-    { "binding": "NEXT_INC_CACHE_R2_BUCKET", "bucket_name": "stockhale-opennext-cache" }
+    {
+      "binding": "NEXT_INC_CACHE_R2_BUCKET",
+      "bucket_name": "stockhale-opennext-cache"
+    }
   ],
   "routes": [
-    { "pattern": "stockhale.dev", "custom_domain": true }
+    {
+      "pattern": "stockhale.app",
+      "zone_name": "stockhale.app",
+      "custom_domain": true
+    }
   ],
   "vars": {
-    "BETTER_AUTH_URL": "https://stockhale.dev",
+    "BETTER_AUTH_URL": "https://stockhale.app",
     "DISABLE_PUBLIC_SIGNUP": "false",
     "STOCKHALE_RUNTIME": "cloudflare"
   },
-  "observability": { "enabled": true }
+  "observability": {
+    "enabled": true
+  }
 }

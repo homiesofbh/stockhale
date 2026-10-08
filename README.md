@@ -16,12 +16,12 @@ No demo account is seeded. Sign-in requires an account created in the configured
 
 ## Deploy on Cloudflare Workers with Neon and Better Auth
 
-`wrangler.jsonc` targets the `stockhale` Worker and `https://stockhale.dev`.
+`wrangler.jsonc` targets the `stockhale` Worker and `https://stockhale.app`.
 `open-next.config.ts` uses an R2 incremental cache. The existing self-managed
 Better Auth implementation uses Neon PostgreSQL; enabling managed Neon Auth
 is not required.
 
-1. Add `stockhale.dev` as an active zone in your Cloudflare account and configure
+1. Add `stockhale.app` as an active zone in your Cloudflare account and configure
    the registrar's nameservers as Cloudflare instructs.
 2. Run `pnpm exec wrangler login`, then
    `pnpm exec wrangler r2 bucket create stockhale-opennext-cache` once.
@@ -62,7 +62,7 @@ Better Auth runs inside `/api/workspace` through its server APIs. This keeps exi
 
 This directory is linked to `lucky-butterfly-25452958` (Stockhale), branch `production`. [neon.ts](neon.ts) declares the private `invoices` bucket using the requested `preview.buckets` syntax.
 
-Run `neon deploy` to apply the backend policy and refresh Neon variables in `.env`. The `.neon` context and `.env` are ignored by Git. Local Better Auth configuration is also in `.env`; use `https://stockhale.dev` for the production website origin. Neon deployment does not publish the frontend or update hosting environment variables.
+Run `neon deploy` to apply the backend policy and refresh Neon variables in `.env`. The `.neon` context and `.env` are ignored by Git. Local Better Auth configuration is also in `.env`; use `https://stockhale.app` for the production website origin. Neon deployment does not publish the frontend or update hosting environment variables.
 
 ## Existing SQLite data
 
