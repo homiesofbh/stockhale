@@ -9,6 +9,7 @@ try {
     [
       require.resolve("typescript/bin/tsc"),
       "lib/stockwell/model.ts",
+      "lib/stockwell/backup.ts",
       "lib/stockwell/scanner.ts",
       "lib/stockwell/workspace.ts",
       "lib/stockwell/invoice-pdf.ts",
@@ -34,6 +35,7 @@ try {
       [
         "--test",
         "tests/retail.cjs",
+        "tests/backup.cjs",
         "tests/scanner.cjs",
         "tests/permissions.cjs",
         "tests/invoice-pdf.cjs",

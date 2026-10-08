@@ -25,6 +25,7 @@ import { ChevronRight, Plus, Search, X } from "lucide-react";
 import { descriptions, type Module } from "./navigation";
 import { Badge, Empty, Field, Modal, Table } from "./ui";
 import { downloadInvoicePdf, type InvoicePaper } from "@/lib/stockwell/invoice-pdf";
+import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
 import { WorkspaceSettings } from "@/components/stockwell/workspace-settings";
 import { accessibleModule, canAccessModule } from "@/lib/stockwell/workspace";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
@@ -398,6 +399,9 @@ export function WorkspaceApp() {
           className={`workspace ${module === "Dashboard" ? "dashboard-workspace" : ""}`}
         >
           <main>
+            {account.member.role === "owner" && workspace.cache && (
+              <WorkspaceBackup key={account.id} cache={workspace.cache} settings={module === "Settings"} />
+            )}
             {module === "Settings" && account.member.role === "owner" ? (
               <WorkspaceSettings
                 workspace={account}

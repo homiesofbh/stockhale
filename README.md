@@ -62,3 +62,19 @@ pnpm build
 ```
 
 The integration suite requires a local PostgreSQL role that can create databases. It defaults to `postgresql://localhost/postgres`, creates a uniquely named test database, and removes it afterward. Set `STOCKWELL_TEST_DATABASE_URL` to a dedicated test admin connection when needed. It never reuses application tables. Unit tests need no database. `npm run <script>` can also run these scripts.
+
+### Excel exports and weekly local backups
+
+Workspace owners can download all data from **Settings → Excel export & weekly backup**.
+The `.xlsx` workbook includes every store collection, separate invoice/purchase line sheets,
+team details, audit history, pending device changes, and a lossless JSON cache snapshot split
+into ordered parts on the **Backup snapshot** sheet. Long values in the readable sheets are
+abbreviated to fit Excel's cell limit; the snapshot retains the full value.
+
+A first backup is prompted immediately. After a download is requested, the next reminder
+is due seven days later. Postponing or closing the prompt delays it for one hour. Reminder
+dates are saved per workspace and owner in this browser, checked while the app is open and
+when it regains focus. The browser controls the final save location and may ask permission;
+the app cannot verify a completed save or run downloads when closed. If a download is
+cancelled or blocked, retry from Settings. These workbooks are downloadable copies; there
+is currently no Excel restore/import flow.
