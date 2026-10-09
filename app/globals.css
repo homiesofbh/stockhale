@@ -3094,3 +3094,9 @@ small, .eyebrow, .text-button { font-size: 12px; }
 .journal-totals span { display: grid; gap: 8px; color: #756184; font-size: 12px; }
 .journal-totals b { color: #493753; font-size: 16px; font-weight: 500; }
 @media (max-width: 600px) { .journal-line { grid-template-columns: 1fr 1fr; } .journal-line > .field:first-of-type, .journal-line > .field:last-of-type { grid-column: 1 / -1; } }
+
+.journal-register-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.journal-register-reference { display: grid; gap: 6px; min-width: 100px; max-width: 280px; white-space: normal; overflow-wrap: anywhere; }
+.journal-register-reference small { color: #756184; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+
+.bank-balance-note { margin: 0; padding: 18px 28px; color: #756184; font-size: 12px; line-height: 1.6; }

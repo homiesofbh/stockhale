@@ -1,4 +1,5 @@
 "use client";
+import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balance,
@@ -194,7 +195,7 @@ export function WorkspaceApp() {
   const purchases = filterTrades(s, s.purchases, filters, true);
   const accounting = financialRows(s);
   const cash = accounting.reduce((n, r) => n + r.cash, 0);
-  const bank = accounting.reduce((n, r) => n + r.bank, 0);
+  const bank = round((s.financialAccounts || []).reduce((n, a) => n + bankStatement(s, a).closing, 0) + accounting.filter(r => !r.financialAccountId).reduce((n, r) => n + r.bank, 0));
   const receivables = s.invoices.reduce(
     (n, t) => n + Math.max(balance(s, t), 0),
     0,

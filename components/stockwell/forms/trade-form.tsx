@@ -309,7 +309,7 @@ export function TradeForm({
         <Field label="Payment method">
           <GlassSelect name="method" value={method} onValueChange={setMethod}>
             <option>Cash</option>
-            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            {(s.financialAccounts || []).filter(a => a.active !== false).map((account) => <option key={account.id}>{account.name}</option>)}
             <option>Cheque</option>
           </GlassSelect>
         </Field>

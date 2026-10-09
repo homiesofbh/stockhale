@@ -1,3 +1,4 @@
+import { validateBanks } from "./bank-vouchers";
 import { validateAccounts } from "./accounts";
 import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
@@ -290,6 +291,8 @@ export async function mutate(user: Row, body: Row) {
       if (store.journals !== undefined && !Array.isArray(store.journals)) throw new Error("Invalid journal records.");
       validateAccounts(store);
       validateJournals(store);
+      if (store.bankVouchers !== undefined && !Array.isArray(store.bankVouchers)) throw new Error("Invalid bank voucher records.");
+      validateBanks(store);
       await query("UPDATE workspaces SET store=$1,revision=1 WHERE id=$2", [
         JSON.stringify(store),
         w.id,

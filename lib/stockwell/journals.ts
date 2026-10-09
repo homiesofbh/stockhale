@@ -1,3 +1,4 @@
+import { bankVoucherLines, validateBanks } from "./bank-vouchers";
 import { chartAccounts, type Account } from "./accounts";
 import { round, type Store } from "./model";
 
@@ -86,6 +87,7 @@ export function saveJournal(s: Store, voucher: JournalVoucher, post = false): St
   };
   const next = { ...s, journals: previous ? s.journals!.map(v => v.id === journal.id ? journal : v) : [...(s.journals || []), journal] };
   validateJournals(next, s);
+  validateBanks(next, s);
   return next;
 }
 
@@ -93,8 +95,9 @@ export function saveJournal(s: Store, voucher: JournalVoucher, post = false): St
 export function journalAccountBalance(s: Store, account: Account, through = "") {
   const opening = (!through || !account.openingDate || account.openingDate <= through)
     ? cents(account.openingBalance) * (account.nature === "Debit" ? 1 : -1) : 0;
-  const movements = (s.journals || []).filter(v => v.status === "posted" && (!through || v.date <= through))
-    .flatMap(v => v.lines).filter(l => l.accountId === account.id)
+  const bankLines = (s.bankVouchers || []).filter(v => v.status === "posted" && (!through || v.date <= through)).flatMap(v => bankVoucherLines(s, v));
+  const movements = [...(s.journals || []).filter(v => v.status === "posted" && (!through || v.date <= through))
+    .flatMap(v => v.lines), ...bankLines].filter(l => l.accountId === account.id)
     .reduce((n, l) => n + cents(l.debit) - cents(l.credit), 0);
   return (opening + movements) / 100;
 }

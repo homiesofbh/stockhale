@@ -1,7 +1,7 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { round, today, uid, type Store } from "@/lib/stockwell/model";
+import { paymentAccountId, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
@@ -29,6 +29,7 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
                   category: text(f, "category"),
                   head: text(f, "head"),
                   amount: round(amount),
+                  financialAccountId: paymentAccountId(s, text(f, "method")),
                   method: text(f, "method") as "Cash" | "Bank",
                   notes: text(f, "notes"),
                 },
@@ -63,7 +64,7 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
         <Field label="Paid from">
           <GlassSelect name="method">
             <option>Cash</option>
-            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            {(s.financialAccounts || []).filter(a => a.active !== false).map((account) => <option key={account.id}>{account.name}</option>)}
           </GlassSelect>
         </Field>
         <Field label="Notes / details">

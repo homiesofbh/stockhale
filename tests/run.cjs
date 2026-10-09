@@ -40,6 +40,7 @@ try {
         "tests/permissions.cjs",
         "tests/accounts.cjs",
         "tests/journals.cjs",
+        "tests/bank-vouchers.cjs",
         "tests/invoice-pdf.cjs",
         "tests/record-selectors.cjs",
         "tests/service-worker.cjs",

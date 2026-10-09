@@ -1,3 +1,4 @@
+import { validateBanks } from "./bank-vouchers";
 import { validateJournals } from "./journals";
 import { validateAccounts } from "./accounts";
 import type { Store } from "./model";
@@ -74,6 +75,7 @@ export const collectionModules: Record<string, string[]> = {
   heads: ["Accounts Heads"],
   accounts: ["Accounts Heads"],
   journals: ["Accounts Heads"],
+  bankVouchers: ["Payments"],
   financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],
@@ -107,6 +109,7 @@ export function verifyChange(before: Store, after: Store, module: string) {
     throw new Error("This module cannot change those records.");
   if (changed.includes("accounts") || changed.includes("heads")) validateAccounts(after, before);
   if (changed.includes("journals") || changed.includes("accounts") || changed.includes("heads")) validateJournals(after, before);
+  validateBanks(after, before);
   return changed
     .map(
       (k) =>

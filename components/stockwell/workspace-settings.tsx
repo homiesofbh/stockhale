@@ -1,4 +1,6 @@
 "use client";
+import { chartAccounts } from "@/lib/stockwell/accounts";
+import { saveFinancialAccount } from "@/lib/stockwell/bank-vouchers";
 import { Check, Copy, Link2 } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { modules, type Workspace } from "@/lib/stockwell/workspace";
@@ -224,7 +226,8 @@ export function WorkspaceSettings({
             setError("That payment account already exists.");
             return;
           }
-          commitStore({ ...store, financialAccounts: [...accounts, { id: uid(), name, type: accountType }] });
+          try { commitStore(saveFinancialAccount(store, { id: uid(), name, type: accountType, active: true })); }
+          catch (err) { setError(err instanceof Error ? err.message : "Could not add account."); return; }
           setAccountName("");
           setNotice("Payment account added.");
         }}>
@@ -232,7 +235,17 @@ export function WorkspaceSettings({
           <label className="field"><span>Account type</span><select value={accountType} onChange={(e) => setAccountType(e.target.value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></select></label>
           <button className="primary" disabled={busy}>Add account</button>
         </form>
-        <div className="permission-grid">{(store.financialAccounts || []).map((account) => <div key={account.id}>{account.name} · {account.type}<button type="button" className="link" onClick={() => commitStore({ ...store, financialAccounts: (store.financialAccounts || []).filter((item) => item.id !== account.id) })}>Remove</button></div>)}</div>
+        <div className="permission-grid">{(store.financialAccounts || []).map((account) => <div key={account.id}>
+          <b>{account.name} · {account.type}</b>
+          <label className="field"><span>Asset ledger account / opening balance</span><select value={account.ledgerAccountId || ""} onChange={e => {
+            try { commitStore(saveFinancialAccount(store, { ...account, ledgerAccountId: e.target.value })); setError(""); }
+            catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }
+          }}><option value="">Select ledger account</option>{chartAccounts(store).filter(a => a.type === "Asset" && !chartAccounts(store).some(child => child.parentId === a.id)).map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label>
+          <button type="button" className="link" onClick={() => {
+            try { commitStore(saveFinancialAccount(store, { ...account, active: account.active === false })); setError(""); }
+            catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }
+          }}>{account.active === false ? "Reactivate" : "Deactivate"}</button>
+        </div>)}</div>
       </section>
       <section className="panel">
         <h2>Previous browser records</h2>

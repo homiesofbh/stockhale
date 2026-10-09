@@ -1,3 +1,4 @@
+import { validateBanks } from "./bank-vouchers";
 import { validateJournals } from "./journals";
 import { round, type Store } from "./model";
 
@@ -74,6 +75,7 @@ export function saveAccount(s: Store, account: Account): Store {
   };
   validateAccounts(next, s);
   validateJournals(next, s);
+  validateBanks(next, s);
   return next;
 }
 

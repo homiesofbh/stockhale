@@ -94,7 +94,6 @@ This list contains remaining work. The original feature audit above records the 
 
 | Priority | Work item | Scope |
 |---|---|---|
-| **P1 — High** | Add bank vouchers | Bank receipts, payments, transfers, and individual bank-account balances. |
 | **P1 — High** | Add posting and correction workflows | Draft/unposted bills, posting controls, voucher register, corrections/reversals, and audit trail. |
 | **P1 — High** | Complete cheque management | Received/issued register, post-dated cheques, clearance, bounce, cancellation, and linked account effects. |
 | **P1 — High** | Make backups complete and restorable | Include full audit history; add validated restore with protection against accidental overwrites. |
@@ -179,9 +178,9 @@ Priority meanings: **P0** fixes financial inaccuracies; **P1** covers essential 
 
 ### Revised execution order
 
-1. **P1 foundations:** Bank vouchers, posting controls, cheque lifecycle, and separate account balances.
+1. **P1 foundations:** Posting controls and cheque lifecycle.
 2. **P1 controls:** Admin bill corrections, expense date limits, account-head authority, automatic walk-in customer linking, and complete/restorable backups.
-3. **P1 operations:** Cash-in-hand, per-bank balances, cash flow, and daily closing/reopening.
+3. **P1 operations:** Cash-in-hand, cash flow, and daily closing/reopening.
 4. **P2:** Textile item fields, units, inactivation, walk-in identity/search, attachments, remaining reports, printer verification, and user guidance.
 5. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
 

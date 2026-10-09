@@ -1,4 +1,5 @@
 "use client";
+import { BankVouchersView } from "./bank-vouchers-view";
 import { Badge, Stat, Table } from "@/components/stockwell/ui";
 import { clearCheque, money, type Store } from "@/lib/stockwell/model";
 type Props = {
@@ -43,6 +44,7 @@ export function PaymentsView({
           detail={`Bank ${money(bank)}`}
         />
       </div>
+      <BankVouchersView s={s} matches={matches} inRange={inRange} commit={commit} />
       <section className="card">
         <div className="section-head">
           <h2>Payment history</h2>

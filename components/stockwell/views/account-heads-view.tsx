@@ -68,7 +68,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
         {account.parentId && <p className="chart-account-parent">Under {accounts.find(a => a.id === account.parentId)?.name}</p>}
         <dl className="chart-account-balance"><div><dt>Opening balance</dt><dd>{money(account.openingBalance)}</dd></div><div><dt>Nature</dt><dd>{account.nature}</dd></div></dl>
         <p className="chart-account-date">{account.openingDate ? `As of ${account.openingDate}` : "No opening date recorded"}</p>
-        <p className="chart-account-journal-balance">Opening + posted journals <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
+        <p className="chart-account-journal-balance">Opening + posted vouchers <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
         {account.description && <p className="chart-account-description">{account.description}</p>}
         <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span><button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button></div>
       </article>
@@ -82,18 +82,28 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
         {visible.size ? <ul className="chart-accounts-grid">{roots.map(account => renderAccount(account))}</ul> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
       </section>
       {editing && <Modal title="Edit account" close={() => setEditing(null)}><AccountForm s={s} account={editing} commit={(next, message) => { commit(next, message); setEditing(null); }} /></Modal>}
-      <section className="chart-accounts-section" aria-labelledby="journal-register-title">
-        <div className="section-head"><div><h2 id="journal-register-title">Journal vouchers</h2><p>Drafts can be edited. Posted vouchers record balanced account entries.</p></div><button className="primary" onClick={() => setJournalEditor("new")}>New journal</button></div>
-        {journals.length ? <div className="chart-accounts-grid">{journals.map(v => {
-          const totals = journalTotals(v.lines);
-          return <article className="chart-account-card" key={v.id}>
-            <div className="chart-account-top"><span className="chart-account-code">{v.number}</span><Badge tone={v.status === "posted" ? "green" : "amber"}>{v.status === "posted" ? "Posted" : "Draft"}</Badge></div>
-            <h3>{v.reference || "Journal voucher"}</h3><p className="chart-account-date">{v.date} · {v.lines.length} lines</p>
-            {v.notes && <p className="chart-account-description">{v.notes}</p>}
-            <dl className="chart-account-balance"><div><dt>Debit</dt><dd>{money(totals.debit)}</dd></div><div><dt>Credit</dt><dd>{money(totals.credit)}</dd></div></dl>
-            <div className="chart-account-footer"><span>{totals.difference === 0 ? "Balanced" : `Difference ${money(totals.difference)}`}</span><button className="link" onClick={() => v.status === "draft" ? setJournalEditor(v) : setJournalDetails(v)} aria-label={`${v.status === "draft" ? "Edit" : "View"} ${v.number}`}>{v.status === "draft" ? "Edit / post" : "View entries"}</button></div>
-          </article>;
-        })}</div> : <Empty title="No journal vouchers">Create a journal to record a balanced account adjustment.</Empty>}
+      <section className="card" aria-labelledby="journal-register-title">
+        <div className="section-head">
+          <div><h2 id="journal-register-title">Journal vouchers</h2><p>Drafts can be edited. Posted vouchers record balanced account entries.</p></div>
+          <div className="journal-register-actions"><Badge>{journals.length} vouchers</Badge><button className="primary" onClick={() => setJournalEditor("new")}>New journal</button></div>
+        </div>
+        <Table
+          headers={["Date", "Voucher", "Reference / notes", "Status", "Debit", "Credit", "Balance check", "Action"]}
+          empty="No matching journal vouchers"
+          rows={journals.map(v => {
+            const totals = journalTotals(v.lines);
+            return [
+              v.date,
+              <div className="journal-register-reference"><span>{v.number}</span><small>{v.lines.length} lines</small></div>,
+              <div className="journal-register-reference"><span>{v.reference || "—"}</span>{v.notes && <small>{v.notes}</small>}</div>,
+              <Badge tone={v.status === "posted" ? "green" : "amber"}>{v.status === "posted" ? "Posted" : "Draft"}</Badge>,
+              money(totals.debit),
+              money(totals.credit),
+              <Badge tone={totals.difference === 0 ? "green" : "amber"}>{totals.difference === 0 ? "Balanced" : `Difference ${money(totals.difference)}`}</Badge>,
+              <button className="link" onClick={() => v.status === "draft" ? setJournalEditor(v) : setJournalDetails(v)} aria-label={`${v.status === "draft" ? "Edit" : "View"} ${v.number}`}>{v.status === "draft" ? "Edit / post" : "View entries"}</button>,
+            ];
+          })}
+        />
       </section>
       {journalEditor && <Modal title={journalEditor === "new" ? "New journal voucher" : `Edit ${journalEditor.number}`} close={() => setJournalEditor(null)}><JournalForm s={s} voucher={journalEditor === "new" ? undefined : journalEditor} commit={(next, message) => { commit(next, message); setJournalEditor(null); }} /></Modal>}
       {journalDetails && <Modal title={journalDetails.number} close={() => setJournalDetails(null)}>
@@ -101,7 +111,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
         <Table headers={["Account", "Description", "Debit", "Credit"]} rows={journalDetails.lines.map(l => [accounts.find(a => a.id === l.accountId)?.name || "Unknown account", l.description, money(l.debit), money(l.credit)])} />
         <p>Debit {money(journalTotals(journalDetails.lines).debit)} · Credit {money(journalTotals(journalDetails.lines).credit)}</p><p>Posted {journalDetails.postedAt ? new Date(journalDetails.postedAt).toLocaleString("en-PK") : ""} · Locked</p>
       </Modal>}
-      <section className="card">
+      <section className="card mt-8">
         <div className="section-head">
           <div><h2>Transactions by account head</h2><p>Monday–Sunday · {activeWeek ? weekLabel(activeWeek) : "No matching transactions"}</p></div>
           <Badge>{weeklyTransactions.length} transactions</Badge>
@@ -118,8 +128,8 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
             "Type",
             "Account head",
             "Amount",
-            "Journal debit",
-            "Journal credit",
+            "Voucher debit",
+            "Voucher credit",
             "Payment method",
           ]}
           empty="No matching transactions"

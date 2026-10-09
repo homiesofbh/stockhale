@@ -1,5 +1,6 @@
 "use client";
 import { useState, type FormEvent } from "react";
+import { bankVoucherLines } from "@/lib/stockwell/bank-vouchers";
 import { accountTypes, chartAccounts, saveAccount, type Account } from "@/lib/stockwell/accounts";
 import { today, uid, type Store } from "@/lib/stockwell/model";
 import { Field } from "@/components/stockwell/ui";
@@ -8,7 +9,7 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 export function AccountForm({ s, account, commit }: { s: Store; account?: Account; commit: (next: Store, message: string) => void }) {
   const [error, setError] = useState("");
   const accounts = chartAccounts(s);
-  const locked = !!account && (s.journals || []).some(v => v.status === "posted" && v.lines.some(l => l.accountId === account.id));
+  const locked = !!account && (s.journals || []).some(v => v.status === "posted" && v.lines.some(l => l.accountId === account.id)) || (!!account && (s.bankVouchers || []).some(v => v.status === "posted" && bankVoucherLines(s, v).some(l => l.accountId === account.id)));
   function save(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
     const f = new FormData(e.currentTarget);
@@ -25,7 +26,7 @@ export function AccountForm({ s, account, commit }: { s: Store; account?: Accoun
   }
   return <form onSubmit={save}>
     <p>Use parent codes for subaccounts, for example 1000.01 under 1000. Existing names stay fixed to preserve transaction history.</p>
-    {locked && <p>Classification and opening balance are locked because this account has posted journals.</p>}
+    {locked && <p>Classification and opening balance are locked because this account has posted vouchers.</p>}
     <div className="form-grid">
       <Field label="Account code"><input name="code" defaultValue={account?.code} required autoFocus /></Field>
       <Field label="Account name"><input name="name" defaultValue={account?.name} readOnly={!!account} required /></Field>

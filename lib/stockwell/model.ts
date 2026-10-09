@@ -1,3 +1,5 @@
+import { bankVoucherLines } from "./bank-vouchers";
+import type { BankVoucher } from "./bank-vouchers";
 import type { JournalVoucher } from "./journals";
 import type { Account } from "./accounts";
 export type Product = {
@@ -37,6 +39,7 @@ export type Trade = {
   tax: number;
   paid: number;
   method: string;
+  financialAccountId?: string;
   head: string;
   walkInName?: string;
   walkInCompany?: string;
@@ -45,7 +48,7 @@ export type Trade = {
   chequeBank?: string;
   chequeDate?: string;
 };
-export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet" };
+export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet"; ledgerAccountId?: string; active?: boolean };
 export type Movement = {
   id: string;
   productId: string;
@@ -64,6 +67,7 @@ export type Payment = {
   tradeId: string;
   amount: number;
   method: string;
+  financialAccountId?: string;
   head: string;
   notes: string;
   chequeNumber?: string;
@@ -79,6 +83,7 @@ export type Expense = {
   head: string;
   amount: number;
   method: string;
+  financialAccountId?: string;
   notes: string;
 };
 export type ReturnRecord = {
@@ -102,6 +107,7 @@ export type Store = {
   heads: string[];
   accounts?: Account[];
   journals?: JournalVoucher[];
+  bankVouchers?: BankVoucher[];
   expenseCategories: string[];
   purchases: Trade[];
   invoices: Trade[];
@@ -172,6 +178,8 @@ export const returned = (s: Store, id: string) =>
     s.returns.filter((r) => r.tradeId === id).reduce((n, r) => n + r.amount, 0),
   );
 // Legacy cleared cheques used date as the clearance date.
+export const paymentAccountId = (s: Store, method: string) =>
+  ["Cash", "Bank", "Cheque"].includes(method) ? undefined : s.financialAccounts?.find(a => a.name === method && a.active !== false)?.id;
 export const paymentDate = (p: Payment) => p.clearedDate || p.date;
 export const isSettledPayment = (p: Payment) =>
   p.method === "Cheque" ? p.chequeStatus === "cleared" : !p.chequeStatus || p.chequeStatus === "cleared";
@@ -322,7 +330,7 @@ export function recordTrade(
     "Date and account head are required.",
   );
   assert(
-    t.method === "Cash" || t.method === "Bank" || t.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === t.method),
+    t.method === "Cash" || t.method === "Bank" || t.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === t.method && account.active !== false),
     "Select a valid payment method.",
   );
   if (t.method === "Cheque")
@@ -371,6 +379,7 @@ export function recordTrade(
   const prefix = kind === "Sale" ? "INV" : "PUR";
   const trade = {
     ...t,
+    financialAccountId: paymentAccountId(s, t.method),
     createdAt: Date.now(),
     number: `${prefix}-${String(list.length + 1).padStart(5, "0")}`,
     paid: t.method === "Cheque" ? 0 : t.paid,
@@ -428,14 +437,14 @@ export function recordPayment(s: Store, p: Payment): Store {
   );
   assert(s.heads.includes(p.head), "Select a valid account head.");
   assert(
-    p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === p.method),
+    p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some((account) => account.name === p.method && account.active !== false),
     "Select a valid payment method.",
   );
   if (p.method === "Cheque") {
     assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
     p.chequeStatus = "pending";
   }
-  return { ...s, payments: [...s.payments, { ...p, createdAt: Date.now() }] };
+  return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
 }
 export function clearCheque(s: Store, paymentId: string): Store {
   const payment = s.payments.find((p) => p.id === paymentId && p.chequeStatus === "pending");
@@ -521,6 +530,7 @@ export type FinancialRow = {
   type: string;
   head: string;
   method: string;
+  financialAccountId?: string;
   amount: number;
   cash: number;
   bank: number;
@@ -537,6 +547,7 @@ export function financialRows(s: Store): FinancialRow[] {
     amount: number,
     flow: number,
     contactId = "",
+    financialAccountId = "",
   ) =>
     rows.push({
       date,
@@ -548,6 +559,7 @@ export function financialRows(s: Store): FinancialRow[] {
       cash: method === "Cash" ? round(flow) : 0,
       bank: method !== "Cash" && method !== "Credit adjustment" ? round(flow) : 0,
       contactId,
+      financialAccountId: financialAccountId || (["Cash", "Bank", "Cheque"].includes(method) ? undefined : s.financialAccounts?.find(a => a.name === method)?.id),
     });
   s.invoices.forEach((t) =>
     push(
@@ -559,6 +571,7 @@ export function financialRows(s: Store): FinancialRow[] {
       total(t),
       t.paid,
       t.contactId,
+      t.financialAccountId,
     ),
   );
   s.purchases.forEach((t) =>
@@ -571,6 +584,7 @@ export function financialRows(s: Store): FinancialRow[] {
       -total(t),
       -t.paid,
       t.contactId,
+      t.financialAccountId,
     ),
   );
   s.expenses.forEach((e) =>
@@ -582,6 +596,8 @@ export function financialRows(s: Store): FinancialRow[] {
       e.method,
       -e.amount,
       -e.amount,
+      "",
+      e.financialAccountId,
     ),
   );
   s.payments.filter(isSettledPayment).forEach((p) =>
@@ -596,6 +612,7 @@ export function financialRows(s: Store): FinancialRow[] {
       p.amount * (p.kind === "Customer" ? 1 : -1),
       p.amount * (p.kind === "Customer" ? 1 : -1),
       p.contactId,
+      p.financialAccountId,
     ),
   );
   s.returns.forEach((r) =>
@@ -616,13 +633,21 @@ export function financialRows(s: Store): FinancialRow[] {
       0,
     ),
   );
-  (s.journals || []).filter(v => v.status === "posted").forEach(v => {
-    v.lines.forEach(line => rows.push({
-      date: v.date, reference: v.number, type: "Journal", head: s.accounts?.find(a => a.id === line.accountId)?.name || "Unknown account",
-      method: "Journal adjustment", amount: round(line.debit - line.credit), debit: line.debit, credit: line.credit,
-      cash: 0, bank: 0, contactId: "",
-    }));
-  });
+  const postLines = (date: string, reference: string, type: string, lines: JournalVoucher["lines"]) => {
+    lines.forEach(line => {
+      const account = s.accounts?.find(a => a.id === line.accountId);
+      const bank = s.financialAccounts?.find(a => a.ledgerAccountId === line.accountId);
+      const amount = round(line.debit - line.credit);
+      rows.push({
+        date, reference, type, head: account?.name || "Unknown account", method: bank?.name || "Journal adjustment",
+        amount, debit: line.debit, credit: line.credit,
+        cash: !bank && account?.name === "Cash" && account.type === "Asset" ? amount : 0,
+        bank: bank ? amount : 0, financialAccountId: bank?.id, contactId: "",
+      });
+    });
+  };
+  (s.journals || []).filter(v => v.status === "posted").forEach(v => postLines(v.date, v.number, "Journal", v.lines));
+  (s.bankVouchers || []).filter(v => v.status === "posted").forEach(v => postLines(v.date, v.number, `Bank ${v.kind.toLowerCase()}`, bankVoucherLines(s, v)));
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
 export function profit(s: Store, from = "", to = "") {

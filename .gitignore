@@ -376,3 +376,4 @@ lib/*
 lib/stockwell/*
 !lib/stockwell/accounts.ts
 !lib/stockwell/journals.ts
+!lib/stockwell/bank-vouchers.ts
