@@ -4,8 +4,9 @@ import { Field } from "@/components/stockwell/ui";
 import { saveExpense, previousDate, type Actor } from "@/lib/stockwell/operations";
 import { paymentAccountId, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
+import { uploadAttachment } from "@/lib/stockwell/attachment-client";
 type Props = {
-  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
+  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   num: (f: FormData, key: string) => number;
   commit: (next: Store, message: string) => void;
   s: Store;
@@ -16,12 +17,15 @@ export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) => {
+        submit(e, async (f) => {
           const amount = num(f, "amount");
           if (!Number.isFinite(amount) || amount <= 0)
             throw new Error("Amount must be greater than zero.");
+          const id = uid();
+          const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
+          const attachment = file ? await uploadAttachment(file, "expense", id) : undefined;
           commit(
-            saveExpense(s, { id: uid(), date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes") }, actor),
+            saveExpense(s, { id, date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes"), attachments: attachment ? [attachment] : undefined }, actor),
             "Expense recorded.",
           );
         })
@@ -57,6 +61,7 @@ export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
         <Field label="Notes / details">
           <input name="notes" />
         </Field>
+        <Field label="Evidence attachment (PDF/JPG/PNG/WEBP, max 5 MB)"><input name="attachment" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" /></Field>
       </div>
       <div className="form-foot">
         <button className="primary">Save expense</button>

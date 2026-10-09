@@ -51,6 +51,7 @@ export type Trade = {
   id: string;
   number: string;
   reference?: string;
+  attachments?: Attachment[];
   date: string;
   contactId: string;
   lines: Line[];

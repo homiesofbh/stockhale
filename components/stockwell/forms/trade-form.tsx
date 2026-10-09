@@ -19,8 +19,9 @@ import {
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
+import { uploadAttachment } from "@/lib/stockwell/attachment-client";
 type Props = {
-  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
+  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   text: (f: FormData, key: string) => string;
   num: (f: FormData, key: string) => number;
   s: Store;
@@ -94,13 +95,17 @@ export function TradeForm({
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) => {
+        submit(e, async (f) => {
           if (addingSupplier) throw new Error("Save or cancel the new supplier before saving the purchase.");
+          const id = uid();
+          const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
+          const attachment = modal === "Purchase" && file ? await uploadAttachment(file, "purchase", id) : undefined;
           const t: Trade = {
             status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
-            id: uid(),
+            id,
             number: "",
             reference: text(f, "reference"),
+            attachments: attachment ? [attachment] : undefined,
             date: text(f, "date"),
             contactId: text(f, "contact"),
             lines,
@@ -287,6 +292,7 @@ export function TradeForm({
         <Field label="Reference / book no.">
           <input name="reference" maxLength={120} placeholder="Optional" />
         </Field>
+        {modal === "Purchase" && <Field label="Supplier bill copy (PDF/JPG/PNG/WEBP, max 5 MB)"><input name="attachment" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" /></Field>}
         <Field label="Discount amount (PKR)">
           <input
             type="number"

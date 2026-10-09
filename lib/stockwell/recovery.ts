@@ -19,6 +19,9 @@ export async function validateRecoveryBackup(b: RecoveryBackup, workspaceId: str
   if (typeof b.checksum !== "string" || b.checksum !== await backupChecksum(b)) throw new Error("Backup checksum failed. The file is incomplete or has changed.");
   const keys = ["version", "products", "categories", "customers", "suppliers", "heads", "accounts", "journals", "bankVouchers", "corrections", "walkInLinks", "chequeEvents", "dailyCloses", "expenseCategories", "purchases", "invoices", "movements", "payments", "expenses", "returns", "financialAccounts", "units"];
   if (Object.keys(b.store).some(k => !keys.includes(k) || k !== "version" && !Array.isArray((b.store as any)[k]))) throw new Error("Invalid backup collections.");
+  for (const record of [...b.store.expenses, ...b.store.invoices, ...b.store.purchases]) for (const attachment of record.attachments || []) {
+    if (!attachment || typeof attachment.id !== "string" || typeof attachment.key !== "string" || !attachment.key.startsWith(`${workspaceId}/`) || typeof attachment.name !== "string" || typeof attachment.contentType !== "string" || !Number.isInteger(attachment.size) || attachment.size <= 0 || attachment.size > 5_000_000 || !["pending", "uploaded", "failed"].includes(attachment.status)) throw new Error("Invalid attachment metadata in backup.");
+  }
   validateStore(b.store); validateAccounts(b.store); validateJournals(b.store); validateBanks(b.store);
   return b;
 }
