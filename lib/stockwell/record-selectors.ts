@@ -64,6 +64,9 @@ export function searchProducts(products: Product[], query: string) {
       product.category,
       product.color,
       product.gsm,
+      product.packing,
+      product.store,
+      product.size,
     ),
   );
 }

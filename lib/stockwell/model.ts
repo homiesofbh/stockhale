@@ -15,6 +15,9 @@ export type Product = {
   maximum?: number;
   color?: string;
   gsm?: number;
+  packing?: string;
+  store?: string;
+  size?: string;
   active?: boolean;
   unit?: string;
 };
@@ -103,6 +106,16 @@ export type Expense = {
   method: string;
   financialAccountId?: string;
   notes: string;
+  attachments?: Attachment[];
+};
+export type Attachment = {
+  id: string;
+  key: string;
+  name: string;
+  contentType: string;
+  size: number;
+  status: "pending" | "uploaded" | "failed";
+  uploadedAt?: string;
 };
 export type ReturnRecord = {
   createdAt?: number;

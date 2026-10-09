@@ -4,6 +4,7 @@ export default defineConfig({
   preview: {
     buckets: {
       invoices: { access: "private" },
+      attachments: { access: "private" },
     },
   },
 });

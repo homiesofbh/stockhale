@@ -44,6 +44,9 @@ export function ProductForm({
             maximum: num(f, "maximum") || undefined,
             color: text(f, "color"),
             gsm: num(f, "gsm") || undefined,
+            packing: text(f, "packing"),
+            store: text(f, "store"),
+            size: text(f, "size"),
             active: !editProduct || f.has("active"),
           };
           commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
@@ -77,6 +80,9 @@ export function ProductForm({
         </Field>
         <Field label="Colour (optional)"><input name="color" maxLength={80} defaultValue={editProduct?.color || ""} /></Field>
         <Field label="GSM (optional)"><input name="gsm" type="number" min="0" step="0.01" defaultValue={editProduct?.gsm ?? ""} /></Field>
+        <Field label="Packing (optional)"><input name="packing" maxLength={80} defaultValue={editProduct?.packing || ""} placeholder="e.g. 25 kg bag" /></Field>
+        <Field label="Store (optional)"><input name="store" maxLength={80} defaultValue={editProduct?.store || ""} /></Field>
+        <Field label="Size (optional)"><input name="size" maxLength={80} defaultValue={editProduct?.size || ""} /></Field>
         <Field label="Cost price (PKR)">
           <input
             name="cost"
