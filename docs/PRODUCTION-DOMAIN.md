@@ -14,6 +14,10 @@ Use only the hosting provider serving production; do not run both as active writ
 - In Worker **stockhale → Settings → Domains & Routes**, bind Custom Domain
   `stockhale.app` to this Worker. The repo already declares this binding, but it
   takes effect only when applied externally or during a later authorized deployment.
+- In **Settings → Build → Build configuration**, set Build command to
+  `pnpm run build:cloudflare`, Deploy command to `pnpm run deploy:cloudflare`,
+  and Root directory to the repository root. A plain `pnpm run build` does not
+  produce the OpenNext adapter output required for Worker deployment.
 - Ensure the domain has an active TLS certificate and serves HTTPS.
 - Set the Worker variable `BETTER_AUTH_URL` to `https://stockhale.app` and
   `STOCKHALE_RUNTIME` to `cloudflare`.

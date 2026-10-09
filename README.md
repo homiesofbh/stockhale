@@ -36,6 +36,22 @@ is not required.
 5. Run `pnpm deploy`. Wrangler binds the custom domain configured in the file.
    Verify signup, signin, session restoration, and workspace writes on the deployed Worker.
 
+### Cloudflare Workers Builds settings
+
+In the Worker’s **Settings → Build → Build configuration**, set:
+
+- Build command: `pnpm run build:cloudflare`
+- Deploy command: `pnpm run deploy:cloudflare`
+- Root directory: the repository root containing `package.json` and `wrangler.jsonc`.
+
+`pnpm run build` builds Next.js only. OpenNext’s build additionally creates
+`.open-next/worker.js`, assets and the compiled adapter config required by deploy.
+A plain Next.js build followed by `npx wrangler deploy` fails with “Could not find
+compiled Open Next config”. Keep the two CI stages separate to avoid building twice.
+The local `pnpm deploy` script intentionally builds and deploys together.
+These dashboard settings must be changed outside the repo; documenting them does
+not update Cloudflare or deploy anything.
+
 For Worker preview, put `DATABASE_URL`, `BETTER_AUTH_SECRET`,
 `BETTER_AUTH_URL=http://localhost:8787`, and `STOCKHALE_RUNTIME=cloudflare` in
 the ignored `.dev.vars` file, using an isolated Neon development branch. Run
