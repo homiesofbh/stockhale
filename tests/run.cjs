@@ -38,6 +38,8 @@ try {
         "tests/backup.cjs",
         "tests/scanner.cjs",
         "tests/permissions.cjs",
+        "tests/accounts.cjs",
+        "tests/journals.cjs",
         "tests/invoice-pdf.cjs",
         "tests/record-selectors.cjs",
         "tests/service-worker.cjs",

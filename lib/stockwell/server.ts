@@ -1,3 +1,5 @@
+import { validateAccounts } from "./accounts";
+import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getAuth } from "./auth";
 import { query, transaction } from "./database";
@@ -284,6 +286,10 @@ export async function mutate(user: Row, body: Row) {
         )
       )
         throw new Error("Invalid legacy records.");
+      if (store.accounts !== undefined && !Array.isArray(store.accounts)) throw new Error("Invalid account records.");
+      if (store.journals !== undefined && !Array.isArray(store.journals)) throw new Error("Invalid journal records.");
+      validateAccounts(store);
+      validateJournals(store);
       await query("UPDATE workspaces SET store=$1,revision=1 WHERE id=$2", [
         JSON.stringify(store),
         w.id,

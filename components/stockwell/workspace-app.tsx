@@ -39,6 +39,7 @@ import { ReturnForm } from "@/components/stockwell/forms/return-form";
 import { TradeForm } from "@/components/stockwell/forms/trade-form";
 import { InvoicePreview } from "@/components/stockwell/invoice-preview";
 import { RecordFilters } from "@/components/stockwell/record-filters";
+import { AccountForm } from "@/components/stockwell/forms/account-form";
 import { AccountHeadsView } from "@/components/stockwell/views/account-heads-view";
 import { ContactsView } from "@/components/stockwell/views/contacts-view";
 import { DashboardView } from "@/components/stockwell/views/dashboard-view";
@@ -569,6 +570,7 @@ export function WorkspaceApp() {
                       )}
                       {module === "Accounts Heads" && (
                         <AccountHeadsView
+                          commit={commit}
                           s={s}
                           matches={matches}
                           accounting={accounting}
@@ -670,7 +672,8 @@ export function WorkspaceApp() {
               setModal={setModal}
             />
           )}
-          {["Category", "Expense category", "Head"].includes(modal) && (
+          {modal === "Head" && <AccountForm s={s} commit={commit} />}
+          {["Category", "Expense category"].includes(modal) && (
             <>
               <div className="tag-list">
                 {(modal === "Category"

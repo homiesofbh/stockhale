@@ -1,4 +1,4 @@
-# Glacier Feature Audit and Priorities
+# Feature Audit and Priorities
 
 ## Response 1: Feature audit
 
@@ -90,14 +90,10 @@ Manufacturing, unknown Utility/Window functions, and unspecified payroll rules r
 
 ## Response 2: Prioritized work list
 
-Recommended order: fix financial accuracy first, establish accounting foundations, then complete reports and payroll.
+This list contains remaining work. The original feature audit above records the initial findings. Continue with accounting foundations, then complete reports and payroll.
 
 | Priority | Work item | Scope |
 |---|---|---|
-| **P0 — Critical** | Correct pending-cheque ledger calculations | Pending or bounced cheques must not reduce customer/supplier ledger balances. |
-| **P0 — Critical** | Correct historical outstanding reports | Calculate receivables, payables, payments, and returns as of the selected report date. |
-| **P1 — High** | Complete chart of accounts | Hierarchical codes, parent accounts, account types/nature, opening balances, and account details. |
-| **P1 — High** | Add journal vouchers | Multiple debit/credit lines, balanced totals, references, and posting validation. |
 | **P1 — High** | Add bank vouchers | Bank receipts, payments, transfers, and individual bank-account balances. |
 | **P1 — High** | Add posting and correction workflows | Draft/unposted bills, posting controls, voucher register, corrections/reversals, and audit trail. |
 | **P1 — High** | Complete cheque management | Received/issued register, post-dated cheques, clearance, bounce, cancellation, and linked account effects. |
@@ -183,20 +179,10 @@ Priority meanings: **P0** fixes financial inaccuracies; **P1** covers essential 
 
 ### Revised execution order
 
-1. **P0:** Pending-cheque ledger consistency and historical receivable/payable accuracy.
-2. **P1 foundations:** Hierarchical chart of accounts, opening balances, journal/bank vouchers, posting controls, cheque lifecycle, and separate account balances.
-3. **P1 controls:** Admin bill corrections, expense date limits, account-head authority, automatic walk-in customer linking, and complete/restorable backups.
-4. **P1 operations:** Cash-in-hand, per-bank balances, cash flow, and daily closing/reopening.
-5. **P2:** Textile item fields, units, inactivation, walk-in identity/search, attachments, remaining reports, printer verification, and user guidance.
-6. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
+1. **P1 foundations:** Bank vouchers, posting controls, cheque lifecycle, and separate account balances.
+2. **P1 controls:** Admin bill corrections, expense date limits, account-head authority, automatic walk-in customer linking, and complete/restorable backups.
+3. **P1 operations:** Cash-in-hand, per-bank balances, cash flow, and daily closing/reopening.
+4. **P2:** Textile item fields, units, inactivation, walk-in identity/search, attachments, remaining reports, printer verification, and user guidance.
+5. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
 
 The shared review document and unresolved acceptance decisions can be prepared alongside these phases. Manufacturing and unknown Utility/Window features remain unconfirmed. This section updates the plan only; it does not change the application.
-
-
-## Implementation progress — 9 October 2026
-
-- [x] **P0: Pending-cheque ledger consistency.** Customer/supplier ledgers and financial movements now share the settled-payment rule. Pending, bounced, and unconfirmed cheques do not reduce balances. New clearances preserve receipt/issue date and store clearance date separately.
-- [x] **P0: Historical outstanding accuracy.** Bill reports calculate paid, return credit, balance, and payment status through the inclusive end date. The start date selects bills, without excluding earlier settlements against those bills. No end date uses all recorded activity.
-- Validation: all 53 unit tests and TypeScript checks pass, including customer/supplier historical payments, returns, cheque clearance, and legacy cleared records. Deployment has not been verified.
-- Legacy limitation: previously cleared cheques had their original date overwritten; their recorded date remains the settlement date. The original receipt date cannot be recovered from that record.
-- **Next item: P1 hierarchical chart of accounts**, followed by the remaining foundation, control, and operation items in the revised execution order.

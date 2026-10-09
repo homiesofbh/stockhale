@@ -1,37 +1,116 @@
 "use client";
+import { useState } from "react";
+import { accountPath, chartAccounts, type Account } from "@/lib/stockwell/accounts";
+import { JournalForm } from "@/components/stockwell/forms/journal-form";
+import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib/stockwell/journals";
+import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
-import { Badge, Table } from "@/components/stockwell/ui";
+import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
 import { money, type Store } from "@/lib/stockwell/model";
-import { ClipboardList } from "lucide-react";
+// Parse record dates in UTC so week boundaries do not shift with device timezone.
+function transactionWeek(date: string) {
+  const day = new Date(`${date}T00:00:00Z`);
+  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
+  return day.toISOString().slice(0, 10);
+}
+function weekLabel(start: string) {
+  const first = new Date(`${start}T00:00:00Z`);
+  const last = new Date(first);
+  last.setUTCDate(last.getUTCDate() + 6);
+  const format = new Intl.DateTimeFormat("en-PK", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  return `${format.format(first)} – ${format.format(last)}`;
+}
 type Props = {
   s: Store;
+  commit: (next: Store, message: string) => void;
   matches: (...values: unknown[]) => boolean;
   accounting: FinancialRow[];
   inRange: (date: string) => boolean;
 };
-export function AccountHeadsView({ s, matches, accounting, inRange }: Props) {
+export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Props) {
+  const [editing, setEditing] = useState<Account | null>(null);
+  const [journalEditor, setJournalEditor] = useState<JournalVoucher | "new" | null>(null);
+  const [journalDetails, setJournalDetails] = useState<JournalVoucher | null>(null);
+  const [selectedWeek, setSelectedWeek] = useState("");
+  const transactions = accounting
+    .filter(r => inRange(r.date) && matches(r.head, r.reference, r.type))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const weeks = [...new Set(transactions.map(r => transactionWeek(r.date)))].sort().reverse();
+  const weekIndex = Math.max(0, weeks.indexOf(selectedWeek));
+  const activeWeek = weeks[weekIndex];
+  const weeklyTransactions = transactions.filter(r => transactionWeek(r.date) === activeWeek);
+  const accounts = chartAccounts(s);
+  const sorted = [...accounts].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+  const visible = new Set(sorted.filter(a => matches(a.code, accountPath(accounts, a), a.type, a.description)).map(a => a.id));
+  // Retain parents as context when a search only matches a child.
+  for (const account of sorted.filter(a => visible.has(a.id))) {
+    let parentId = account.parentId;
+    const seen = new Set([account.id]);
+    while (parentId && !seen.has(parentId)) {
+      seen.add(parentId); visible.add(parentId);
+      parentId = accounts.find(a => a.id === parentId)?.parentId || "";
+    }
+  }
+  const journals = [...(s.journals || [])].filter(v => inRange(v.date) && matches(
+    v.number, v.reference, v.notes, v.status,
+    ...v.lines.flatMap(l => [accounts.find(a => a.id === l.accountId)?.name, l.description]),
+  )).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  const roots = sorted.filter(a => !a.parentId || !accounts.some(parent => parent.id === a.parentId));
+  function renderAccount(account: Account, ancestors: string[] = []) {
+    if (!visible.has(account.id) || ancestors.includes(account.id)) return null;
+    const children = sorted.filter(a => a.parentId === account.id && visible.has(a.id));
+    const journalBalance = journalAccountBalance(s, account);
+    const count = accounting.filter(r => r.head === account.name && inRange(r.date)).length;
+    return <li className="account-branch" key={account.id}>
+      <article className="chart-account-card" aria-label={`Account ${account.name}`}>
+        <div className="chart-account-top"><span className="chart-account-code">{account.code}</span><Badge>{account.type}</Badge></div>
+        <h3>{account.name}</h3>
+        {account.parentId && <p className="chart-account-parent">Under {accounts.find(a => a.id === account.parentId)?.name}</p>}
+        <dl className="chart-account-balance"><div><dt>Opening balance</dt><dd>{money(account.openingBalance)}</dd></div><div><dt>Nature</dt><dd>{account.nature}</dd></div></dl>
+        <p className="chart-account-date">{account.openingDate ? `As of ${account.openingDate}` : "No opening date recorded"}</p>
+        <p className="chart-account-journal-balance">Opening + posted journals <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
+        {account.description && <p className="chart-account-description">{account.description}</p>}
+        <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span><button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button></div>
+      </article>
+      {!!children.length && <ul className="chart-account-children">{children.map(child => renderAccount(child, [...ancestors, account.id]))}</ul>}
+    </li>;
+  }
   return (
     <>
-      <div className="account-heads">
-        {s.heads
-          .filter((h) => matches(h))
-          .map((h) => {
-            const rows = accounting.filter(
-              (r) => r.head === h && inRange(r.date),
-            );
-            return (
-              <div className="account-head" key={h}>
-                <ClipboardList size={17} />
-                <b>{h}</b>
-                <small>{rows.length} transactions</small>
-              </div>
-            );
-          })}
-      </div>
+      <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
+        <div className="section-head"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
+        {visible.size ? <ul className="chart-accounts-grid">{roots.map(account => renderAccount(account))}</ul> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
+      </section>
+      {editing && <Modal title="Edit account" close={() => setEditing(null)}><AccountForm s={s} account={editing} commit={(next, message) => { commit(next, message); setEditing(null); }} /></Modal>}
+      <section className="chart-accounts-section" aria-labelledby="journal-register-title">
+        <div className="section-head"><div><h2 id="journal-register-title">Journal vouchers</h2><p>Drafts can be edited. Posted vouchers record balanced account entries.</p></div><button className="primary" onClick={() => setJournalEditor("new")}>New journal</button></div>
+        {journals.length ? <div className="chart-accounts-grid">{journals.map(v => {
+          const totals = journalTotals(v.lines);
+          return <article className="chart-account-card" key={v.id}>
+            <div className="chart-account-top"><span className="chart-account-code">{v.number}</span><Badge tone={v.status === "posted" ? "green" : "amber"}>{v.status === "posted" ? "Posted" : "Draft"}</Badge></div>
+            <h3>{v.reference || "Journal voucher"}</h3><p className="chart-account-date">{v.date} · {v.lines.length} lines</p>
+            {v.notes && <p className="chart-account-description">{v.notes}</p>}
+            <dl className="chart-account-balance"><div><dt>Debit</dt><dd>{money(totals.debit)}</dd></div><div><dt>Credit</dt><dd>{money(totals.credit)}</dd></div></dl>
+            <div className="chart-account-footer"><span>{totals.difference === 0 ? "Balanced" : `Difference ${money(totals.difference)}`}</span><button className="link" onClick={() => v.status === "draft" ? setJournalEditor(v) : setJournalDetails(v)} aria-label={`${v.status === "draft" ? "Edit" : "View"} ${v.number}`}>{v.status === "draft" ? "Edit / post" : "View entries"}</button></div>
+          </article>;
+        })}</div> : <Empty title="No journal vouchers">Create a journal to record a balanced account adjustment.</Empty>}
+      </section>
+      {journalEditor && <Modal title={journalEditor === "new" ? "New journal voucher" : `Edit ${journalEditor.number}`} close={() => setJournalEditor(null)}><JournalForm s={s} voucher={journalEditor === "new" ? undefined : journalEditor} commit={(next, message) => { commit(next, message); setJournalEditor(null); }} /></Modal>}
+      {journalDetails && <Modal title={journalDetails.number} close={() => setJournalDetails(null)}>
+        <p>{journalDetails.date} · {journalDetails.reference || "No external reference"}</p><p>{journalDetails.notes}</p>
+        <Table headers={["Account", "Description", "Debit", "Credit"]} rows={journalDetails.lines.map(l => [accounts.find(a => a.id === l.accountId)?.name || "Unknown account", l.description, money(l.debit), money(l.credit)])} />
+        <p>Debit {money(journalTotals(journalDetails.lines).debit)} · Credit {money(journalTotals(journalDetails.lines).credit)}</p><p>Posted {journalDetails.postedAt ? new Date(journalDetails.postedAt).toLocaleString("en-PK") : ""} · Locked</p>
+      </Modal>}
       <section className="card">
         <div className="section-head">
-          <h2>Transactions by account head</h2>
+          <div><h2>Transactions by account head</h2><p>Monday–Sunday · {activeWeek ? weekLabel(activeWeek) : "No matching transactions"}</p></div>
+          <Badge>{weeklyTransactions.length} transactions</Badge>
         </div>
+        {!!weeks.length && <nav className="account-week-pagination" aria-label="Transaction history weeks">
+          <button className="secondary" disabled={weekIndex >= weeks.length - 1} onClick={() => setSelectedWeek(weeks[weekIndex + 1])}>← Older week</button>
+          <span aria-live="polite">Week {weekIndex + 1} of {weeks.length} with transactions</span>
+          <button className="secondary" disabled={weekIndex === 0} onClick={() => setSelectedWeek(weeks[weekIndex - 1])}>Newer week →</button>
+        </nav>}
         <Table
           headers={[
             "Date",
@@ -39,18 +118,19 @@ export function AccountHeadsView({ s, matches, accounting, inRange }: Props) {
             "Type",
             "Account head",
             "Amount",
+            "Journal debit",
+            "Journal credit",
             "Payment method",
           ]}
-          rows={accounting
-            .filter(
-              (r) => inRange(r.date) && matches(r.head, r.reference, r.type),
-            )
-            .map((r) => [
+          empty="No matching transactions"
+          rows={weeklyTransactions.map((r) => [
               r.date,
               r.reference,
               r.type,
               <Badge>{r.head}</Badge>,
               money(r.amount),
+              r.debit === undefined ? "—" : money(r.debit),
+              r.credit === undefined ? "—" : money(r.credit),
               r.method,
             ])}
         />

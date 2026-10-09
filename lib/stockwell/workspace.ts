@@ -1,3 +1,5 @@
+import { validateJournals } from "./journals";
+import { validateAccounts } from "./accounts";
 import type { Store } from "./model";
 export const modules = [
   "Dashboard",
@@ -70,6 +72,8 @@ export const collectionModules: Record<string, string[]> = {
   customers: ["Customers"],
   suppliers: ["Suppliers"],
   heads: ["Accounts Heads"],
+  accounts: ["Accounts Heads"],
+  journals: ["Accounts Heads"],
   financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],
@@ -101,10 +105,12 @@ export function verifyChange(before: Store, after: Store, module: string) {
   if (!changed.length) throw new Error("No records changed.");
   if (changed.some((k) => !collectionModules[k].includes(module)))
     throw new Error("This module cannot change those records.");
+  if (changed.includes("accounts") || changed.includes("heads")) validateAccounts(after, before);
+  if (changed.includes("journals") || changed.includes("accounts") || changed.includes("heads")) validateJournals(after, before);
   return changed
     .map(
       (k) =>
-        `${k}: ${JSON.stringify(after[k as keyof Store]) === JSON.stringify(before[k as keyof Store]) ? "unchanged" : recordDiff(before[k as keyof Store] as unknown[], after[k as keyof Store] as unknown[])}`,
+        `${k}: ${JSON.stringify(after[k as keyof Store]) === JSON.stringify(before[k as keyof Store]) ? "unchanged" : recordDiff((before[k as keyof Store] ?? []) as unknown[], (after[k as keyof Store] ?? []) as unknown[])}`,
     )
     .join("; ");
 }

@@ -1,3 +1,5 @@
+import type { JournalVoucher } from "./journals";
+import type { Account } from "./accounts";
 export type Product = {
   id: string;
   name: string;
@@ -98,6 +100,8 @@ export type Store = {
   customers: Contact[];
   suppliers: Contact[];
   heads: string[];
+  accounts?: Account[];
+  journals?: JournalVoucher[];
   expenseCategories: string[];
   purchases: Trade[];
   invoices: Trade[];
@@ -510,6 +514,8 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
   };
 }
 export type FinancialRow = {
+  debit?: number;
+  credit?: number;
   date: string;
   reference: string;
   type: string;
@@ -610,6 +616,13 @@ export function financialRows(s: Store): FinancialRow[] {
       0,
     ),
   );
+  (s.journals || []).filter(v => v.status === "posted").forEach(v => {
+    v.lines.forEach(line => rows.push({
+      date: v.date, reference: v.number, type: "Journal", head: s.accounts?.find(a => a.id === line.accountId)?.name || "Unknown account",
+      method: "Journal adjustment", amount: round(line.debit - line.credit), debit: line.debit, credit: line.credit,
+      cash: 0, bank: 0, contactId: "",
+    }));
+  });
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
 export function profit(s: Store, from = "", to = "") {
