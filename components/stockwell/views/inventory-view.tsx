@@ -52,6 +52,7 @@ export function InventoryView({
             "Product",
             "SKU / Barcode",
             "Category",
+            "Colour / GSM",
             "Stock",
             "Cost price",
             "Selling price",
@@ -81,6 +82,7 @@ export function InventoryView({
                 <small>{p.barcode || "No barcode assigned"}</small>
               </>,
               p.category,
+              [p.color, p.gsm ? `${p.gsm} GSM` : ""].filter(Boolean).join(" · ") || "—",
               <b>{stock(s, p.id)} {p.unit || "piece"}</b>,
               money(p.cost),
               money(p.price),

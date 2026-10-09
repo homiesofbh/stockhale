@@ -62,6 +62,8 @@ export function searchProducts(products: Product[], query: string) {
       product.sku,
       product.barcode,
       product.category,
+      product.color,
+      product.gsm,
     ),
   );
 }

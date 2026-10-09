@@ -42,6 +42,8 @@ export function ProductForm({
             price: num(f, "price"),
             low: num(f, "low"),
             maximum: num(f, "maximum") || undefined,
+            color: text(f, "color"),
+            gsm: num(f, "gsm") || undefined,
             active: !editProduct || f.has("active"),
           };
           commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
@@ -73,6 +75,8 @@ export function ProductForm({
             {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"]).map((unit) => <option key={unit}>{unit}</option>)}
           </GlassSelect>
         </Field>
+        <Field label="Colour (optional)"><input name="color" maxLength={80} defaultValue={editProduct?.color || ""} /></Field>
+        <Field label="GSM (optional)"><input name="gsm" type="number" min="0" step="0.01" defaultValue={editProduct?.gsm ?? ""} /></Field>
         <Field label="Cost price (PKR)">
           <input
             name="cost"

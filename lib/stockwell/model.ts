@@ -13,6 +13,8 @@ export type Product = {
   price: number;
   low: number;
   maximum?: number;
+  color?: string;
+  gsm?: number;
   active?: boolean;
   unit?: string;
 };
