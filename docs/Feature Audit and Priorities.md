@@ -191,3 +191,12 @@ Priority meanings: **P0** fixes financial inaccuracies; **P1** covers essential 
 6. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
 
 The shared review document and unresolved acceptance decisions can be prepared alongside these phases. Manufacturing and unknown Utility/Window features remain unconfirmed. This section updates the plan only; it does not change the application.
+
+
+## Implementation progress — 9 October 2026
+
+- [x] **P0: Pending-cheque ledger consistency.** Customer/supplier ledgers and financial movements now share the settled-payment rule. Pending, bounced, and unconfirmed cheques do not reduce balances. New clearances preserve receipt/issue date and store clearance date separately.
+- [x] **P0: Historical outstanding accuracy.** Bill reports calculate paid, return credit, balance, and payment status through the inclusive end date. The start date selects bills, without excluding earlier settlements against those bills. No end date uses all recorded activity.
+- Validation: all 53 unit tests and TypeScript checks pass, including customer/supplier historical payments, returns, cheque clearance, and legacy cleared records. Deployment has not been verified.
+- Legacy limitation: previously cleared cheques had their original date overwritten; their recorded date remains the settlement date. The original receipt date cannot be recovered from that record.
+- **Next item: P1 hierarchical chart of accounts**, followed by the remaining foundation, control, and operation items in the revised execution order.

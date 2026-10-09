@@ -97,7 +97,9 @@ export function ReportsView({
                 ? "Current stock snapshot. Date filters do not change this report."
                 : report.includes("ledger")
                   ? "Running balance includes transactions before the selected start date."
-                  : "Figures reflect the selected date range."}{" "}
+                  : ["Billing report", "Sales report", "Purchase report", "Receivables report", "Payables report"].includes(report)
+                    ? "Bills are selected by date range. Paid, return credit, balance, and status are calculated through the end date, or through today’s recorded activity when no end date is selected."
+                    : "Figures reflect the selected date range."}{" "}
               Amounts in PKR.
             </p>
           </div>

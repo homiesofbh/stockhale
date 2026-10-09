@@ -98,7 +98,7 @@ export function PaymentsView({
               kind: p.kind,
               amount: p.amount,
               method: p.chequeStatus ? `Cheque ${p.chequeStatus}` : p.method,
-              cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}` : "",
+              cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}${p.clearedDate ? ` · cleared ${p.clearedDate}` : ""}` : "",
               chequeStatus: p.chequeStatus,
               paymentId: p.id,
               head: p.head,

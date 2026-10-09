@@ -68,6 +68,7 @@ export type Payment = {
   chequeBank?: string;
   chequeDate?: string;
   chequeStatus?: "pending" | "cleared" | "bounced";
+  clearedDate?: string;
 };
 export type Expense = {
   id: string;
@@ -166,11 +167,15 @@ export const returned = (s: Store, id: string) =>
   round(
     s.returns.filter((r) => r.tradeId === id).reduce((n, r) => n + r.amount, 0),
   );
+// Legacy cleared cheques used date as the clearance date.
+export const paymentDate = (p: Payment) => p.clearedDate || p.date;
+export const isSettledPayment = (p: Payment) =>
+  p.method === "Cheque" ? p.chequeStatus === "cleared" : !p.chequeStatus || p.chequeStatus === "cleared";
 export const paid = (s: Store, t: Trade) =>
   round(
     t.paid +
       s.payments
-        .filter((p) => p.tradeId === t.id && (!p.chequeStatus || p.chequeStatus === "cleared"))
+        .filter((p) => p.tradeId === t.id && isSettledPayment(p))
         .reduce((n, p) => n + p.amount, 0),
   );
 // A negative balance is a credit owed back to the customer, or due back from the supplier.
@@ -431,7 +436,7 @@ export function recordPayment(s: Store, p: Payment): Store {
 export function clearCheque(s: Store, paymentId: string): Store {
   const payment = s.payments.find((p) => p.id === paymentId && p.chequeStatus === "pending");
   assert(!!payment, "This cheque is no longer pending.");
-  return { ...s, payments: s.payments.map((p) => p.id === paymentId ? { ...p, chequeStatus: "cleared", date: today() } : p) };
+  return { ...s, payments: s.payments.map((p) => p.id === paymentId ? { ...p, chequeStatus: "cleared", clearedDate: today() } : p) };
 }
 export function recordReturn(s: Store, r: ReturnRecord): Store {
   assert(
@@ -573,9 +578,9 @@ export function financialRows(s: Store): FinancialRow[] {
       -e.amount,
     ),
   );
-  s.payments.filter((p) => !p.chequeStatus || p.chequeStatus === "cleared").forEach((p) =>
+  s.payments.filter(isSettledPayment).forEach((p) =>
     push(
-      p.date,
+      paymentDate(p),
       (p.kind === "Customer" ? s.invoices : s.purchases).find(
         (t) => t.id === p.tradeId,
       )?.number || "",

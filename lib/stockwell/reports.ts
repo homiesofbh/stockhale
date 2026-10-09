@@ -2,6 +2,8 @@ import {
   balance,
   financialRows,
   paid,
+  isSettledPayment,
+  paymentDate,
   periodMatch,
   profit,
   returned,
@@ -25,8 +27,15 @@ export function createReportData(
   rows: unknown[][];
 } {
   const { report, reportContact, from, to, query } = options;
-  const invoices = filterTrades(s, s.invoices, options);
-  const purchases = filterTrades(s, s.purchases, options, true);
+  // The start date selects bills; all settlements through the end date count,
+  // including those before the start date. Status filtering uses that same snapshot.
+  const asOf: Store = to ? {
+    ...s,
+    payments: s.payments.filter((p) => paymentDate(p) <= to),
+    returns: s.returns.filter((r) => r.date <= to),
+  } : s;
+  const invoices = filterTrades(asOf, s.invoices, options);
+  const purchases = filterTrades(asOf, s.purchases, options, true);
   const accounting = financialRows(s);
   const matches = (...values: unknown[]) => matchesQuery(query, ...values);
   const inRange = (date: string) => periodMatch(date, from, to);
@@ -48,7 +57,7 @@ export function createReportData(
       report === "Purchase report" || report === "Payables report";
     let list = supplier ? purchases : invoices;
     if (report === "Receivables report" || report === "Payables report")
-      list = list.filter((t) => balance(s, t) !== 0);
+      list = list.filter((t) => balance(asOf, t) !== 0);
     return {
       columns: [
         "Reference",
@@ -70,9 +79,9 @@ export function createReportData(
         t.discount,
         t.tax,
         total(t),
-        returned(s, t.id),
-        paid(s, t),
-        balance(s, t),
+        returned(asOf, t.id),
+        paid(asOf, t),
+        balance(asOf, t),
       ]),
     };
   }
@@ -200,11 +209,11 @@ export function createReportData(
     s.payments
       .filter(
         (p) =>
-          p.kind === kind && (!reportContact || p.contactId === reportContact),
+          isSettledPayment(p) && p.kind === kind && (!reportContact || p.contactId === reportContact),
       )
       .forEach((p) =>
         entries.push({
-          date: p.date,
+          date: paymentDate(p),
           ref: trades.find((t) => t.id === p.tradeId)?.number || "",
           name: cName(p.contactId, supplier),
           type: "Payment",
