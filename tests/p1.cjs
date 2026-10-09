@@ -242,6 +242,19 @@ test('new sale costs come from the product at posting and forged line costs are 
  const forged = structuredClone(created); forged.invoices[0].lines[0].cost = 0;
  assert.throws(() => w.verifyChange(base, forged, 'Billing', context(clerk)), /posting calculations/);
 });
+test('financial reports reconcile to the canonical ledger fixture', () => {
+ const s = m.recordTrade(fixture(), 'Sale', bill({ paid: 20 }));
+ const purchase = m.recordTrade(s, 'Purchase', bill({ id: 'purchase', number: '', contactId: 'supplier', head: 'Purchases', lines: [{ productId: 'p', qty: 2, price: 8, cost: 8 }], paid: 16 }));
+ const expense = { id: 'expense', date: day, category: 'General', head: 'Expenses', amount: 3, method: 'Cash', notes: '' };
+ const final = { ...purchase, expenses: [...purchase.expenses, expense] };
+ const income = r.createReportData(final, opts('Income statement')).rows;
+ assert.deepEqual(income, [['Revenue', 20], ['Cost of goods sold', 10], ['Operating expenses', 3], ['Damaged stock', 0], ['Net income', 7]]);
+ const cash = r.createReportData(final, opts('Cash-in-hand report', day, '')).rows;
+ assert.equal(cash.find(row => row[0] === 'Receipts')[1], 20);
+ assert.equal(cash.find(row => row[0] === 'Payments')[1], 19);
+ const aging = r.createReportData(final, opts('Account aging report', day, day)).rows;
+ assert.equal(aging.some(row => row[1] === 'Buyer'), false);
+});
 
 test('fractional stock corrections preserve thousandths and duplicate lines do not oversell', () => {
  const base = fixture(), fractional = m.recordTrade(base, 'Sale', bill({ lines: [{ productId: 'p', qty: 1.001, price: 10, cost: 5 }] }));
