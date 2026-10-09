@@ -1,4 +1,5 @@
 "use client";
+import { CheckCircle2, Download, FileSpreadsheet, Clock3 } from "lucide-react";
 import { useEffect, useState } from "react";
 import type { Cache } from "@/lib/stockwell/workspace";
 import { BACKUP_REMINDER, backupDue, backupKey, downloadBackup } from "@/lib/stockwell/backup";
@@ -35,6 +36,7 @@ export function WorkspaceBackup({ cache, settings }: { cache: Cache; settings: b
     if (busy) return;
     setBusy(true);
     setError("");
+    setNotice("");
     try {
       await downloadBackup(cache);
       setDue(false);
@@ -47,19 +49,28 @@ export function WorkspaceBackup({ cache, settings }: { cache: Cache; settings: b
       setError(e instanceof Error ? e.message : "Backup failed. Please try again.");
     } finally { setBusy(false); }
   }
-  const controls = <>
-    <p>Download all store records, team details, audit history and pending changes in one Excel workbook.</p>
-    <p>Weekly reminders run while this app is open on this browser. If postponed, we remind you again in one hour until you request a download.</p>
-    {cache.queue.length > 0 && <p>Includes {cache.queue.length} pending changes saved on this device.</p>}
+  const contents = <div className="backup-contents">
+    <span className="backup-file-icon"><FileSpreadsheet size={26} strokeWidth={1.6} aria-hidden="true" /></span>
+    <div><strong>One workbook. All your records.</strong><p>Store records, team details, audit history and pending device changes.</p><span className="backup-format">Excel workbook · .xlsx</span></div>
+  </div>;
+  const download = <button type="button" className="primary backup-download" disabled={busy} onClick={() => void save()}><Download size={17} aria-hidden="true" />{busy ? "Preparing Excel…" : "Download all data"}</button>;
+  const feedback = <>
+    {cache.queue.length > 0 && <p className="backup-pending">Includes {cache.queue.length} pending changes saved on this device.</p>}
     {error && <p className="form-error" role="alert">{error}</p>}
-    <button className="primary" disabled={busy} onClick={() => void save()}>{busy ? "Preparing Excel…" : "Download all data (.xlsx)"}</button>
   </>;
   return <>
-    {settings && <section className="panel"><h2>Excel export & weekly backup</h2>{controls}{notice && <p role="status">{notice}</p>}</section>}
-    {due && <Modal title="Your weekly backup is due" close={postpone}>
-      {controls}
-      <button disabled={busy} onClick={postpone}>Remind me in one hour</button>
-      <p>The browser may ask where to save the file. If you cancel the download, use the export button in Settings to try again.</p>
+    {settings && <section className="backup-panel" aria-labelledby="backup-title">
+      <div className="backup-heading"><div><span className="eyebrow">DATA & BACKUP</span><h2 id="backup-title">Excel export & weekly backup</h2><p>Keep a downloadable copy of your workspace.</p></div>{download}</div>
+      {contents}
+      <p className="backup-reminder"><Clock3 size={16} aria-hidden="true" /><span>Weekly reminders appear while this app is open. Postpone for one hour when you need more time.</span></p>
+      {feedback}
+      {notice && <p className="backup-notice" role="status"><CheckCircle2 size={18} aria-hidden="true" /><span>{notice}</span></p>}
+    </section>}
+    {due && <Modal title="Your weekly backup is due" eyebrow="STOCKHALE / DATA & BACKUP" className="backup-modal" close={postpone}>
+      <div className="backup-modal-body"><p className="backup-intro">Save a copy of your workspace to keep your business records close at hand.</p>{contents}{feedback}
+        <p className="backup-save-hint">Choose where to save your file and keep it somewhere safe. If the download is cancelled or blocked, try again from Settings.</p>
+        <div className="backup-actions"><button type="button" className="secondary-button" disabled={busy} onClick={postpone}>Remind me in one hour</button>{download}</div>
+      </div>
     </Modal>}
   </>;
 }

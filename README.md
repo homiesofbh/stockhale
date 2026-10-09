@@ -2,6 +2,8 @@
 
 An inventory management system with offline workspaces, Neon-compatible PostgreSQL storage, and Better Auth email/password sessions. The Vercel application does not write database files to its local filesystem.
 
+Production domain: **https://stockhale.app**. See the [external hosting and Better Auth checklist](docs/PRODUCTION-DOMAIN.md) before switching traffic.
+
 ## Local setup
 
 Requires Node 24+ and PostgreSQL (Neon or a local database).
@@ -50,7 +52,7 @@ bucket, configure registrar DNS, or deploy the Worker.
 
 1. Create a Neon project, starting on its Free plan. Choose a database region close to the Vercel function region. Leave scale-to-zero enabled.
 2. Copy Neon's **pooled** connection string (the hostname contains `-pooler`) to the Vercel `DATABASE_URL` environment variable. Keep the SSL parameters supplied by Neon.
-3. Set a random `BETTER_AUTH_SECRET`, and set `BETTER_AUTH_URL=https://stockwell-six.vercel.app` for this production deployment. Keep the secret stable across releases; changing it invalidates sessions.
+3. Set a random `BETTER_AUTH_SECRET`, and set `BETTER_AUTH_URL=https://stockhale.app` for this production deployment. Keep the secret stable across releases; changing it invalidates sessions.
 4. Configure the same values in a trusted local environment, then run `pnpm db:migrate` against the intended database. Optionally use `DATABASE_MIGRATION_URL` for Neon's direct connection. Migrations run explicitly, never during a build or on sign-in.
 5. Deploy/redeploy on Vercel and create your account. New instances and deployments now share persistent data and sessions.
 

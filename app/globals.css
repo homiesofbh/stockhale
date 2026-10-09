@@ -3047,3 +3047,35 @@ small, .eyebrow, .text-button { font-size: 12px; }
   .team-signup-link-controls input { width: 100%; flex: auto; font-size: 16px; }
   .team-signup-link-controls button { width: 100%; }
 }
+
+/* Export appears outside settings-page; keep its layout self-contained. */
+.backup-panel { margin: 24px 0; padding: 28px; border: 1px solid #ffffff85; border-radius: 24px; background: #ffffff50; }
+.backup-heading { display: flex; align-items: center; justify-content: space-between; gap: 24px; margin-bottom: 24px; }
+.backup-heading .eyebrow { display: block; margin-bottom: 8px; }
+.backup-heading h2 { font-family: var(--display); font-size: 22px; line-height: 1.3; margin: 0 0 8px; }
+.backup-heading p, .backup-contents p { color: var(--muted); line-height: 1.65; margin: 0; max-width: 65ch; }
+.backup-download { display: inline-flex; align-items: center; justify-content: center; gap: 9px; flex-shrink: 0; min-height: 44px; }
+.backup-contents { display: flex; align-items: center; gap: 16px; padding: 20px; background: #ffffff55; border-radius: 16px; }
+.backup-file-icon { display: grid; place-items: center; flex: 0 0 48px; height: 56px; background: #e2ddea; border-radius: 10px; color: var(--deep); }
+.backup-contents strong { display: block; margin-bottom: 4px; font-weight: 600; }
+.backup-format { display: block; color: var(--deep); font-size: 11px; margin-top: 8px; }
+.backup-reminder { display: flex; align-items: flex-start; gap: 9px; color: var(--muted); line-height: 1.65; margin: 18px 0 0; max-width: 75ch; font-size: 12px; }
+.backup-reminder svg, .backup-notice svg { flex-shrink: 0; margin-top: 2px; }
+.backup-pending { margin: 16px 0 0; color: var(--deep); line-height: 1.6; }
+.backup-notice { display: flex; align-items: flex-start; gap: 9px; margin: 18px 0 0; padding-top: 16px; border-top: 1px solid #c9c1d3; line-height: 1.6; }
+.backup-modal { max-width: 560px; }
+.backup-modal .modal-head h2 { text-transform: none; line-height: 1.3; }
+.backup-modal-body { display: grid; gap: 20px; }
+.backup-intro, .backup-save-hint { margin: 0; color: var(--muted); line-height: 1.7; }
+.backup-save-hint { font-size: 12px; }
+.backup-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 10px; padding-top: 20px; border-top: 1px solid #c9c1d3; }
+.backup-modal .backup-pending, .backup-modal .form-error { margin: 0; }
+.backup-panel button:focus-visible, .backup-modal button:focus-visible { outline: 2px solid var(--deep); outline-offset: 4px; }
+@media (max-width: 640px) {
+  .backup-panel { padding: 20px; }
+  .backup-heading { flex-direction: column; align-items: stretch; gap: 18px; }
+  .backup-heading h2 { font-size: 20px; }
+  .backup-contents { align-items: flex-start; padding: 16px; gap: 12px; }
+  .backup-actions { flex-direction: column-reverse; }
+  .backup-actions > button { width: 100%; }
+}

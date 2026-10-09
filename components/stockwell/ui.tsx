@@ -88,20 +88,24 @@ export function Modal({
   title,
   children,
   close,
+  eyebrow = "STOCKHALE / NEW RECORD",
+  className = "",
 }: {
   title: string;
   children: ReactNode;
   close: () => void;
+  eyebrow?: string;
+  className?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);
   useEffect(() => {
     dialog.current?.showModal();
   }, []);
   return (
-    <dialog ref={dialog} onCancel={close} className="modal">
+    <dialog ref={dialog} onCancel={(event) => { event.preventDefault(); close(); }} className={`modal ${className}`} aria-label={title}>
       <div className="modal-head">
         <div>
-          <span className="eyebrow">STOCKHALE / NEW RECORD</span>
+          <span className="eyebrow">{eyebrow}</span>
           <h2>{title}</h2>
         </div>
         <button
