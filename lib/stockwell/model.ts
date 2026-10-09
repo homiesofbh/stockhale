@@ -34,6 +34,8 @@ export type Contact = {
   mobile?: string;
   salesTaxNumber?: string;
   description?: string;
+  openingBalance?: number;
+  openingBalanceDate?: string;
 };
 export type Line = {
   productId: string;
@@ -273,7 +275,7 @@ export const contactBalance = (
     (kind === "Customer" ? s.invoices : s.purchases)
       .filter((t) => t.contactId === id)
       .reduce((n, t) => n + balance(s, t), 0),
-  );
+  ) + (s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === id)?.openingBalance || 0);
 export const periodMatch = (date: string, from: string, to: string) =>
   (!from || date >= from) && (!to || date <= to);
 const assert = (ok: boolean, message: string) => {

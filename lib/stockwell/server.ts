@@ -88,6 +88,10 @@ async function event(
     ],
   );
 }
+export async function recordAudit(user: Row, module: string, action: string, records: string) {
+  const w = await workspace(user);
+  await event(w, user, module, action, records);
+}
 export async function snapshot(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");

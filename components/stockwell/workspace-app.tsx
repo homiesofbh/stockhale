@@ -612,6 +612,8 @@ export function WorkspaceApp() {
                           inRange={inRange}
                           matches={matches}
                           open={open}
+                          owner={account.member.role === "owner"}
+                          commit={commit}
                         />
                       )}
                       {module === "Payments" && (
@@ -765,6 +767,7 @@ export function WorkspaceApp() {
               submit={submit}
               editContact={editContact}
               text={text}
+              num={num}
               module={module}
               commit={commit}
               s={s}

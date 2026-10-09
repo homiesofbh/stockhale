@@ -8,6 +8,7 @@ type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   editContact: Contact | null;
   text: (f: FormData, key: string) => string;
+  num: (f: FormData, key: string) => number;
   module: Module;
   commit: (next: Store, message: string) => void;
   s: Store;
@@ -18,6 +19,7 @@ export function ContactForm({
   submit,
   editContact,
   text,
+  num,
   module,
   commit,
   s,
@@ -41,6 +43,8 @@ export function ContactForm({
             mobile: text(f, "mobile"),
             salesTaxNumber: text(f, "salesTaxNumber"),
             description: text(f, "description"),
+            openingBalance: num(f, "openingBalance"),
+            openingBalanceDate: text(f, "openingBalanceDate"),
           };
           commit(saveContact(s, module === "Suppliers" ? "Supplier" : "Customer", c), "Contact saved.");
           if (detailContact?.id === c.id) setDetailContact(c);
@@ -75,6 +79,8 @@ export function ContactForm({
         </Field>
         <Field label="Sales-tax registration (optional)"><input name="salesTaxNumber" defaultValue={editContact?.salesTaxNumber || ""} /></Field>
         <div className="form-wide"><Field label="Description (optional)"><textarea name="description" defaultValue={editContact?.description || ""} maxLength={2000} /></Field></div>
+        <Field label="Opening balance (optional)"><input name="openingBalance" type="number" min="0" step="0.01" defaultValue={editContact?.openingBalance || 0} /></Field>
+        <Field label="Opening balance date"><input name="openingBalanceDate" type="date" defaultValue={editContact?.openingBalanceDate || ""} /></Field>
       </div>
       {module === "Customers" && <p className="form-hint">Only a customer or company name is required. Walk-in bills automatically create or link a customer record.</p>}
       <div className="form-foot">
