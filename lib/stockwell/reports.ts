@@ -113,6 +113,19 @@ export function createReportData(
     }).filter(row => row[7] !== 0 && matches(row[0], row[1], row[2]));
     return { columns: ["Type", "Contact", "Company", "Current", "30–59 days", "60–89 days", "90+ days", "Total outstanding"], rows };
   }
+  if (report === "Yearly summary") {
+    const years = new Set<string>();
+    [...s.invoices, ...s.purchases, ...s.expenses, ...s.payments].forEach(r => years.add(r.date.slice(0, 4)));
+    const rows = [...years].sort().map(year => {
+      const sales = s.invoices.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
+      const purchases = s.purchases.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
+      const expenses = s.expenses.filter(e => e.date.startsWith(year)).reduce((n, e) => n + e.amount, 0);
+      const receipts = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Customer").reduce((n, p) => n + p.amount, 0);
+      const payments = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Supplier").reduce((n, p) => n + p.amount, 0);
+      return [year, round(sales), round(purchases), round(expenses), round(receipts), round(payments), round(receipts - payments)];
+    }).filter(row => matches(row[0]));
+    return { columns: ["Year", "Sales", "Purchases", "Expenses", "Customer receipts", "Supplier payments", "Net cash movement"], rows };
+  }
   if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId, t.number.startsWith("PUR"), t), t.walkInName, t.walkInCompany, t.walkInPhone)).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR"), t), total(t)]) };
   if (report === "Cash-in-hand report" || report === "Cash-flow report") {
     const statement = report === "Cash-in-hand report" ? cashStatement(s, from, to || today()) : cashFlow(s, from, to || today());

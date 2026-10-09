@@ -60,6 +60,7 @@ export function ReportsView({
                 "Payables report",
                 "Payment report",
                 "Account aging report",
+                "Yearly summary",
                 "Accounts Head report",
                 "Profit summary",
                 "Date-wise transaction report",
