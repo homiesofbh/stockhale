@@ -41,6 +41,7 @@ export function ProductForm({
             cost: num(f, "cost"),
             price: num(f, "price"),
             low: num(f, "low"),
+            active: !editProduct || f.has("active"),
           };
           commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
         })
@@ -123,6 +124,7 @@ export function ProductForm({
         Stock changes after creation are recorded through purchases, billing,
         returns, or stock adjustments.
       </p>
+      {editProduct && <label className="checkbox-row"><input name="active" type="checkbox" defaultChecked={editProduct.active !== false} /> Active product</label>}
       <div className="form-foot">
         <button
           type="button"

@@ -12,6 +12,7 @@ export type Product = {
   cost: number;
   price: number;
   low: number;
+  active?: boolean;
   unit?: string;
 };
 export type Contact = {
@@ -38,6 +39,7 @@ export type Trade = {
   createdAt?: number;
   id: string;
   number: string;
+  reference?: string;
   date: string;
   contactId: string;
   lines: Line[];
@@ -378,7 +380,7 @@ export function recordTrade(
   const demand = new Map<string, number>();
   t.lines.forEach((l) => {
     assert(
-      s.products.some((p) => p.id === l.productId),
+      s.products.some((p) => p.id === l.productId && p.active !== false),
       "A selected product no longer exists.",
     );
     assert(

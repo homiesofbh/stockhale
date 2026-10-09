@@ -100,6 +100,7 @@ export function TradeForm({
             status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
             id: uid(),
             number: "",
+            reference: text(f, "reference"),
             date: text(f, "date"),
             contactId: text(f, "contact"),
             lines,
@@ -191,7 +192,7 @@ export function TradeForm({
       <Field label="Or choose a product">
         <GlassSelect value="" onValueChange={(e) => addLine(e)}>
           <option value="">Select product to add</option>
-          {s.products.map((p) => (
+          {s.products.filter((p) => p.active !== false).map((p) => (
             <option value={p.id} key={p.id}>
               {p.name} · {p.sku} · {stock(s, p.id)} in stock
             </option>
@@ -273,6 +274,9 @@ export function TradeForm({
         )}
       </div>
       <div className="form-grid">
+        <Field label="Reference / book no.">
+          <input name="reference" maxLength={120} placeholder="Optional" />
+        </Field>
         <Field label="Discount amount (PKR)">
           <input
             type="number"
