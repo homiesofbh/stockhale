@@ -185,7 +185,7 @@ export const emptyStore = (): Store => ({
     { id: "easypaisa", name: "EasyPaisa", type: "Wallet" },
     { id: "nayapay", name: "NayaPay", type: "Wallet" },
   ],
-  units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"],
+  units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"],
 });
 export const stock = (s: Store, id: string) =>
   roundQty(

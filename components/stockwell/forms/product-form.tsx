@@ -72,7 +72,7 @@ export function ProductForm({
         </Field>
         <Field label="Measurement unit">
           <GlassSelect name="unit" defaultValue={editProduct?.unit || "piece"}>
-            {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"]).map((unit) => <option key={unit}>{unit}</option>)}
+            {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"]).map((unit) => <option key={unit}>{unit}</option>)}
           </GlassSelect>
         </Field>
         <Field label="Colour (optional)"><input name="color" maxLength={80} defaultValue={editProduct?.color || ""} /></Field>
