@@ -206,6 +206,7 @@ export function TradeForm({
               "Product",
               "Quantity",
               modal === "Purchase" ? "Cost price" : "Unit price",
+              "Line discount",
               "Total",
               "",
             ]}
@@ -255,7 +256,16 @@ export function TradeForm({
                   )
                 }
               />,
-              money(l.qty * l.price),
+              <input
+                aria-label={`Line discount for ${pName(l.productId)}`}
+                type="number"
+                min="0"
+                max={l.qty * l.price}
+                step="0.01"
+                value={l.discount || 0}
+                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Number(e.target.value) } : x))}
+              />,
+              money(l.qty * l.price - (l.discount || 0)),
               <button
                 type="button"
                 className="icon-button"
@@ -281,7 +291,7 @@ export function TradeForm({
           <input
             type="number"
             min="0"
-            max={subtotal({ lines })}
+            max={Math.max(0, subtotal({ lines }) - lines.reduce((n, l) => n + (l.discount || 0), 0))}
             step="0.01"
             value={discount}
             onChange={(e) => setDiscount(Number(e.target.value))}
@@ -348,7 +358,7 @@ export function TradeForm({
         </span>
         <span>
           Tax{" "}
-          <b>{money(round(((subtotal({ lines }) - discount) * tax) / 100))}</b>
+          <b>{money(round(((subtotal({ lines }) - lines.reduce((n, l) => n + (l.discount || 0), 0) - discount) * tax) / 100))}</b>
         </span>
         <span className="net-total">
           Net payable <b>{money(billTotal)}</b>

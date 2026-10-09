@@ -30,6 +30,7 @@ export type Line = {
   qty: number;
   price: number;
   cost: number;
+  discount?: number;
 };
 export type Trade = {
   status?: "draft" | "posted" | "void";
@@ -187,8 +188,10 @@ export const stock = (s: Store, id: string) =>
   );
 export const subtotal = (t: Pick<Trade, "lines">) =>
   round(t.lines.reduce((n, l) => n + l.qty * l.price, 0));
+export const lineDiscount = (t: Pick<Trade, "lines">) =>
+  round(t.lines.reduce((n, l) => n + (l.discount || 0), 0));
 export const total = (t: Pick<Trade, "lines" | "discount" | "tax">) =>
-  round((subtotal(t) - t.discount) * (1 + t.tax / 100));
+  round((subtotal(t) - lineDiscount(t) - t.discount) * (1 + t.tax / 100));
 export const returned = (s: Store, id: string) =>
   round(
     s.returns.filter((r) => r.tradeId === id).reduce((n, r) => n + r.amount, 0),
@@ -366,7 +369,7 @@ export function recordTrade(
     validNumber(t.discount) &&
       validNumber(t.tax) &&
       t.tax <= 100 &&
-      t.discount <= subtotal(t),
+      t.discount + lineDiscount(t) <= subtotal(t),
     "Discount must not exceed the subtotal; tax must be between 0 and 100%.",
   );
   assert(
@@ -384,12 +387,12 @@ export function recordTrade(
       "A selected product no longer exists.",
     );
     assert(
-      validNumber(l.qty, 0.001) && roundQty(l.qty) === l.qty && validNumber(l.price) && validNumber(l.cost),
+      validNumber(l.qty, 0.001) && roundQty(l.qty) === l.qty && validNumber(l.price) && validNumber(l.cost) && validNumber(l.discount || 0) && (l.discount || 0) <= l.qty * l.price,
       "Quantities must be positive and prices non-negative.",
     );
     demand.set(l.productId, roundQty((demand.get(l.productId) || 0) + l.qty));
   });
-  t = { ...t, lines: t.lines.map(l => ({ ...l, cost: kind === "Sale" ? s.products.find(p => p.id === l.productId)!.cost : l.price })) };
+  t = { ...t, lines: t.lines.map(l => ({ ...l, discount: l.discount || 0, cost: kind === "Sale" ? s.products.find(p => p.id === l.productId)!.cost : l.price })) };
   if (kind === "Sale" && t.status !== "draft")
     demand.forEach((qty, id) =>
       assert(
@@ -521,8 +524,8 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
     if (t)
       amount = Math.min(
         round(
-          ((r.qty * lines.reduce((n, l) => n + l.qty * l.price, 0)) / qty) *
-            (subtotal(t) ? 1 - t.discount / subtotal(t) : 1) *
+          ((r.qty * lines.reduce((n, l) => n + l.qty * l.price - (l.discount || 0), 0)) / qty) *
+            (subtotal(t) - lineDiscount(t) ? 1 - t.discount / (subtotal(t) - lineDiscount(t)) : 1) *
             (1 + t.tax / 100),
         ),
         Math.max(0, round(total(t) - returned(s, t.id))),
