@@ -3140,3 +3140,10 @@ small, .eyebrow, .text-button { font-size: 12px; }
 .daily-close-form { padding: 24px 28px; border-top: 1px solid #b9a6c644; }
 
 .daily-close-card { margin-top: 24px; }
+
+@media print {
+  .report-toolbar, .workspace-header, nav, button, .daily-close-form { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #bbb; break-inside: avoid; }
+  body { background: white !important; color: black !important; }
+  table { font-size: 10pt; }
+}

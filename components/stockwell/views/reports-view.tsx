@@ -96,6 +96,9 @@ export function ReportsView({
         >
           <FileText size={16} /> Download CSV
         </button>
+        <button className="secondary-button" onClick={() => window.print()}>
+          Print report
+        </button>
       </div>
       <section className="card">
         <div className="section-head">
