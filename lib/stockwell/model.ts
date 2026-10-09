@@ -12,6 +12,7 @@ export type Product = {
   cost: number;
   price: number;
   low: number;
+  maximum?: number;
   active?: boolean;
   unit?: string;
 };

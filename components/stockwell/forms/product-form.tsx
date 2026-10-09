@@ -41,6 +41,7 @@ export function ProductForm({
             cost: num(f, "cost"),
             price: num(f, "price"),
             low: num(f, "low"),
+            maximum: num(f, "maximum") || undefined,
             active: !editProduct || f.has("active"),
           };
           commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
@@ -104,6 +105,9 @@ export function ProductForm({
           />
         </Field>
         </div>
+        <Field label="Maximum stock (optional)">
+          <input name="maximum" type="number" min="0" step="0.001" defaultValue={editProduct?.maximum ?? ""} />
+        </Field>
         {!editProduct && (
           <Field label="Opening stock">
             <input

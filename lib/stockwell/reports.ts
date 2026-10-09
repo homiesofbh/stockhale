@@ -110,6 +110,7 @@ export function createReportData(
         "Selling price",
         "Inventory value",
         "Low-stock threshold",
+        "Maximum-stock threshold",
       ],
       rows: s.products
         .filter((p) => matches(p.name, p.sku, p.category))
@@ -122,6 +123,7 @@ export function createReportData(
           p.price,
           round(stock(s, p.id) * p.cost),
           p.low,
+          p.maximum ?? "",
         ]),
     };
   if (report === "Stock movement report")

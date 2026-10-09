@@ -55,6 +55,7 @@ export function InventoryView({
             "Stock",
             "Cost price",
             "Selling price",
+            "Max stock",
             "Status",
             "",
           ]}
@@ -83,6 +84,7 @@ export function InventoryView({
               <b>{stock(s, p.id)} {p.unit || "piece"}</b>,
               money(p.cost),
               money(p.price),
+              p.maximum ?? "—",
               <Badge tone={stock(s, p.id) <= p.low ? "amber" : "green"}>
                 {stock(s, p.id) <= p.low ? "Low stock" : "In stock"}
               </Badge>,
