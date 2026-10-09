@@ -1,8 +1,11 @@
 "use client";
+import { ChequeRegister } from "./cheque-register";
+import type { Actor } from "@/lib/stockwell/operations";
 import { BankVouchersView } from "./bank-vouchers-view";
 import { Badge, Stat, Table } from "@/components/stockwell/ui";
 import { clearCheque, money, type Store } from "@/lib/stockwell/model";
 type Props = {
+  actor: Actor;
   receivables: number;
   payables: number;
   cash: number;
@@ -14,6 +17,7 @@ type Props = {
   commit: (next: Store, message: string) => void;
 };
 export function PaymentsView({
+  actor,
   receivables,
   payables,
   cash,
@@ -44,8 +48,9 @@ export function PaymentsView({
           detail={`Bank ${money(bank)}`}
         />
       </div>
-      <BankVouchersView s={s} matches={matches} inRange={inRange} commit={commit} />
-      <section className="card">
+      <ChequeRegister s={s} actor={actor} matches={matches} commit={commit} />
+      <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} />
+      <section className="card mt-8">
         <div className="section-head">
           <h2>Payment history</h2>
           <p>Includes payments collected when a transaction was created.</p>
@@ -64,7 +69,7 @@ export function PaymentsView({
           ]}
           rows={[
             ...s.invoices
-              .filter((t) => t.paid > 0)
+              .filter((t) => t.status !== "draft" && t.status !== "void" && t.paid > 0)
               .map((t) => ({
                 date: t.date,
                 contact: t.contactId ? cName(t.contactId) : [t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer",
@@ -78,7 +83,7 @@ export function PaymentsView({
                 head: t.head,
               })),
             ...s.purchases
-              .filter((t) => t.paid > 0)
+              .filter((t) => t.status !== "draft" && t.status !== "void" && t.paid > 0)
               .map((t) => ({
                 date: t.date,
                 contact: cName(t.contactId, true),
@@ -123,7 +128,7 @@ export function PaymentsView({
               p.method,
               p.cheque,
               p.head,
-              p.chequeStatus === "pending" ? <button className="link" onClick={() => commit(clearCheque(s, p.paymentId), "Cheque cleared. Bill balance updated.")}>Mark cleared</button> : "",
+              p.chequeStatus === "pending" ? "Use cheque register" : "",
             ])}
         />
       </section>

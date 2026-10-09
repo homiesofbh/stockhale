@@ -1,6 +1,7 @@
 import { jsPDF } from "jspdf";
 import {
   balance,
+  isPosted,
   paid,
   returned,
   round,
@@ -45,6 +46,7 @@ export function createInvoicePdf(
   paper: InvoicePaper = "A4",
   options: PdfOptions = {},
 ) {
+  if (!isPosted(t)) throw new Error("Post the bill before issuing an invoice PDF.");
   const receipt = paper !== "A4";
   const width = paper === "58mm" ? 58 : paper === "80mm" ? 80 : 210;
   const margin = receipt ? 4 : 17;

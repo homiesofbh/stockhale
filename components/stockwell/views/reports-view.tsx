@@ -1,4 +1,6 @@
 "use client";
+import { DailyClosingView } from "./daily-closing-view";
+import type { Actor } from "@/lib/stockwell/operations";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Badge, Field, Table } from "@/components/stockwell/ui";
 import { csv } from "@/lib/stockwell/downloads";
@@ -6,6 +8,8 @@ import { type Store } from "@/lib/stockwell/model";
 import { FileText } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
+  actor: Actor;
+  commit: (s: Store, message: string) => void;
   report: string;
   setReport: Dispatch<SetStateAction<string>>;
   setReportContact: Dispatch<SetStateAction<string>>;
@@ -17,6 +21,7 @@ type Props = {
   };
 };
 export function ReportsView({
+  actor, commit,
   report,
   setReport,
   setReportContact,
@@ -37,6 +42,10 @@ export function ReportsView({
               }}
             >
               {[
+                "Cash-in-hand report",
+                "Bank-balance report",
+                "Cash-flow report",
+                "Unposted bills",
                 "Billing report",
                 "Sales report",
                 "Purchase report",
@@ -118,6 +127,7 @@ export function ReportsView({
           )}
         />
       </section>
+      <DailyClosingView s={s} actor={actor} commit={commit} />
     </>
   );
 }

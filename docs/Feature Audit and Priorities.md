@@ -90,13 +90,10 @@ Manufacturing, unknown Utility/Window functions, and unspecified payroll rules r
 
 ## Response 2: Prioritized work list
 
-This list contains remaining work. The original feature audit above records the initial findings. Continue with accounting foundations, then complete reports and payroll.
+This list contains remaining work. The original feature audit above records the initial findings. Continue with P2 usability, item details, and reports, then payroll.
 
 | Priority | Work item | Scope |
 |---|---|---|
-| **P1 — High** | Add posting and correction workflows | Draft/unposted bills, posting controls, voucher register, corrections/reversals, and audit trail. |
-| **P1 — High** | Complete cheque management | Received/issued register, post-dated cheques, clearance, bounce, cancellation, and linked account effects. |
-| **P1 — High** | Make backups complete and restorable | Include full audit history; add validated restore with protection against accidental overwrites. |
 | **P2 — Medium** | Complete customer/supplier profiles | Contact person, separate mobile, sales-tax registration, descriptions, and opening balances. |
 | **P2 — Medium** | Complete sales entry | Previous customer balance, book/voucher references, and line-level discounts. |
 | **P2 — Medium** | Preserve walk-in identity in reports | Show and search names, company names, and phone numbers. |
@@ -178,10 +175,7 @@ Priority meanings: **P0** fixes financial inaccuracies; **P1** covers essential 
 
 ### Revised execution order
 
-1. **P1 foundations:** Posting controls and cheque lifecycle.
-2. **P1 controls:** Admin bill corrections, expense date limits, account-head authority, automatic walk-in customer linking, and complete/restorable backups.
-3. **P1 operations:** Cash-in-hand, cash flow, and daily closing/reopening.
-4. **P2:** Textile item fields, units, inactivation, walk-in identity/search, attachments, remaining reports, printer verification, and user guidance.
-5. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
+1. **P2:** Textile item fields, units, inactivation, walk-in identity/search, attachments, remaining reports, printer verification, and user guidance.
+2. **P3:** Payroll as listed in the original plan, after confirming attendance, salary, advance, and deduction rules.
 
 The shared review document and unresolved acceptance decisions can be prepared alongside these phases. Manufacturing and unknown Utility/Window features remain unconfirmed. This section updates the plan only; it does not change the application.

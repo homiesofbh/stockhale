@@ -1,4 +1,6 @@
 "use client";
+import { ReasonDialog } from "../reason-dialog";
+import { reverseVoucher, type Actor } from "@/lib/stockwell/operations";
 import { useState } from "react";
 import { accountPath, chartAccounts, type Account } from "@/lib/stockwell/accounts";
 import { JournalForm } from "@/components/stockwell/forms/journal-form";
@@ -21,13 +23,15 @@ function weekLabel(start: string) {
   return `${format.format(first)} – ${format.format(last)}`;
 }
 type Props = {
+  actor: Actor;
   s: Store;
   commit: (next: Store, message: string) => void;
   matches: (...values: unknown[]) => boolean;
   accounting: FinancialRow[];
   inRange: (date: string) => boolean;
 };
-export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Props) {
+export function AccountHeadsView({ s, matches, accounting, inRange, commit, actor }: Props) {
+  const [reversing, setReversing] = useState("");
   const [editing, setEditing] = useState<Account | null>(null);
   const [journalEditor, setJournalEditor] = useState<JournalVoucher | "new" | null>(null);
   const [journalDetails, setJournalDetails] = useState<JournalVoucher | null>(null);
@@ -70,7 +74,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
         <p className="chart-account-date">{account.openingDate ? `As of ${account.openingDate}` : "No opening date recorded"}</p>
         <p className="chart-account-journal-balance">Opening + posted vouchers <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
         {account.description && <p className="chart-account-description">{account.description}</p>}
-        <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span><button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button></div>
+        <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span>{actor.role === "owner" && <button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button>}</div>
       </article>
       {!!children.length && <ul className="chart-account-children">{children.map(child => renderAccount(child, [...ancestors, account.id]))}</ul>}
     </li>;
@@ -109,6 +113,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit }: Pr
       {journalDetails && <Modal title={journalDetails.number} close={() => setJournalDetails(null)}>
         <p>{journalDetails.date} · {journalDetails.reference || "No external reference"}</p><p>{journalDetails.notes}</p>
         <Table headers={["Account", "Description", "Debit", "Credit"]} rows={journalDetails.lines.map(l => [accounts.find(a => a.id === l.accountId)?.name || "Unknown account", l.description, money(l.debit), money(l.credit)])} />
+        {actor.role === "owner" && !s.journals?.some(v => v.reversalOf === journalDetails.id) && <button className="secondary" onClick={() => { setReversing(journalDetails.id); setJournalDetails(null); }}>Reverse journal</button>}
         <p>Debit {money(journalTotals(journalDetails.lines).debit)} · Credit {money(journalTotals(journalDetails.lines).credit)}</p><p>Posted {journalDetails.postedAt ? new Date(journalDetails.postedAt).toLocaleString("en-PK") : ""} · Locked</p>
       </Modal>}
       <section className="card mt-8">

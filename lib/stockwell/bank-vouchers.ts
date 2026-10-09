@@ -2,6 +2,7 @@ import { chartAccounts } from "./accounts";
 import { financialRows, round, type FinancialAccount, type Store } from "./model";
 import type { JournalLine } from "./journals";
 export type BankVoucher = {
+  reversalOf?: string;
   id: string; number: string; date: string; kind: "Receipt" | "Payment" | "Transfer";
   accountId: string; toAccountId: string; counterAccountId: string; amount: number;
   reference: string; notes: string; status: "draft" | "posted"; createdAt: number; postedAt?: string;
@@ -93,7 +94,7 @@ export function validateBanks(s: Store, before?: Store) {
   for (const key of ["invoices", "purchases", "payments", "expenses"] as const) {
     for (const record of s[key]) {
       const bank = banks.find(a => a.id === record.financialAccountId);
-      if (record.financialAccountId) check(!!bank && bank.name === record.method, "Invalid payment account reference.");
+      if (record.financialAccountId) check(!!bank && (bank.name === record.method || record.method === "Cheque"), "Invalid payment account reference.");
       const named = bank || banks.find(a => a.name === record.method);
       const old = before?.[key].find(a => a.id === record.id);
       if (before && (!old || JSON.stringify(old) !== JSON.stringify(record)) && named) check(named.active !== false, "Inactive payment accounts cannot be used for new transactions.");

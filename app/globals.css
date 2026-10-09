@@ -3100,3 +3100,9 @@ small, .eyebrow, .text-button { font-size: 12px; }
 .journal-register-reference small { color: #756184; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
 
 .bank-balance-note { margin: 0; padding: 18px 28px; color: #756184; font-size: 12px; line-height: 1.6; }
+
+.audit-details { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 16px; font-size: 12px; }
+
+.daily-close-form { padding: 24px 28px; border-top: 1px solid #b9a6c644; }
+
+.daily-close-card { margin-top: 24px; }

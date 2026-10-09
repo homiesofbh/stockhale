@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { cacheKey, type Cache, type Workspace } from "./workspace";
+import { verifyChange, cacheKey, type Cache, type Workspace } from "./workspace";
 import type { Store } from "./model";
 import { configureServiceWorker } from "./service-worker-client";
 export async function workspaceRequest(body?: unknown) {
@@ -22,7 +22,7 @@ export function useWorkspace() {
     [ready, setReady] = useState(false),
     [syncStatus, setSyncStatus] = useState("Connecting…");
   const current = useRef<Cache | null>(null),
-    busy = useRef(false);
+    busy = useRef(false), actionBusy = useRef(false);
   function save(value: Cache) {
     const key = cacheKey(value.workspace.id);
     const previous = current.current;
@@ -36,11 +36,11 @@ export function useWorkspace() {
     setCache(value);
   }
   async function sync() {
-    if (busy.current) return;
+    if (busy.current || actionBusy.current) return;
     busy.current = true;
     try {
       const c = current.current;
-      const w: Workspace = await workspaceRequest(
+      const w: Workspace & { accepted?: string[] } = await workspaceRequest(
         c?.queue.length
           ? {
               action: "sync",
@@ -50,7 +50,7 @@ export function useWorkspace() {
           : undefined,
       );
       const latest = current.current;
-      if (c?.queue.length && w.revision !== c.revision + 1)
+      if (c?.queue.length && (!w.accepted?.includes(c.queue[0].id) || w.revision < c.revision + 1))
         throw Object.assign(new Error("Server records changed during retry."), {
           status: 409,
         });
@@ -62,10 +62,10 @@ export function useWorkspace() {
       save({
         workspace: remaining.length ? { ...w, store: latest!.workspace.store } : w,
         queue: remaining,
-        revision: w.revision,
+        revision: remaining.length && c?.queue.length ? c.revision + 1 : w.revision,
       });
-      setSyncStatus(remaining.length ? "Pending sync" : "Synced");
-      if (remaining.length) setTimeout(() => void sync(), 100);
+      setSyncStatus(remaining.length && c && w.revision > c.revision + 1 ? "Conflict · newer queued changes preserved" : remaining.length ? "Pending sync" : "Synced");
+      if (remaining.length && (!c || w.revision === c.revision + 1)) setTimeout(() => void sync(), 100);
     } catch (e) {
       const status = (e as { status?: number }).status;
       if (status === 401) {
@@ -79,7 +79,9 @@ export function useWorkspace() {
             ? "Conflict · pending changes preserved"
             : status === 403
               ? "Permission changed · pending changes preserved"
-              : "Offline · changes saved on this device",
+              : status === 400
+                ? `Review needed · ${e instanceof Error ? e.message : "Pending change rejected"} · changes preserved`
+                : "Offline · changes saved on this device",
         );
     } finally {
       busy.current = false;
@@ -119,6 +121,7 @@ export function useWorkspace() {
     };
   }, []);
   function commit(store: Store, module: string, action: string) {
+    if (actionBusy.current) throw new Error("Wait for the current workspace action to finish before saving records.");
     const c = current.current;
     if (!c) throw new Error("Sign in before saving records.");
     if (
@@ -126,6 +129,8 @@ export function useWorkspace() {
       !c.workspace.member.modules.includes(module)
     )
       throw new Error("You do not have permission for this module.");
+    const occurredAt = store.expenses.find(e => !c.workspace.store.expenses.some(old => old.id === e.id))?.createdAt || new Date().toISOString();
+    verifyChange(c.workspace.store, store, module, { actor: c.workspace.member, occurredAt });
     const next = {
       ...c,
       workspace: { ...c.workspace, store },
@@ -136,7 +141,7 @@ export function useWorkspace() {
           id: crypto.randomUUID(),
           module,
           action,
-          occurredAt: new Date().toISOString(),
+          occurredAt,
           store,
         },
       ],
@@ -153,9 +158,13 @@ export function useWorkspace() {
       throw new Error(
         "Sync pending records before changing workspace settings.",
       );
-    const w = await workspaceRequest(body);
-    save({ workspace: w, queue: [], revision: w.revision });
-    return w;
+    if (busy.current || actionBusy.current) throw new Error("Wait for the current sync or workspace action to finish.");
+    actionBusy.current = true;
+    try {
+      const w = await workspaceRequest(body);
+      save({ workspace: w, queue: [], revision: w.revision });
+      return w;
+    } finally { actionBusy.current = false; }
   }
   async function signout() {
     const c = current.current;

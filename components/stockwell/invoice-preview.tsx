@@ -3,6 +3,7 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   balance,
+  isPosted,
   paid,
   returned,
   round,
@@ -23,7 +24,7 @@ type Props = {
   invoice: Trade;
   cName: (id: string, supplier?: boolean) => string;
   s: Store;
-  paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid";
+  paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid" | "Draft" | "Voided";
   pName: (id: string) => string;
 };
 export function InvoicePreview({
@@ -58,13 +59,13 @@ export function InvoicePreview({
           </GlassSelect>
           <button
             className="secondary-button"
-            disabled={pdfBusy}
+            disabled={pdfBusy || !isPosted(invoice)}
             onClick={saveInvoicePdf}
           >
             <Download size={17} />
             {pdfBusy ? "Preparing PDF…" : "Download PDF"}
           </button>
-          <button className="primary" onClick={() => window.print()}>
+          <button className="primary" disabled={!isPosted(invoice)} onClick={() => window.print()}>
             <Printer size={17} />
             Print / Save PDF
           </button>
@@ -90,7 +91,7 @@ export function InvoicePreview({
         </div>
         <div className="invoice-title">
           <h1>
-            {invoice.number.startsWith("PUR") ? "Purchase record" : "Invoice"}
+            {invoice.status === "draft" ? "Draft · " : invoice.status === "void" ? "Voided · " : ""}{invoice.number.startsWith("PUR") ? "Purchase record" : "Invoice"}
           </h1>
           <div>
             <b>{invoice.number}</b>

@@ -41,17 +41,17 @@ export function SalesView({
                 : ""
             }
             onClick={() => {
-              const date = new Date();
+              const date = new Date(`${today()}T12:00:00Z`);
               if (label === "All time") {
                 setFrom("");
                 setTo("");
                 return;
               }
               if (label === "This week")
-                date.setDate(date.getDate() - ((date.getDay() + 6) % 7));
-              if (label === "This month") date.setDate(1);
+                date.setUTCDate(date.getUTCDate() - ((date.getUTCDay() + 6) % 7));
+              if (label === "This month") date.setUTCDate(1);
               setFrom(
-                label === "Today" ? today() : date.toLocaleDateString("en-CA"),
+                label === "Today" ? today() : date.toISOString().slice(0, 10),
               );
               setTo(today());
             }}

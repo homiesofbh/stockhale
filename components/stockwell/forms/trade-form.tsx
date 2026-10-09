@@ -97,6 +97,7 @@ export function TradeForm({
         submit(e, (f) => {
           if (addingSupplier) throw new Error("Save or cancel the new supplier before saving the purchase.");
           const t: Trade = {
+            status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
             id: uid(),
             number: "",
             date: text(f, "date"),
@@ -112,6 +113,7 @@ export function TradeForm({
             chequeDate: text(f, "chequeDate"),
             walkInName: modal === "Bill" && !text(f, "contact") ? text(f, "walkInName") : "",
             walkInCompany: modal === "Bill" && !text(f, "contact") ? text(f, "walkInCompany") : "",
+            walkInAddress: modal === "Bill" && !text(f, "contact") ? text(f, "walkInAddress") : "",
             walkInPhone: modal === "Bill" && !text(f, "contact") ? text(f, "walkInPhone") : "",
           };
           const next = recordTrade(
@@ -121,11 +123,9 @@ export function TradeForm({
           );
           commit(
             next,
-            modal === "Bill"
-              ? "Bill saved. Inventory updated."
-              : "Purchase saved. Inventory updated.",
+            t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? "Bill posted. Inventory updated." : "Purchase posted. Inventory updated.",
           );
-          if (modal === "Bill") {
+          if (modal === "Bill" && t.status !== "draft") {
             setInvoice(next.invoices[next.invoices.length - 1]);
             setPaper("A4");
           }
@@ -141,7 +141,7 @@ export function TradeForm({
             </option>
             {(modal === "Purchase" ? s.suppliers : s.customers).map((c) => (
               <option key={c.id} value={c.id}>
-                {modal === "Purchase" ? c.name : `Company · ${c.name}`}
+                {modal === "Purchase" ? c.name : [c.name, c.company, c.phone].filter(Boolean).join(" · ")}
               </option>
             ))}
           </GlassSelect>
@@ -150,6 +150,7 @@ export function TradeForm({
             <>
               <Field label="Walk-in customer name (optional)"><input name="walkInName" maxLength={200} /></Field>
               <Field label="Company name (optional)"><input name="walkInCompany" maxLength={200} /></Field>
+              <Field label="Walk-in address (optional)"><input name="walkInAddress" maxLength={500} /></Field>
               <Field label="Contact number (optional)"><input name="walkInPhone" type="tel" maxLength={40} /></Field>
             </>
           )}
@@ -357,8 +358,9 @@ export function TradeForm({
         >
           Cancel
         </button>
-        <button className="primary" disabled={!lines.length || addingSupplier}>
-          Save {modal === "Bill" ? "bill" : "purchase"}
+        <button className="secondary" value="draft" disabled={!lines.length || addingSupplier}>Save draft</button>
+        <button className="primary" value="post" disabled={!lines.length || addingSupplier}>
+          Post {modal === "Bill" ? "bill" : "purchase"}
         </button>
       </div>
     </form>

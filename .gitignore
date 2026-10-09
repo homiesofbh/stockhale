@@ -377,3 +377,6 @@ lib/stockwell/*
 !lib/stockwell/accounts.ts
 !lib/stockwell/journals.ts
 !lib/stockwell/bank-vouchers.ts
+!lib/stockwell/operations.ts
+!lib/stockwell/operation-validation.ts
+!lib/stockwell/recovery.ts

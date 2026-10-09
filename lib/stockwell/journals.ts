@@ -4,6 +4,7 @@ import { round, type Store } from "./model";
 
 export type JournalLine = { id: string; accountId: string; debit: number; credit: number; description: string };
 export type JournalVoucher = {
+  reversalOf?: string;
   id: string;
   number: string;
   date: string;

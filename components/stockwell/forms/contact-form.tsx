@@ -29,6 +29,8 @@ export function ContactForm({
       onSubmit={(e) =>
         submit(e, (f) => {
           const c: Contact = {
+            ...editContact,
+            company: module === "Customers" ? text(f, "company") : editContact?.company,
             id: editContact?.id || uid(),
             name: text(f, "name"),
             phone: text(f, "phone"),
@@ -43,7 +45,7 @@ export function ContactForm({
     >
       <div className="form-grid">
         <div className="form-wide">
-        <Field label={module === "Suppliers" ? "Supplier name" : "Company name"}>
+        <Field label={module === "Suppliers" ? "Supplier name" : "Customer / company name"}>
           <input
             name="name"
             required
@@ -52,6 +54,7 @@ export function ContactForm({
           />
         </Field>
         </div>
+        {module === "Customers" && <Field label="Company (optional)"><input name="company" defaultValue={editContact?.company || ""} maxLength={200} /></Field>}
         <Field label="Phone (optional)">
           <input name="phone" type="tel" defaultValue={editContact?.phone} />
         </Field>
@@ -65,7 +68,7 @@ export function ContactForm({
           <input name="ntn" defaultValue={editContact?.ntn || ""} />
         </Field>}
       </div>
-      {module === "Customers" && <p className="form-hint">Only the company name is required. For walk-in sales, choose Walk-in customer when creating a bill; no customer profile is needed.</p>}
+      {module === "Customers" && <p className="form-hint">Only a customer or company name is required. Walk-in bills automatically create or link a customer record.</p>}
       <div className="form-foot">
         <button className="primary">Save profile</button>
       </div>

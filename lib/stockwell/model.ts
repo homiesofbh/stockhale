@@ -1,3 +1,4 @@
+import { chequeSettlements, requireOpenDate, type ChequeEvent, type DailyClose, type TradeCorrection, type WalkInLink } from "./operations";
 import { bankVoucherLines } from "./bank-vouchers";
 import type { BankVoucher } from "./bank-vouchers";
 import type { JournalVoucher } from "./journals";
@@ -20,6 +21,7 @@ export type Contact = {
   email: string;
   address: string;
   ntn?: string;
+  company?: string;
 };
 export type Line = {
   productId: string;
@@ -29,6 +31,10 @@ export type Line = {
   cost: number;
 };
 export type Trade = {
+  status?: "draft" | "posted" | "void";
+  postedAt?: string;
+  costBefore?: Record<string, number>;
+  replacementOf?: string;
   createdAt?: number;
   id: string;
   number: string;
@@ -44,6 +50,7 @@ export type Trade = {
   walkInName?: string;
   walkInCompany?: string;
   walkInPhone?: string;
+  walkInAddress?: string;
   chequeNumber?: string;
   chequeBank?: string;
   chequeDate?: string;
@@ -73,10 +80,11 @@ export type Payment = {
   chequeNumber?: string;
   chequeBank?: string;
   chequeDate?: string;
-  chequeStatus?: "pending" | "cleared" | "bounced";
+  chequeStatus?: "pending" | "cleared" | "bounced" | "cancelled";
   clearedDate?: string;
 };
 export type Expense = {
+  createdAt?: string;
   id: string;
   date: string;
   category: string;
@@ -108,6 +116,10 @@ export type Store = {
   accounts?: Account[];
   journals?: JournalVoucher[];
   bankVouchers?: BankVoucher[];
+  corrections?: TradeCorrection[];
+  walkInLinks?: WalkInLink[];
+  chequeEvents?: ChequeEvent[];
+  dailyCloses?: DailyClose[];
   expenseCategories: string[];
   purchases: Trade[];
   invoices: Trade[];
@@ -118,10 +130,12 @@ export type Store = {
   financialAccounts?: FinancialAccount[];
   units?: string[];
 };
-export const today = () => new Date().toLocaleDateString("en-CA");
+export const today = (date = new Date()) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
+export const isPosted = (t: Trade) => t.status !== "draft" && t.status !== "void";
 export const uid = () => crypto.randomUUID();
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
+export const roundQty = (n: number) => Math.round((n + Number.EPSILON) * 1000) / 1000;
 export const money = (n: number) =>
   new Intl.NumberFormat("en-PK", {
     style: "currency",
@@ -164,7 +178,7 @@ export const emptyStore = (): Store => ({
   units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"],
 });
 export const stock = (s: Store, id: string) =>
-  round(
+  roundQty(
     s.movements
       .filter((m) => m.productId === id)
       .reduce((n, m) => n + m.qty, 0),
@@ -184,7 +198,7 @@ export const paymentDate = (p: Payment) => p.clearedDate || p.date;
 export const isSettledPayment = (p: Payment) =>
   p.method === "Cheque" ? p.chequeStatus === "cleared" : !p.chequeStatus || p.chequeStatus === "cleared";
 export const paid = (s: Store, t: Trade) =>
-  round(
+  !isPosted(t) ? 0 : round(
     t.paid +
       s.payments
         .filter((p) => p.tradeId === t.id && isSettledPayment(p))
@@ -192,7 +206,7 @@ export const paid = (s: Store, t: Trade) =>
   );
 // A negative balance is a credit owed back to the customer, or due back from the supplier.
 export const balance = (s: Store, t: Trade) =>
-  round(total(t) - returned(s, t.id) - paid(s, t));
+  isPosted(t) ? round(total(t) - returned(s, t.id) - paid(s, t)) : 0;
 export const contactBalance = (
   s: Store,
   kind: "Customer" | "Supplier",
@@ -264,6 +278,7 @@ export function saveProduct(s: Store, p: Product, opening = 0): Store {
     "Prices, thresholds, and opening stock must be non-negative numbers.",
   );
   const existing = s.products.some((x) => x.id === p.id);
+  if (!existing && opening > 0) requireOpenDate(s, today());
   return {
     ...s,
     products: existing
@@ -293,11 +308,12 @@ export function adjustStock(
   reason: string,
   date: string,
 ): Store {
+  requireOpenDate(s, date);
   assert(
     s.products.some((p) => p.id === productId),
     "Select an existing product.",
   );
-  assert(Number.isFinite(qty) && qty !== 0, "Enter a non-zero stock change.");
+  assert(Number.isFinite(qty) && qty !== 0 && roundQty(qty) === qty, "Enter a non-zero stock change.");
   assert(
     stock(s, productId) + qty >= 0,
     "This adjustment would make stock negative.",
@@ -324,6 +340,9 @@ export function recordTrade(
   kind: "Sale" | "Purchase",
   t: Trade,
 ): Store {
+  requireOpenDate(s, t.date);
+  assert(![...s.invoices, ...s.purchases].some(old => old.id === t.id), "Bill ID already exists.");
+  assert(t.status === "draft" || t.date <= today(), "Future bills must remain drafts until the bill date.");
   assert(t.lines.length > 0, "Add at least one product.");
   assert(
     !!t.date && !!t.head && s.heads.includes(t.head),
@@ -349,7 +368,7 @@ export function recordTrade(
     "Discount must not exceed the subtotal; tax must be between 0 and 100%.",
   );
   assert(
-    validNumber(t.paid) && t.paid <= total(t),
+    validNumber(t.paid) && round(t.paid) === t.paid && t.paid <= total(t),
     "Paid amount must be between zero and the net total.",
   );
   assert(
@@ -363,26 +382,42 @@ export function recordTrade(
       "A selected product no longer exists.",
     );
     assert(
-      validNumber(l.qty, 0.001) && validNumber(l.price) && validNumber(l.cost),
+      validNumber(l.qty, 0.001) && roundQty(l.qty) === l.qty && validNumber(l.price) && validNumber(l.cost),
       "Quantities must be positive and prices non-negative.",
     );
-    demand.set(l.productId, (demand.get(l.productId) || 0) + l.qty);
+    demand.set(l.productId, roundQty((demand.get(l.productId) || 0) + l.qty));
   });
-  if (kind === "Sale")
+  t = { ...t, lines: t.lines.map(l => ({ ...l, cost: kind === "Sale" ? s.products.find(p => p.id === l.productId)!.cost : l.price })) };
+  if (kind === "Sale" && t.status !== "draft")
     demand.forEach((qty, id) =>
       assert(
         qty <= stock(s, id),
         `Insufficient stock for ${s.products.find((p) => p.id === id)?.name}.`,
       ),
     );
+  assert(Number.isFinite(total(t)) && Number.isSafeInteger(Math.round(total(t) * 100)), "Bill amount exceeds safe currency limits.");
   const list = kind === "Sale" ? s.invoices : s.purchases;
   const prefix = kind === "Sale" ? "INV" : "PUR";
+  const number = t.number || `${prefix}-${String(list.reduce((max, old) => Math.max(max, Number(old.number.split("-")[1]) || 0), 0) + 1).padStart(5, "0")}`;
+  assert(!list.some(old => old.number === number), "Bill number already exists.");
+  let customers = s.customers;
+  if (kind === "Sale" && !t.contactId) {
+    const phone = (t.walkInPhone || "").replace(/[^0-9+]/g, "");
+    const matches = phone ? s.customers.filter(c => c.phone.replace(/[^0-9+]/g, "") === phone) : [];
+    assert(matches.length <= 1, "This phone matches multiple customers. Select the correct customer explicitly.");
+    const customer = matches[0] || { id: uid(), name: t.walkInName?.trim() || t.walkInCompany?.trim() || `Walk-in ${number}`, company: t.walkInCompany?.trim() || "", phone: t.walkInPhone?.trim() || "", address: t.walkInAddress?.trim() || "", email: "" };
+    customers = matches.length ? s.customers : [...s.customers, customer];
+    t = { ...t, contactId: customer.id };
+  }
   const trade = {
     ...t,
     financialAccountId: paymentAccountId(s, t.method),
     createdAt: Date.now(),
-    number: `${prefix}-${String(list.length + 1).padStart(5, "0")}`,
-    paid: t.method === "Cheque" ? 0 : t.paid,
+    number,
+    paid: t.status !== "draft" && t.method === "Cheque" ? 0 : t.paid,
+    status: t.status === "draft" ? "draft" as const : "posted" as const,
+    postedAt: t.status === "draft" ? undefined : t.postedAt || new Date().toISOString(),
+    costBefore: kind === "Purchase" && t.status !== "draft" ? Object.fromEntries(t.lines.map(l => [l.productId, s.products.find(p => p.id === l.productId)!.cost])) : undefined,
   };
   const moves: Movement[] = trade.lines.map((l) => ({
     id: uid(),
@@ -396,12 +431,13 @@ export function recordTrade(
   return {
     ...s,
     [kind === "Sale" ? "invoices" : "purchases"]: [...list, trade],
-    movements: [...s.movements, ...moves],
-    payments: t.method === "Cheque" && t.paid > 0
+    customers,
+    movements: trade.status === "draft" ? s.movements : [...s.movements, ...moves],
+    payments: trade.status !== "draft" && t.method === "Cheque" && t.paid > 0
       ? [...s.payments, { id: uid(), date: t.date, kind: kind === "Sale" ? "Customer" : "Supplier", contactId: t.contactId, tradeId: trade.id, amount: t.paid, method: "Cheque", head: t.head, notes: "Cheque received with bill", chequeNumber: t.chequeNumber, chequeBank: t.chequeBank, chequeDate: t.chequeDate, chequeStatus: "pending" as const }]
       : s.payments,
     products:
-      kind === "Purchase"
+      kind === "Purchase" && trade.status !== "draft"
         ? s.products.map((p) => {
             const lines = t.lines.filter((l) => l.productId === p.id);
             return lines.length
@@ -421,9 +457,10 @@ export function recordPayment(s: Store, p: Payment): Store {
   const t = (p.kind === "Customer" ? s.invoices : s.purchases).find(
     (t) => t.id === p.tradeId && t.contactId === p.contactId,
   );
-  assert(!!t, "Select a bill or purchase belonging to this contact.");
+  requireOpenDate(s, p.date);
+  assert(!!t && isPosted(t), "Select a bill or purchase belonging to this contact.");
   assert(
-    Number.isFinite(p.amount) && Math.abs(p.amount) >= 0.01,
+    Number.isFinite(p.amount) && Math.abs(p.amount) >= 0.01 && round(p.amount) === p.amount,
     "Payment must be greater than zero.",
   );
   const due = t ? balance(s, t) : 0;
@@ -432,7 +469,7 @@ export function recordPayment(s: Store, p: Payment): Store {
     .reduce((sum, payment) => sum + Math.abs(payment.amount), 0);
   assert(
     (due > 0 && p.amount > 0 && p.amount + pendingCheques <= due) ||
-      (due < 0 && p.amount < 0 && p.amount >= due),
+      (due < 0 && p.amount < 0 && Math.abs(p.amount) + pendingCheques <= Math.abs(due)),
     "Payment or credit settlement exceeds the remaining balance.",
   );
   assert(s.heads.includes(p.head), "Select a valid account head.");
@@ -452,8 +489,9 @@ export function clearCheque(s: Store, paymentId: string): Store {
   return { ...s, payments: s.payments.map((p) => p.id === paymentId ? { ...p, chequeStatus: "cleared", clearedDate: today() } : p) };
 }
 export function recordReturn(s: Store, r: ReturnRecord): Store {
+  requireOpenDate(s, r.date);
   assert(
-    validNumber(r.qty, 0.001) && !!r.reason.trim(),
+    validNumber(r.qty, 0.001) && roundQty(r.qty) === r.qty && !!r.reason.trim(),
     "Enter a positive quantity and a reason.",
   );
   const p = s.products.find((p) => p.id === r.productId);
@@ -475,7 +513,7 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
       )
       .reduce((n, x) => n + x.qty, 0);
     assert(
-      !!t && qty > 0 && r.qty <= round(qty - previous),
+      !!t && isPosted(t) && qty > 0 && r.qty <= roundQty(qty - previous),
       "Return quantity exceeds the remaining quantity on the original transaction.",
     );
     if (t)
@@ -561,7 +599,8 @@ export function financialRows(s: Store): FinancialRow[] {
       contactId,
       financialAccountId: financialAccountId || (["Cash", "Bank", "Cheque"].includes(method) ? undefined : s.financialAccounts?.find(a => a.name === method)?.id),
     });
-  s.invoices.forEach((t) =>
+  const original = (t: Trade) => (s.corrections || []).find(c => c.tradeId === t.id)?.before || t;
+  s.invoices.map(original).filter(isPosted).forEach((t) =>
     push(
       t.date,
       t.number,
@@ -574,7 +613,7 @@ export function financialRows(s: Store): FinancialRow[] {
       t.financialAccountId,
     ),
   );
-  s.purchases.forEach((t) =>
+  s.purchases.map(original).filter(isPosted).forEach((t) =>
     push(
       t.date,
       t.number,
@@ -600,21 +639,19 @@ export function financialRows(s: Store): FinancialRow[] {
       e.financialAccountId,
     ),
   );
-  s.payments.filter(isSettledPayment).forEach((p) =>
-    push(
-      paymentDate(p),
-      (p.kind === "Customer" ? s.invoices : s.purchases).find(
-        (t) => t.id === p.tradeId,
-      )?.number || "",
-      `${p.kind} payment`,
-      p.head,
-      p.method,
-      p.amount * (p.kind === "Customer" ? 1 : -1),
-      p.amount * (p.kind === "Customer" ? 1 : -1),
-      p.contactId,
-      p.financialAccountId,
-    ),
-  );
+  s.payments.forEach(p => {
+    const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, accountId: p.financialAccountId, status: "paid" }];
+    settlements.forEach(entry => push(entry.date, (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId)?.number || "", `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
+      p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
+      entry.amount * (p.kind === "Customer" ? 1 : -1), entry.amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId));
+  });
+  (s.corrections || []).forEach(c => {
+    const sign = c.kind === "Sale" ? 1 : -1;
+    const oldTotal = total(c.before), newTotal = isPosted(c.after) ? total(c.after) : 0;
+    const newPaid = isPosted(c.after) ? c.after.paid : 0;
+    if (c.before.head === c.after.head) push(c.date, c.before.number, "Bill correction", c.after.head, c.after.method, (newTotal - oldTotal) * sign, (newPaid - c.before.paid) * sign, c.after.contactId, c.after.financialAccountId);
+    else { push(c.date, c.before.number, "Bill correction reversal", c.before.head, c.before.method, -oldTotal * sign, -c.before.paid * sign, c.before.contactId, c.before.financialAccountId); push(c.date, c.after.number, "Bill correction", c.after.head, c.after.method, newTotal * sign, newPaid * sign, c.after.contactId, c.after.financialAccountId); }
+  });
   s.returns.forEach((r) =>
     push(
       r.date,
@@ -651,7 +688,10 @@ export function financialRows(s: Store): FinancialRow[] {
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
 export function profit(s: Store, from = "", to = "") {
-  const invoices = s.invoices.filter((t) => periodMatch(t.date, from, to));
+  const invoices = s.invoices.map(t => s.corrections?.find(c => c.tradeId === t.id)?.before || t).filter(isPosted).filter((t) => periodMatch(t.date, from, to));
+  const salesCorrections = (s.corrections || []).filter(c => c.kind === "Sale" && periodMatch(c.date, from, to));
+  const salesDelta = salesCorrections.reduce((n, c) => n + (isPosted(c.after) ? subtotal(c.after) - c.after.discount : 0) - (subtotal(c.before) - c.before.discount), 0);
+  const costDelta = salesCorrections.reduce((n, c) => n + (isPosted(c.after) ? c.after.lines.reduce((x, l) => x + l.qty * l.cost, 0) : 0) - c.before.lines.reduce((x, l) => x + l.qty * l.cost, 0), 0);
   const sales = invoices.reduce((n, t) => n + subtotal(t) - t.discount, 0);
   const cogs = invoices.reduce(
     (n, t) => n + t.lines.reduce((a, l) => a + l.qty * l.cost, 0),
@@ -672,10 +712,10 @@ export function profit(s: Store, from = "", to = "") {
     .filter((e) => periodMatch(e.date, from, to))
     .reduce((n, e) => n + e.amount, 0);
   return {
-    revenue: round(sales - returnRevenue),
-    cogs: round(cogs - returnCost),
+    revenue: round(sales + salesDelta - returnRevenue),
+    cogs: round(cogs + costDelta - returnCost),
     expenses: round(expenses),
     damage: round(damage),
-    net: round(sales - returnRevenue - cogs + returnCost - expenses - damage),
+    net: round(sales + salesDelta - returnRevenue - cogs - costDelta + returnCost - expenses - damage),
   };
 }

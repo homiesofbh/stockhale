@@ -65,7 +65,7 @@ export function RecordFilters({
           value={status}
           onValueChange={(e) => setStatus(e)}
         >
-          {["All", "Paid", "Partial", "Unpaid", "Credit balance"].map((x) => (
+          {["All", "Draft", "Paid", "Partial", "Unpaid", "Credit balance", "Voided"].map((x) => (
             <option key={x}>{x}</option>
           ))}
         </GlassSelect>

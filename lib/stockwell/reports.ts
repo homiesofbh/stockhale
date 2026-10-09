@@ -1,5 +1,9 @@
+import { cashFlow, cashStatement, chequeSettlements, paymentAt, tradeAt } from "./operations";
+import { bankStatement } from "./bank-vouchers";
 import {
   balance,
+  isPosted,
+  today,
   financialRows,
   paid,
   isSettledPayment,
@@ -31,11 +35,13 @@ export function createReportData(
   // including those before the start date. Status filtering uses that same snapshot.
   const asOf: Store = to ? {
     ...s,
-    payments: s.payments.filter((p) => paymentDate(p) <= to),
+    invoices: s.invoices.map(t => tradeAt(s, t, to)),
+    purchases: s.purchases.map(t => tradeAt(s, t, to)),
+    payments: s.payments.map(p => paymentAt(s, p, to)).filter((p) => paymentDate(p) <= to),
     returns: s.returns.filter((r) => r.date <= to),
   } : s;
-  const invoices = filterTrades(asOf, s.invoices, options);
-  const purchases = filterTrades(asOf, s.purchases, options, true);
+  const invoices = filterTrades(asOf, asOf.invoices, options);
+  const purchases = filterTrades(asOf, asOf.purchases, options, true);
   const accounting = financialRows(s);
   const matches = (...values: unknown[]) => matchesQuery(query, ...values);
   const inRange = (date: string) => periodMatch(date, from, to);
@@ -55,7 +61,7 @@ export function createReportData(
   ) {
     const supplier =
       report === "Purchase report" || report === "Payables report";
-    let list = supplier ? purchases : invoices;
+    let list = (supplier ? purchases : invoices).filter(isPosted);
     if (report === "Receivables report" || report === "Payables report")
       list = list.filter((t) => balance(asOf, t) !== 0);
     return {
@@ -85,6 +91,12 @@ export function createReportData(
       ]),
     };
   }
+  if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId))).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR")), total(t)]) };
+  if (report === "Cash-in-hand report" || report === "Cash-flow report") {
+    const statement = report === "Cash-in-hand report" ? cashStatement(s, from, to || today()) : cashFlow(s, from, to || today());
+    return { columns: ["Measure", "Amount (PKR)"], rows: [["Opening balance", statement.opening], ["Opening adjustments", statement.openingAdjustment], ["Receipts", statement.receipts], ["Payments", statement.payments], ["Net movement", round(statement.receipts - statement.payments)], ["Closing balance", statement.closing]] };
+  }
+  if (report === "Bank-balance report") return { columns: ["Account", "Type", "Opening", "Opening adjustments", "Receipts", "Payments", "Closing"], rows: (s.financialAccounts || []).filter(a => matches(a.name, a.type)).map(a => { const b = bankStatement(s, a, from, to || today()); return [a.name, a.type, b.opening, b.openingAdjustment, b.receipts, b.payments, b.closing]; }) };
   if (report === "Inventory report")
     return {
       columns: [
@@ -177,6 +189,8 @@ export function createReportData(
       order: number;
     }[] = [];
     trades
+      .map(t => (s.corrections || []).find(c => c.tradeId === t.id)?.before || t)
+      .filter(isPosted)
       .filter(
         (t) => t.contactId && (!reportContact || t.contactId === reportContact),
       )
@@ -206,23 +220,11 @@ export function createReportData(
             }),
           );
       });
-    s.payments
-      .filter(
-        (p) =>
-          isSettledPayment(p) && p.kind === kind && (!reportContact || p.contactId === reportContact),
-      )
-      .forEach((p) =>
-        entries.push({
-          date: paymentDate(p),
-          ref: trades.find((t) => t.id === p.tradeId)?.number || "",
-          name: cName(p.contactId, supplier),
-          type: "Payment",
-          charge: 0,
-          payment: p.amount,
-          id: p.contactId,
-          order: p.createdAt || 0,
-        }),
-      );
+    (s.corrections || []).filter(c => c.kind === (supplier ? "Purchase" : "Sale") && (!reportContact || c.after.contactId === reportContact)).forEach(c => entries.push({ date: c.date, ref: c.after.number, name: cName(c.after.contactId, supplier), type: c.after.status === "void" ? "Bill reversal" : "Bill correction", charge: (isPosted(c.after) ? total(c.after) : 0) - total(c.before), payment: (isPosted(c.after) ? c.after.paid : 0) - c.before.paid, id: c.after.contactId, order: Date.parse(c.occurredAt) }));
+    s.payments.filter(p => p.kind === kind && (!reportContact || p.contactId === reportContact)).forEach(p => {
+      const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, status: "paid" }];
+      settlements.forEach(e => entries.push({ date: e.date, ref: trades.find(t => t.id === p.tradeId)?.number || "", name: cName(p.contactId, supplier), type: e.status === "bounced" ? "Cheque bounce" : "Payment", charge: 0, payment: e.amount, id: p.contactId, order: p.createdAt || 0 }));
+    });
     const balances = new Map<string, number>();
     const rows: unknown[][] = [];
     entries

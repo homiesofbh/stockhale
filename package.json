@@ -11,7 +11,7 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:import-sqlite": "tsx scripts/import-sqlite.ts",
-    "test:integration": "tsx --test tests/workspace.test.ts"
+    "test:integration": "node --import tsx --test tests/workspace.test.ts tests/workspace-p1.test.ts"
   },
   "dependencies": {
     "@base-ui/react": "^1.5.0",

@@ -20,6 +20,8 @@ export function matchesQuery(query: string, ...values: unknown[]) {
 }
 
 export function getPaymentStatus(store: Store, trade: Trade) {
+  if (trade.status === "draft") return "Draft";
+  if (trade.status === "void") return "Voided";
   const due = balance(store, trade);
   if (due < 0) return "Credit balance";
   if (due === 0) return "Paid";
@@ -43,7 +45,7 @@ export function filterTrades(
     );
     return (
       periodMatch(trade.date, filters.from, filters.to) &&
-      matchesQuery(filters.query, trade.number, contact, profile?.ntn, ...products) &&
+      matchesQuery(filters.query, trade.number, contact, profile?.ntn, profile?.company, profile?.phone, trade.walkInName, trade.walkInCompany, trade.walkInPhone, ...products) &&
       (filters.status === "All" ||
         getPaymentStatus(store, trade) === filters.status) &&
       (filters.paymentMethod === "All" ||

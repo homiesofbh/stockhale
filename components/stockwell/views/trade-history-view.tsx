@@ -23,7 +23,7 @@ export function TradeHistoryView({
           {module === "Billing" ? invoices.length : purchases.length} records
         </span>
         <span className="muted">
-          Stock updates automatically with each transaction
+          Posting updates stock and balances; drafts have no effect
         </span>
       </div>
       <section className="card">

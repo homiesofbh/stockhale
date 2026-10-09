@@ -1,6 +1,7 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
+import { saveExpense, previousDate, type Actor } from "@/lib/stockwell/operations";
 import { paymentAccountId, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
 type Props = {
@@ -8,9 +9,10 @@ type Props = {
   num: (f: FormData, key: string) => number;
   commit: (next: Store, message: string) => void;
   s: Store;
+  actor: Actor;
   text: (f: FormData, key: string) => string;
 };
-export function ExpenseForm({ submit, num, commit, s, text }: Props) {
+export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
   return (
     <form
       onSubmit={(e) =>
@@ -19,22 +21,7 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
           if (!Number.isFinite(amount) || amount <= 0)
             throw new Error("Amount must be greater than zero.");
           commit(
-            {
-              ...s,
-              expenses: [
-                ...s.expenses,
-                {
-                  id: uid(),
-                  date: text(f, "date"),
-                  category: text(f, "category"),
-                  head: text(f, "head"),
-                  amount: round(amount),
-                  financialAccountId: paymentAccountId(s, text(f, "method")),
-                  method: text(f, "method") as "Cash" | "Bank",
-                  notes: text(f, "notes"),
-                },
-              ],
-            },
+            saveExpense(s, { id: uid(), date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes") }, actor),
             "Expense recorded.",
           );
         })
@@ -59,7 +46,7 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
           <input name="amount" type="number" min="0.01" step="0.01" required />
         </Field>
         <Field label="Date">
-          <input name="date" type="date" defaultValue={today()} required />
+          <input name="date" type="date" defaultValue={today()} min={actor.role === "owner" ? undefined : previousDate(today(), 2)} max={today()} required />
         </Field>
         <Field label="Paid from">
           <GlassSelect name="method">

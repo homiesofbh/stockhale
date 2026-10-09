@@ -62,8 +62,9 @@ export async function POST(request: Request) {
         { status: 403 },
       );
     const text = await request.text();
-    if (text.length > 8_000_000) throw new Error("Request too large.");
+    if (text.length > 50_000_000) throw new Error("Request too large.");
     const body = JSON.parse(text);
+    if (body?.action !== "restore" && text.length > 8_000_000) throw new Error("Request too large.");
     if (!body || typeof body !== "object" || Array.isArray(body))
       throw new Error("Invalid request body.");
     if (["signin", "signup", "team-signup"].includes(body.action)) {

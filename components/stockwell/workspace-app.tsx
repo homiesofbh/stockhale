@@ -6,6 +6,7 @@ import {
   findProductByCode,
   emptyStore,
   financialRows,
+  isPosted,
   money,
   paid,
   periodMatch,
@@ -37,6 +38,8 @@ import { MovementsForm } from "@/components/stockwell/forms/movements-form";
 import { PaymentForm } from "@/components/stockwell/forms/payment-form";
 import { ProductForm } from "@/components/stockwell/forms/product-form";
 import { ReturnForm } from "@/components/stockwell/forms/return-form";
+import { WalkInReview } from "@/components/stockwell/views/walk-in-review";
+import { TradeActions } from "@/components/stockwell/trade-actions";
 import { TradeForm } from "@/components/stockwell/forms/trade-form";
 import { InvoicePreview } from "@/components/stockwell/invoice-preview";
 import { RecordFilters } from "@/components/stockwell/record-filters";
@@ -107,6 +110,11 @@ export function WorkspaceApp() {
       setReady(true);
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);
+  useEffect(() => {
+    if (!invoice) return;
+    const latest = [...s.invoices, ...s.purchases].find(t => t.id === invoice.id);
+    if (latest && JSON.stringify(latest) !== JSON.stringify(invoice)) setInvoice(latest);
+  }, [s, invoice?.id]);
   const account = workspace.cache?.workspace;
   const canAccess = (name: string) => !!account && canAccessModule(account.member, name);
   const module = (account ? accessibleModule(account.member, requestedModule) : "Dashboard") as Module;
@@ -191,7 +199,7 @@ export function WorkspaceApp() {
     "Walk-in customer";
   const paymentStatus = (trade: Trade) => getPaymentStatus(s, trade);
   const filters = { query, from, to, status, paymentMethod };
-  const invoices = filterTrades(s, s.invoices, filters);
+  const invoices = filterTrades(s, s.invoices, filters).filter(t => module !== "Sales" || isPosted(t));
   const purchases = filterTrades(s, s.purchases, filters, true);
   const accounting = financialRows(s);
   const cash = accounting.reduce((n, r) => n + r.cash, 0);
@@ -296,11 +304,12 @@ export function WorkspaceApp() {
       t.contactId ? cName(t.contactId, supplier) : [t.walkInName, t.walkInCompany].filter(Boolean).join(" · ") || "Walk-in customer",
       `${t.lines.reduce((n, l) => n + l.qty, 0)} units`,
       money(total(t)),
-      <Badge tone={balance(s, t) === 0 ? "green" : "amber"}>
+      <Badge tone={t.status === "draft" ? "amber" : t.status === "void" ? "" : balance(s, t) === 0 ? "green" : "amber"}>
         {paymentStatus(t)}
       </Badge>,
       money(paid(s, t)),
       money(balance(s, t)),
+      <div className="journal-register-actions"><TradeActions s={s} trade={t} kind={supplier ? "Purchase" : "Sale"} actor={account!.member} commit={(next, message) => { workspace.commit(next, supplier ? "Purchases" : "Billing", message); setS(next); setNotice(message); }} />
       <button
         className="icon-button"
         aria-label={`View ${t.number}`}
@@ -310,7 +319,7 @@ export function WorkspaceApp() {
         }}
       >
         <ChevronRight size={18} />
-      </button>,
+      </button></div>,
     ]);
   const basicHeaders = [
     "Invoice",
@@ -330,18 +339,19 @@ export function WorkspaceApp() {
   useEffect(() => {
     setPdfError("");
   }, [invoice?.id, paper]);
-  const start = new Date();
-  if (dashboardPeriod === "This month") start.setDate(1);
+  const start = new Date(`${today()}T12:00:00Z`);
+  if (dashboardPeriod === "This month") start.setUTCDate(1);
   if (dashboardPeriod === "This week")
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
   const dashboardFrom =
-    dashboardPeriod === "All time" ? "" : start.toLocaleDateString("en-CA");
+    dashboardPeriod === "All time" ? "" : start.toISOString().slice(0, 10);
   const dashboardProfit = profit(s, dashboardFrom, today());
-  const dashboardInvoices = s.invoices.filter((t) =>
+  const dashboardInvoices = s.invoices.filter(isPosted).filter((t) =>
     periodMatch(t.date, dashboardFrom, today()),
   );
   async function saveInvoicePdf() {
     if (!invoice || pdfBusy) return;
+    if (!isPosted(invoice)) { setPdfError("Post the bill before issuing an invoice PDF."); return; }
     setPdfBusy(true);
     setPdfError("");
     try {
@@ -402,7 +412,7 @@ export function WorkspaceApp() {
         >
           <main>
             {account.member.role === "owner" && workspace.cache && (
-              <WorkspaceBackup key={account.id} cache={workspace.cache} settings={module === "Settings"} />
+              <WorkspaceBackup action={workspace.action} key={account.id} cache={workspace.cache} settings={module === "Settings"} />
             )}
             {module === "Settings" && account.member.role === "owner" ? (
               <WorkspaceSettings
@@ -460,7 +470,7 @@ export function WorkspaceApp() {
                           <Plus size={17} /> New bill
                         </button>
                       )}
-                      {action && (
+                      {action && (module !== "Accounts Heads" || account.member.role === "owner") && (
                         <button
                           className="primary"
                           disabled={!!storageError}
@@ -549,6 +559,7 @@ export function WorkspaceApp() {
                           setEditProduct={setEditProduct}
                         />
                       )}
+                      {module === "Billing" && <WalkInReview s={s} actor={account.member} commit={commit} />}
                       {(module === "Purchases" || module === "Billing") && (
                         <TradeHistoryView
                           module={module}
@@ -571,6 +582,7 @@ export function WorkspaceApp() {
                       )}
                       {module === "Accounts Heads" && (
                         <AccountHeadsView
+                          actor={account.member}
                           commit={commit}
                           s={s}
                           matches={matches}
@@ -588,6 +600,7 @@ export function WorkspaceApp() {
                       )}
                       {module === "Payments" && (
                         <PaymentsView
+                          actor={account.member}
                           receivables={receivables}
                           payables={payables}
                           cash={cash}
@@ -622,6 +635,8 @@ export function WorkspaceApp() {
                       )}
                       {module === "Reports" && (
                         <ReportsView
+                          actor={account.member}
+                          commit={commit}
                           report={report}
                           setReport={setReport}
                           setReportContact={setReportContact}
@@ -778,6 +793,7 @@ export function WorkspaceApp() {
           )}
           {modal === "Expense" && (
             <ExpenseForm
+              actor={account.member}
               submit={submit}
               num={num}
               commit={commit}
