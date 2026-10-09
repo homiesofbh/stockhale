@@ -50,6 +50,7 @@ export function ContactsView({
                 {c.name}
                 {c.company && <small>{c.company}</small>}
                 {c.ntn && <small>NTN: {c.ntn}</small>}
+                {c.salesTaxNumber && <small>Sales tax: {c.salesTaxNumber}</small>}
               </button>,
               <>
                 {c.phone || "—"}

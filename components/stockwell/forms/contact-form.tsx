@@ -30,13 +30,13 @@ export function ContactForm({
         submit(e, (f) => {
           const c: Contact = {
             ...editContact,
-            company: module === "Customers" ? text(f, "company") : editContact?.company,
+            company: text(f, "company"),
             id: editContact?.id || uid(),
             name: text(f, "name"),
             phone: text(f, "phone"),
             email: text(f, "email"),
             address: text(f, "address"),
-            ntn: module === "Suppliers" ? editContact?.ntn : text(f, "ntn"),
+            ntn: text(f, "ntn"),
             contactPerson: text(f, "contactPerson"),
             mobile: text(f, "mobile"),
             salesTaxNumber: text(f, "salesTaxNumber"),
@@ -58,7 +58,7 @@ export function ContactForm({
           />
         </Field>
         </div>
-        {module === "Customers" && <Field label="Company (optional)"><input name="company" defaultValue={editContact?.company || ""} maxLength={200} /></Field>}
+        <Field label="Company (optional)"><input name="company" defaultValue={editContact?.company || ""} maxLength={200} /></Field>
         <Field label="Phone (optional)">
           <input name="phone" type="tel" defaultValue={editContact?.phone} />
         </Field>
@@ -70,9 +70,9 @@ export function ContactForm({
         <Field label="Address (optional)">
           <input name="address" defaultValue={editContact?.address} />
         </Field>
-        {module === "Customers" && <Field label="NTN (optional)">
+        <Field label="NTN (optional)">
           <input name="ntn" defaultValue={editContact?.ntn || ""} />
-        </Field>}
+        </Field>
         <Field label="Sales-tax registration (optional)"><input name="salesTaxNumber" defaultValue={editContact?.salesTaxNumber || ""} /></Field>
         <div className="form-wide"><Field label="Description (optional)"><textarea name="description" defaultValue={editContact?.description || ""} maxLength={2000} /></Field></div>
       </div>
