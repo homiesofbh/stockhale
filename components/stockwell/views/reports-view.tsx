@@ -94,21 +94,23 @@ export function ReportsView({
             </Field>
           )}
         </div>
-        <button
-          className="secondary-button"
-          onClick={() =>
-            csv(
-              report.toLowerCase().replaceAll(" ", "-"),
-              reportResult.columns,
-              reportResult.rows,
-            )
-          }
-        >
-          <FileText size={16} /> Download CSV
-        </button>
-        <button className="secondary-button" onClick={() => window.print()}>
-          Print report
-        </button>
+        <div className="report-actions">
+          <button
+            className="secondary-button"
+            onClick={() =>
+              csv(
+                report.toLowerCase().replaceAll(" ", "-"),
+                reportResult.columns,
+                reportResult.rows,
+              )
+            }
+          >
+            <FileText size={16} /> Download CSV
+          </button>
+          <button className="secondary-button" onClick={() => window.print()}>
+            Print report
+          </button>
+        </div>
       </div>
       <section className="card">
         <div className="section-head">

@@ -71,6 +71,7 @@ export function WorkspaceApp() {
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [requestedModule, setModule] = useState<Module>("Dashboard");
+  const [routeReady, setRouteReady] = useState(false);
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -104,6 +105,22 @@ export function WorkspaceApp() {
   const [selectedTrade, setSelectedTrade] = useState("");
   const scanInput = useRef<HTMLInputElement>(null);
   const savedRaw = useRef<string | null>(null);
+  useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    const savedModule = (Object.keys(descriptions) as Module[]).find(
+      (name) => name.toLowerCase().replaceAll(" ", "-") === hash,
+    );
+    if (savedModule) setModule(savedModule);
+    setRouteReady(true);
+  }, []);
+  useEffect(() => {
+    if (!routeReady) return;
+    const nextHash = requestedModule === "Dashboard"
+      ? ""
+      : `#${requestedModule.toLowerCase().replaceAll(" ", "-")}`;
+    if (window.location.hash !== nextHash)
+      window.history.replaceState(null, "", `${window.location.pathname}${nextHash}`);
+  }, [requestedModule, routeReady]);
   useEffect(() => {
     if (workspace.cache) {
       setS(workspace.cache.workspace.store);

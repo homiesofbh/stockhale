@@ -1,7 +1,7 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { type Store } from "@/lib/stockwell/model";
-import { Search } from "lucide-react";
+import { Search, X } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
   query: string;
@@ -132,7 +132,9 @@ export function RecordFilters({
         status !== "All" ||
         category !== "All") && (
         <button
-          className="text-button"
+          className="icon-button filter-clear-button"
+          aria-label="Clear filters"
+          title="Clear filters"
           onClick={() => {
             setQuery("");
             setFrom("");
@@ -142,7 +144,7 @@ export function RecordFilters({
             setPaymentMethod("All");
           }}
         >
-          Clear
+          <X size={16} />
         </button>
       )}
     </div>

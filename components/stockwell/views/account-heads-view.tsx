@@ -8,6 +8,7 @@ import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib
 import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
 import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { money, today, uid, type Store } from "@/lib/stockwell/model";
 // Parse record dates in UTC so week boundaries do not shift with device timezone.
 function transactionWeek(date: string) {
@@ -85,19 +86,29 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   }
   return (
     <>
-      <section className="card">
+      <section className="card partner-records-card">
         <div className="section-head"><div><h2>Partner contributions and withdrawals</h2><p>Record money introduced by or taken by a business partner.</p></div></div>
-        <div className="form-grid">
+        <div className="form-grid partner-form">
           <input aria-label="Partner name" placeholder="Partner name" value={partner} onChange={e => setPartner(e.target.value)} />
-          <select aria-label="Partner entry type" value={partnerKind} onChange={e => setPartnerKind(e.target.value as typeof partnerKind)}><option>Withdrawal</option><option>Contribution</option></select>
+          <GlassSelect aria-label="Partner entry type" value={partnerKind} onValueChange={value => setPartnerKind(value as typeof partnerKind)}><option>Withdrawal</option><option>Contribution</option></GlassSelect>
           <input aria-label="Partner amount" type="number" min="0.01" step="0.01" placeholder="Amount (PKR)" value={partnerAmount} onChange={e => setPartnerAmount(e.target.value)} />
-          <input aria-label="Partner payment method" placeholder="Method" value={partnerMethod} onChange={e => setPartnerMethod(e.target.value)} />
+          <GlassSelect aria-label="Partner payment method" value={partnerMethod} onValueChange={setPartnerMethod}>
+            <option value="Cash">Cash</option>
+            <option value="Bank transfer">Bank transfer</option>
+            <option value="Cheque">Cheque</option>
+            <option value="Card">Card</option>
+            <option value="Mobile wallet">Mobile wallet</option>
+            <option value="Online payment">Online payment</option>
+            {(s.financialAccounts || [])
+              .filter(account => account.active !== false && account.name !== "Cash")
+              .map(account => <option key={account.id} value={account.name}>{account.name} · {account.type}</option>)}
+          </GlassSelect>
           <button className="primary" onClick={() => { const amount = Number(partnerAmount); if (!partner.trim() || !Number.isFinite(amount) || amount <= 0) return; commit({ ...s, partners: [...(s.partners || []), { id: uid(), date: today(), partner: partner.trim(), kind: partnerKind, amount, method: partnerMethod.trim() || "Cash", notes: "" }] }, "Partner entry recorded."); setPartner(""); setPartnerAmount(""); }}>Record entry</button>
         </div>
         <Table headers={["Date", "Partner", "Type", "Amount", "Method"]} rows={(s.partners || []).slice().reverse().map(p => [p.date, p.partner, p.kind, money(p.amount), p.method])} empty="No partner entries" />
       </section>
       <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
-        <div className="section-head"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
+        <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
         {visible.size ? <ul className="chart-accounts-grid">{roots.map(account => renderAccount(account))}</ul> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
       </section>
       {editing && <Modal title="Edit account" close={() => setEditing(null)}><AccountForm s={s} account={editing} commit={(next, message) => { commit(next, message); setEditing(null); }} /></Modal>}

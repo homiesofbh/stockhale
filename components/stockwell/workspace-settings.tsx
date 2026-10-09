@@ -7,6 +7,7 @@ import { modules, type Workspace } from "@/lib/stockwell/workspace";
 import type { Cache } from "@/lib/stockwell/workspace";
 import { uid, type Store } from "@/lib/stockwell/model";
 import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 
 export function WorkspaceSettings({
   workspace,
@@ -239,15 +240,15 @@ export function WorkspaceSettings({
           setNotice("Payment account added.");
         }}>
           <label className="field"><span>Account name</span><input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="e.g. HBL Business Account" maxLength={120} required /></label>
-          <label className="field"><span>Account type</span><select value={accountType} onChange={(e) => setAccountType(e.target.value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></select></label>
+          <label className="field"><span>Account type</span><GlassSelect value={accountType} onValueChange={(value) => setAccountType(value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></GlassSelect></label>
           <button className="primary" disabled={busy}>Add account</button>
         </form>
         <div className="permission-grid">{(store.financialAccounts || []).map((account) => <div key={account.id}>
           <b>{account.name} · {account.type}</b>
-          <label className="field"><span>Asset ledger account / opening balance</span><select value={account.ledgerAccountId || ""} onChange={e => {
-            try { commitStore(saveFinancialAccount(store, { ...account, ledgerAccountId: e.target.value })); setError(""); }
+          <label className="field"><span>Asset ledger account / opening balance</span><GlassSelect value={account.ledgerAccountId || ""} onValueChange={value => {
+            try { commitStore(saveFinancialAccount(store, { ...account, ledgerAccountId: value })); setError(""); }
             catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }
-          }}><option value="">Select ledger account</option>{chartAccounts(store).filter(a => a.type === "Asset" && !chartAccounts(store).some(child => child.parentId === a.id)).map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</select></label>
+          }}><option value="">Select ledger account</option>{chartAccounts(store).filter(a => a.type === "Asset" && !chartAccounts(store).some(child => child.parentId === a.id)).map(a => <option key={a.id} value={a.id}>{a.code} · {a.name}</option>)}</GlassSelect></label>
           <button type="button" className="link" onClick={() => {
             try { commitStore(saveFinancialAccount(store, { ...account, active: account.active === false })); setError(""); }
             catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }

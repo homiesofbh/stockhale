@@ -92,6 +92,7 @@ export function GlassSelect({
       <Select.Portal container={portalContainer ?? undefined}>
         <Select.Positioner
           className={styles.positioner}
+          side="bottom"
           sideOffset={8}
           align="start"
           alignItemWithTrigger={false}
