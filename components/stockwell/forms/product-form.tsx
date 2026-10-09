@@ -48,6 +48,7 @@ export function ProductForm({
             store: text(f, "store"),
             size: text(f, "size"),
             active: !editProduct || f.has("active"),
+            variantOf: text(f, "variantOf") || undefined,
           };
           commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
         })
@@ -83,6 +84,7 @@ export function ProductForm({
         <Field label="Packing (optional)"><input name="packing" maxLength={80} defaultValue={editProduct?.packing || ""} placeholder="e.g. 25 kg bag" /></Field>
         <Field label="Store (optional)"><input name="store" maxLength={80} defaultValue={editProduct?.store || ""} /></Field>
         <Field label="Size (optional)"><input name="size" maxLength={80} defaultValue={editProduct?.size || ""} /></Field>
+        <Field label="Variant parent (optional)"><GlassSelect name="variantOf" defaultValue={editProduct?.variantOf || ""}><option value="">Standalone product</option>{s.products.filter(x => x.id !== editProduct?.id).map(x => <option key={x.id} value={x.id}>{x.name} · {x.sku}</option>)}</GlassSelect></Field>
         <Field label="Cost price (PKR)">
           <input
             name="cost"

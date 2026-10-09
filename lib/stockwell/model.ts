@@ -21,6 +21,7 @@ export type Product = {
   active?: boolean;
   unit?: string;
   supplierIds?: string[];
+  variantOf?: string;
 };
 export type Contact = {
   id: string;
@@ -314,6 +315,7 @@ export function saveProduct(s: Store, p: Product, opening = 0): Store {
     !!p.name.trim() && !!p.sku.trim(),
     "Product name and SKU are required.",
   );
+  assert(!p.variantOf || (p.variantOf !== p.id && s.products.some(x => x.id === p.variantOf)), "Select a valid parent product for this variant.");
   assert(
     !s.products.some(
       (x) => x.id !== p.id && x.sku.toLowerCase() === p.sku.toLowerCase(),

@@ -60,6 +60,7 @@ export function InventoryView({
             "Max stock",
             "Status",
             "Suppliers",
+            "Variant",
             "",
           ]}
           rows={s.products
@@ -94,6 +95,7 @@ export function InventoryView({
                 {stock(s, p.id) <= p.low ? "Low stock" : "In stock"}
               </Badge>,
               (p.supplierIds || []).map(id => s.suppliers.find(supplier => supplier.id === id)?.name).filter(Boolean).join(", ") || "—",
+              p.variantOf ? `Variant of ${s.products.find(parent => parent.id === p.variantOf)?.name || "unknown"}` : "Standalone",
               <button
                 className="link"
                 onClick={() => {
