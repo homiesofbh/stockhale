@@ -4,15 +4,20 @@ import { saveFinancialAccount } from "@/lib/stockwell/bank-vouchers";
 import { Check, Copy, Link2 } from "lucide-react";
 import { useRef, useState, type FormEvent } from "react";
 import { modules, type Workspace } from "@/lib/stockwell/workspace";
+import type { Cache } from "@/lib/stockwell/workspace";
 import { uid, type Store } from "@/lib/stockwell/model";
+import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
+
 export function WorkspaceSettings({
   workspace,
   action,
+  cache,
   store,
   commitStore,
 }: {
   workspace: Workspace;
   action: (body: unknown) => Promise<any>;
+  cache: Cache;
   store: Store;
   commitStore: (store: Store) => void;
 }) {
@@ -214,6 +219,7 @@ export function WorkspaceSettings({
           </form>
         ))}
       </section>
+      <WorkspaceBackup action={action} cache={cache} settings />
       <section className="panel">
         <h2>Bank and wallet accounts</h2>
         <p>Add each account your business uses. These appear as payment methods when recording bills, payments, and expenses.</p>

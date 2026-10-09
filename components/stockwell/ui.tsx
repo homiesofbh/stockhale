@@ -86,10 +86,12 @@ export function Table({
 }
 export function Modal({
   title,
+  eyebrow = "STOCKHALE / NEW RECORD",
   children,
   close,
 }: {
   title: string;
+  eyebrow?: string;
   children: ReactNode;
   close: () => void;
 }) {
@@ -101,7 +103,7 @@ export function Modal({
     <dialog ref={dialog} onCancel={close} className="modal">
       <div className="modal-head">
         <div>
-          <span className="eyebrow">STOCKHALE / NEW RECORD</span>
+          <span className="eyebrow">{eyebrow}</span>
           <h2>{title}</h2>
         </div>
         <button
