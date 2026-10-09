@@ -40,12 +40,13 @@ export function PaymentForm({
   setSelectedTrade,
 }: Props) {
   const [method, setMethod] = useState("Cash");
+  const [forwardCheque, setForwardCheque] = useState(false);
+  const [destinationKind, setDestinationKind] = useState<"Supplier" | "Partner">("Supplier");
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) =>
-          commit(
-            recordPayment(s, {
+        submit(e, (f) => {
+          const payment = {
               id: uid(),
               date: text(f, "date"),
               kind: paymentKind as "Customer" | "Supplier",
@@ -67,10 +68,18 @@ export function PaymentForm({
               chequeNumber: text(f, "chequeNumber"),
               chequeBank: text(f, "chequeBank"),
               chequeDate: text(f, "chequeDate"),
-            }),
-            "Payment recorded. Balance updated.",
-          ),
-        )
+            };
+          let next = recordPayment(s, payment);
+          if (forwardCheque && paymentKind === "Customer" && method === "Cheque") {
+            const destinationId = text(f, "destination");
+            const destinationName = destinationKind === "Supplier"
+              ? s.suppliers.find(c => c.id === destinationId)?.name || ""
+              : destinationId;
+            if (!destinationName) throw new Error("Select the supplier or enter the partner name receiving this cheque.");
+            next = { ...next, crossCheques: [...(next.crossCheques || []), { id: uid(), sourcePaymentId: payment.id, date: payment.date, customerId: payment.contactId, destinationKind, destinationId, destinationName, amount: Math.abs(payment.amount), status: "pending", notes: text(f, "destinationNotes") }] };
+          }
+          commit(next, forwardCheque ? "Customer cheque recorded for submission." : "Payment recorded. Balance updated.");
+        })
       }
     >
       <div className="form-grid">
@@ -143,6 +152,14 @@ export function PaymentForm({
           <Field label="Cheque number"><input name="chequeNumber" required maxLength={80} /></Field>
           <Field label="Cheque bank"><input name="chequeBank" required maxLength={120} /></Field>
           <Field label="Expected clearance date"><input name="chequeDate" type="date" required /></Field>
+          {paymentKind === "Customer" && <>
+            <label className="checkbox-row"><input type="checkbox" checked={forwardCheque} onChange={e => setForwardCheque(e.target.checked)} /> Submit this cheque to a supplier or partner</label>
+            {forwardCheque && <>
+              <Field label="Submit to"><GlassSelect name="destinationKind" value={destinationKind} onValueChange={value => setDestinationKind(value as typeof destinationKind)}><option>Supplier</option><option>Partner</option></GlassSelect></Field>
+              {destinationKind === "Supplier" ? <Field label="Supplier"><GlassSelect name="destination"><option value="">Select supplier</option>{s.suppliers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</GlassSelect></Field> : <Field label="Partner name"><input name="destination" placeholder="Partner name" required /></Field>}
+              <Field label="Submission notes"><input name="destinationNotes" /></Field>
+            </>}
+          </>}
         </>}
         <Field label="Account head">
           <GlassSelect

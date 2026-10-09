@@ -112,6 +112,18 @@ export type Payment = {
   chequeStatus?: "pending" | "cleared" | "bounced" | "cancelled";
   clearedDate?: string;
 };
+export type CrossCheque = {
+  id: string;
+  sourcePaymentId: string;
+  date: string;
+  customerId: string;
+  destinationKind: "Supplier" | "Partner";
+  destinationId: string;
+  destinationName: string;
+  amount: number;
+  status: "pending" | "submitted" | "cleared" | "bounced";
+  notes: string;
+};
 export type Expense = {
   createdAt?: string;
   id: string;
@@ -169,6 +181,7 @@ export type Store = {
   financialAccounts?: FinancialAccount[];
   units?: string[];
   partners?: PartnerEntry[];
+  crossCheques?: CrossCheque[];
 };
 export const today = (date = new Date()) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
 export const isPosted = (t: Trade) => t.status !== "draft" && t.status !== "void";
@@ -217,6 +230,7 @@ export const emptyStore = (): Store => ({
   ],
   units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"],
   partners: [],
+  crossCheques: [],
 });
 export const stock = (s: Store, id: string) =>
   roundQty(
