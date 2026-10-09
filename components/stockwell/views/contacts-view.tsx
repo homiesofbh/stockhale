@@ -44,7 +44,7 @@ export function ContactsView({
             "",
           ]}
           rows={(module === "Suppliers" ? s.suppliers : s.customers)
-            .filter((c) => matches(c.name, c.company, c.phone, c.email, c.address, c.ntn))
+            .filter((c) => matches(c.name, c.company, c.phone, c.mobile, c.email, c.address, c.ntn, c.contactPerson, c.salesTaxNumber, c.description))
             .map((c) => [
               <button className="link" onClick={() => setDetailContact(c)}>
                 {c.name}
@@ -53,6 +53,7 @@ export function ContactsView({
               </button>,
               <>
                 {c.phone || "—"}
+                <small>{c.mobile}</small>
                 <small>{c.email}</small>
               </>,
               c.address || "—",
@@ -81,7 +82,7 @@ export function ContactsView({
             <div>
               <h2>{detailContact.name}</h2>
               <p>
-                {[detailContact.company, detailContact.phone, detailContact.email, detailContact.address, detailContact.ntn ? `NTN: ${detailContact.ntn}` : ""].filter(Boolean).join(" · ") || "No optional details provided."}
+                {[detailContact.company, detailContact.contactPerson, detailContact.phone, detailContact.mobile, detailContact.email, detailContact.address, detailContact.ntn ? `NTN: ${detailContact.ntn}` : "", detailContact.salesTaxNumber ? `Sales tax: ${detailContact.salesTaxNumber}` : "", detailContact.description].filter(Boolean).join(" · ") || "No optional details provided."}
               </p>
             </div>
             <button

@@ -26,6 +26,10 @@ export type Contact = {
   address: string;
   ntn?: string;
   company?: string;
+  contactPerson?: string;
+  mobile?: string;
+  salesTaxNumber?: string;
+  description?: string;
 };
 export type Line = {
   productId: string;

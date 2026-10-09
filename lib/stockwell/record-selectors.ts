@@ -45,7 +45,7 @@ export function filterTrades(
     );
     return (
       periodMatch(trade.date, filters.from, filters.to) &&
-      matchesQuery(filters.query, trade.number, trade.reference, contact, profile?.ntn, profile?.company, profile?.phone, trade.walkInName, trade.walkInCompany, trade.walkInPhone, ...products) &&
+      matchesQuery(filters.query, trade.number, trade.reference, contact, profile?.ntn, profile?.company, profile?.phone, profile?.mobile, profile?.contactPerson, profile?.salesTaxNumber, profile?.description, trade.walkInName, trade.walkInCompany, trade.walkInPhone, ...products) &&
       (filters.status === "All" ||
         getPaymentStatus(store, trade) === filters.status) &&
       (filters.paymentMethod === "All" ||
