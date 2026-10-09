@@ -3,7 +3,7 @@ const assert = require("node:assert/strict");
 const fs = require("node:fs");
 const path = require("node:path");
 const m = require(process.env.STOCKWELL_MODEL);
-const { createInvoicePdf, needsUnicodeFont } = require(
+const { createInvoicePdf, invoiceLayout, needsUnicodeFont } = require(
   process.env.STOCKWELL_PDF_MODULE,
 );
 function fixture(count = 2) {
@@ -45,6 +45,31 @@ function fixture(count = 2) {
   s.invoices.push(t);
   return { s, t };
 }
+test("layout profiles lock printer geometry and safe content margins", () => {
+  assert.deepEqual(invoiceLayout("A4"), {
+    width: 210,
+    margin: 17,
+    maxHeight: 297,
+    fontSize: 10,
+    leading: 5,
+  });
+  assert.deepEqual(invoiceLayout("80mm"), {
+    width: 80,
+    margin: 4,
+    maxHeight: 1200,
+    fontSize: 9,
+    leading: 4.2,
+  });
+  assert.deepEqual(invoiceLayout("58mm"), {
+    width: 58,
+    margin: 4,
+    maxHeight: 1200,
+    fontSize: 9,
+    leading: 4.2,
+  });
+  assert.equal(invoiceLayout("80mm").width - invoiceLayout("80mm").margin * 2, 72);
+  assert.equal(invoiceLayout("58mm").width - invoiceLayout("58mm").margin * 2, 50);
+});
 test("PDF uses real text and lossless compression without raster images", () => {
   const { s, t } = fixture();
   const doc = createInvoicePdf(s, t);

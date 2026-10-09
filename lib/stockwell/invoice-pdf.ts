@@ -12,6 +12,27 @@ import {
 } from "./model";
 
 export type InvoicePaper = "A4" | "80mm" | "58mm";
+export type InvoiceLayout = {
+  width: number;
+  margin: number;
+  maxHeight: number;
+  fontSize: number;
+  leading: number;
+};
+
+/** Printer-safe geometry shared by rendering and snapshot tests. */
+export function invoiceLayout(paper: InvoicePaper): InvoiceLayout {
+  if (paper === "A4")
+    return { width: 210, margin: 17, maxHeight: 297, fontSize: 10, leading: 5 };
+  return {
+    width: paper === "58mm" ? 58 : 80,
+    margin: 4,
+    maxHeight: 1200,
+    fontSize: 9,
+    leading: 4.2,
+  };
+}
+
 type PdfOptions = { compress?: boolean; unicodeFont?: string };
 const clean = (value: string) =>
   value.replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F]/g, "");
@@ -48,12 +69,11 @@ export function createInvoicePdf(
 ) {
   if (!isPosted(t)) throw new Error("Post the bill before issuing an invoice PDF.");
   const receipt = paper !== "A4";
-  const width = paper === "58mm" ? 58 : paper === "80mm" ? 80 : 210;
-  const margin = receipt ? 4 : 17;
+  const layout = invoiceLayout(paper);
+  const { width, margin, maxHeight } = layout;
   const right = width - margin;
   const contentWidth = right - margin;
   // Receipt height is trimmed after drawing, so a short receipt has no A4-sized blank tail.
-  const maxHeight = receipt ? 1200 : 297;
   const doc = new jsPDF({
     orientation: "portrait",
     unit: "mm",
@@ -71,8 +91,7 @@ export function createInvoicePdf(
     doc.addFont("StockHaleUnicode.ttf", "StockHaleUnicode", "normal");
   }
   const font = options.unicodeFont ? "StockHaleUnicode" : "helvetica";
-  const size = receipt ? 9 : 10;
-  const leading = receipt ? 4.2 : 5;
+  const { fontSize: size, leading } = layout;
   let y = margin;
   let currentHeight = maxHeight;
   const documentPages: { height: number; used: number }[] = [];
