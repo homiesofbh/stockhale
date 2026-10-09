@@ -101,6 +101,18 @@ export function createReportData(
     const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.tradeId, p.amount, p.method, p.chequeStatus || "—", p.notes]);
     return { columns: ["Date", "Kind", "Transaction", "Amount", "Method", "Cheque status", "Notes"], rows };
   }
+  if (report === "Account aging report") {
+    const through = to || today();
+    const age = (date: string) => Math.max(0, Math.floor((Date.parse(`${through}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86400000));
+    const contacts = [...s.customers.map(c => ({ ...c, kind: "Customer" })), ...s.suppliers.map(c => ({ ...c, kind: "Supplier" }))];
+    const rows = contacts.map(c => {
+      const trades = c.kind === "Customer" ? asOf.invoices : asOf.purchases;
+      const buckets = [0, 0, 0, 0];
+      trades.filter(t => isPosted(t) && t.contactId === c.id && balance(asOf, t) > 0).forEach(t => { const days = age(t.date); buckets[days < 30 ? 0 : days < 60 ? 1 : days < 90 ? 2 : 3] += balance(asOf, t); });
+      return [c.kind, c.name, c.company || "", ...buckets.map(round), round(buckets.reduce((n, v) => n + v, 0))];
+    }).filter(row => row[7] !== 0 && matches(row[0], row[1], row[2]));
+    return { columns: ["Type", "Contact", "Company", "Current", "30–59 days", "60–89 days", "90+ days", "Total outstanding"], rows };
+  }
   if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId, t.number.startsWith("PUR"), t), t.walkInName, t.walkInCompany, t.walkInPhone)).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR"), t), total(t)]) };
   if (report === "Cash-in-hand report" || report === "Cash-flow report") {
     const statement = report === "Cash-in-hand report" ? cashStatement(s, from, to || today()) : cashFlow(s, from, to || today());
