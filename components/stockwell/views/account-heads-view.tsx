@@ -165,15 +165,15 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
           ]}
           empty="No matching transactions"
           rows={weeklyTransactions.map((r) => [
-              r.date,
-              r.reference,
-              r.type,
-              <Badge>{r.head}</Badge>,
-              money(r.amount),
-              r.debit === undefined ? "—" : money(r.debit),
-              r.credit === undefined ? "—" : money(r.credit),
-              r.method,
-            ])}
+            r.date,
+            r.reference,
+            r.type,
+            <Badge>{r.head}</Badge>,
+            money(r.amount),
+            r.debit === undefined ? "—" : money(r.debit),
+            r.credit === undefined ? "—" : money(r.credit),
+            r.method,
+          ])}
         />
       </section>
     </>
