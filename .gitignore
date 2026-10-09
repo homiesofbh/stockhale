@@ -380,4 +380,5 @@ lib/stockwell/*
 !lib/stockwell/operations.ts
 !lib/stockwell/operation-validation.ts
 !lib/stockwell/recovery.ts
-
+!lib/stockwell/attachments.ts
+!lib/stockwell/attachment-client.ts
