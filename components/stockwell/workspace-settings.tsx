@@ -31,6 +31,7 @@ export function WorkspaceSettings({
   const inviteInput = useRef<HTMLInputElement>(null);
   const [accountName, setAccountName] = useState("");
   const [accountType, setAccountType] = useState<"Bank" | "Wallet">("Bank");
+  const [unitName, setUnitName] = useState("");
   async function copyInvite() {
     try {
       await navigator.clipboard.writeText(invite);
@@ -252,6 +253,21 @@ export function WorkspaceSettings({
             catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }
           }}>{account.active === false ? "Reactivate" : "Deactivate"}</button>
         </div>)}</div>
+      </section>
+      <section className="panel">
+        <h2>Measurement units</h2>
+        <p>Manage the units available when creating products, including textile units such as yards.</p>
+        <form className="form-grid" onSubmit={e => {
+          e.preventDefault();
+          const unit = unitName.trim().toLowerCase();
+          if (!unit || (store.units || []).includes(unit)) return;
+          commitStore({ ...store, units: [...(store.units || []), unit] });
+          setUnitName(""); setNotice("Measurement unit added.");
+        }}>
+          <label className="field"><span>New unit</span><input value={unitName} onChange={e => setUnitName(e.target.value)} placeholder="e.g. yard" maxLength={40} required /></label>
+          <button className="primary">Add unit</button>
+        </form>
+        <div className="permission-grid">{(store.units || []).map(unit => <span key={unit} className="badge">{unit}</span>)}</div>
       </section>
       <section className="panel">
         <h2>Previous browser records</h2>
