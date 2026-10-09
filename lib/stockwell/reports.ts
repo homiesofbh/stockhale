@@ -56,6 +56,8 @@ export function createReportData(
     [
       "Billing report",
       "Sales report",
+      "Cash-sale report",
+      "Credit-sale report",
       "Purchase report",
       "Receivables report",
       "Payables report",
@@ -64,6 +66,8 @@ export function createReportData(
     const supplier =
       report === "Purchase report" || report === "Payables report";
     let list = (supplier ? purchases : invoices).filter(isPosted);
+    if (report === "Cash-sale report") list = list.filter(t => t.method === "Cash");
+    if (report === "Credit-sale report") list = list.filter(t => balance(asOf, t) > 0);
     if (report === "Receivables report" || report === "Payables report")
       list = list.filter((t) => balance(asOf, t) !== 0);
     return {
@@ -92,6 +96,10 @@ export function createReportData(
         balance(asOf, t),
       ]),
     };
+  }
+  if (report === "Payment report") {
+    const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.tradeId, p.amount, p.method, p.chequeStatus || "—", p.notes]);
+    return { columns: ["Date", "Kind", "Transaction", "Amount", "Method", "Cheque status", "Notes"], rows };
   }
   if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId, t.number.startsWith("PUR"), t), t.walkInName, t.walkInCompany, t.walkInPhone)).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR"), t), total(t)]) };
   if (report === "Cash-in-hand report" || report === "Cash-flow report") {
