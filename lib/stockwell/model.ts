@@ -20,6 +20,7 @@ export type Product = {
   size?: string;
   active?: boolean;
   unit?: string;
+  supplierIds?: string[];
 };
 export type Contact = {
   id: string;
@@ -41,6 +42,8 @@ export type Line = {
   price: number;
   cost: number;
   discount?: number;
+  packageCount?: number;
+  packageSize?: number;
 };
 export type Trade = {
   status?: "draft" | "posted" | "void";
@@ -78,6 +81,18 @@ export type Movement = {
   type: string;
   reference: string;
   reason: string;
+  supplierId?: string;
+  packageCount?: number;
+  packageSize?: number;
+};
+export type PartnerEntry = {
+  id: string;
+  date: string;
+  partner: string;
+  kind: "Contribution" | "Withdrawal";
+  amount: number;
+  method: string;
+  notes: string;
 };
 export type Payment = {
   createdAt?: number;
@@ -153,6 +168,7 @@ export type Store = {
   returns: ReturnRecord[];
   financialAccounts?: FinancialAccount[];
   units?: string[];
+  partners?: PartnerEntry[];
 };
 export const today = (date = new Date()) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
 export const isPosted = (t: Trade) => t.status !== "draft" && t.status !== "void";
@@ -200,6 +216,7 @@ export const emptyStore = (): Store => ({
     { id: "nayapay", name: "NayaPay", type: "Wallet" },
   ],
   units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"],
+  partners: [],
 });
 export const stock = (s: Store, id: string) =>
   roundQty(
@@ -453,6 +470,9 @@ export function recordTrade(
     type: kind,
     reference: trade.number,
     reason: "",
+    supplierId: kind === "Purchase" ? trade.contactId : undefined,
+    packageCount: l.packageCount,
+    packageSize: l.packageSize,
   }));
   return {
     ...s,
@@ -469,6 +489,7 @@ export function recordTrade(
             return lines.length
               ? {
                   ...p,
+                  supplierIds: Array.from(new Set([...(p.supplierIds || []), trade.contactId].filter(Boolean))),
                   cost: round(
                     lines.reduce((n, l) => n + l.qty * l.price, 0) /
                       lines.reduce((n, l) => n + l.qty, 0),

@@ -88,6 +88,7 @@ export const collectionModules: Record<string, string[]> = {
   payments: ["Payments", "Billing", "Purchases"],
   expenses: ["Expenses"],
   returns: ["Returns & Damage"],
+  partners: ["Accounts Heads"],
 };
 export function changesBetween(before: Store, after: Store) {
   return Object.keys(collectionModules).filter(

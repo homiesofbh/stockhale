@@ -45,6 +45,7 @@ type Props = {
   setModal: Dispatch<SetStateAction<string>>;
   canAddSupplier: boolean;
   addSupplier: (supplier: Contact) => void;
+  canChangeHead: boolean;
 };
 export function TradeForm({
   submit,
@@ -71,8 +72,10 @@ export function TradeForm({
   setModal,
   canAddSupplier,
   addSupplier,
+  canChangeHead,
 }: Props) {
   const [contact, setContact] = useState("");
+  const [contactQuery, setContactQuery] = useState("");
   const [method, setMethod] = useState("Cash");
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [supplierError, setSupplierError] = useState("");
@@ -141,16 +144,26 @@ export function TradeForm({
       <div className="form-grid">
         <div>
           <Field label={modal === "Purchase" ? "Supplier" : "Customer (walk-in or company)"}>
+          <div>
+          <input
+            aria-label={modal === "Purchase" ? "Search suppliers" : "Search customers"}
+            placeholder={modal === "Purchase" ? "Search suppliers…" : "Search customers…"}
+            value={contactQuery}
+            onChange={(e) => setContactQuery(e.target.value)}
+          />
           <GlassSelect name="contact" value={contact} onValueChange={setContact} required={modal === "Purchase"}>
             <option value="">
               {modal === "Purchase" ? "Select supplier" : "Walk-in customer"}
             </option>
-            {(modal === "Purchase" ? s.suppliers : s.customers).map((c) => (
+            {(modal === "Purchase" ? s.suppliers : s.customers)
+              .filter((c) => [c.name, c.company, c.phone, c.mobile, c.email].join(" ").toLowerCase().includes(contactQuery.toLowerCase()))
+              .map((c) => (
               <option key={c.id} value={c.id}>
                 {modal === "Purchase" ? c.name : [c.name, c.company, c.phone].filter(Boolean).join(" · ")}
               </option>
             ))}
           </GlassSelect>
+          </div>
           </Field>
           {modal === "Bill" && !contact && (
             <>
@@ -212,6 +225,7 @@ export function TradeForm({
               "Quantity",
               modal === "Purchase" ? "Cost price" : "Unit price",
               "Line discount",
+              ...(modal === "Purchase" ? ["Packages"] : []),
               "Total",
               "",
             ]}
@@ -270,6 +284,15 @@ export function TradeForm({
                 value={l.discount || 0}
                 onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Number(e.target.value) } : x))}
               />,
+              modal === "Purchase" ? <input
+                aria-label={`Number of packages for ${pName(l.productId)}`}
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Packages"
+                value={l.packageCount ?? ""}
+                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))}
+              /> : null,
               money(l.qty * l.price - (l.discount || 0)),
               <button
                 type="button"
@@ -340,14 +363,16 @@ export function TradeForm({
           <Field label="Expected clearance date"><input name="chequeDate" type="date" min={today()} required /></Field>
         </>}
         <Field label="Account head">
-          <GlassSelect
-            name="head"
-            defaultValue={modal === "Bill" ? "Sales" : "Purchases"}
-          >
-            {s.heads.map((h) => (
-              <option key={h}>{h}</option>
-            ))}
-          </GlassSelect>
+          {canChangeHead ? (
+            <GlassSelect name="head" defaultValue={modal === "Bill" ? "Sales" : "Purchases"}>
+              {s.heads.map((h) => <option key={h}>{h}</option>)}
+            </GlassSelect>
+          ) : (
+            <>
+              <input type="hidden" name="head" value={modal === "Bill" ? "Sales" : "Purchases"} />
+              <input value={modal === "Bill" ? "Sales" : "Purchases"} readOnly aria-label="Account head" />
+            </>
+          )}
         </Field>
       </div>
       <p className="form-hint">

@@ -59,6 +59,7 @@ export function InventoryView({
             "Selling price",
             "Max stock",
             "Status",
+            "Suppliers",
             "",
           ]}
           rows={s.products
@@ -92,6 +93,7 @@ export function InventoryView({
               <Badge tone={stock(s, p.id) <= p.low ? "amber" : "green"}>
                 {stock(s, p.id) <= p.low ? "Low stock" : "In stock"}
               </Badge>,
+              (p.supplierIds || []).map(id => s.suppliers.find(supplier => supplier.id === id)?.name).filter(Boolean).join(", ") || "—",
               <button
                 className="link"
                 onClick={() => {

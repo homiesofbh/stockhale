@@ -797,6 +797,7 @@ export function WorkspaceApp() {
               billTotal={billTotal}
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
+              canChangeHead={account.member.role === "owner"}
               addSupplier={(supplier) => {
                 if (storageError) throw new Error(storageError);
                 const next = { ...s, suppliers: [...s.suppliers, supplier] };
