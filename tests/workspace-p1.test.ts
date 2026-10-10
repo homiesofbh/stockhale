@@ -54,7 +54,7 @@ test("P1 API controls and recoverable backup/restore", async t => {
       const corrected = correctTrade(before.store, "Sale", { ...bill, paid: 10 }, "Wrong paid amount", { id: owner.id, role: "owner" });
       await sync(owner, corrected, "Billing");
       const current = await server.snapshot(owner);
-      assert.equal(current.store.corrections.length, 1);
+      assert.equal((current.store.corrections || []).length, 1);
       assert.ok(current.audit[0].records.includes('"before"'));
       assert.ok(current.audit[0].records.includes('"after"'));
     });
