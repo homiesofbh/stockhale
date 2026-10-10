@@ -47,14 +47,11 @@ export function NotificationsView({
         </button>
       </div>
       <Table
-        headers={["Who", "Module", "Action / records", "When", "Email"]}
+        headers={["Who", "Module", "Action", "When", "Email"]}
         rows={account.audit.map((a) => [
           a.actor,
           a.module,
-          <div key={a.id}>
-            {a.action}
-            <small>{a.records}</small>
-          </div>,
+          a.action,
           <div key={a.id}>
             {new Date(a.occurredAt).toLocaleString()}
             <small>Synced {new Date(a.receivedAt).toLocaleString()}</small>

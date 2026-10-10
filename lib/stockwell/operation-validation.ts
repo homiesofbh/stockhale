@@ -33,6 +33,10 @@ export function validateStore(s: Store) {
   check(new Set([...s.invoices, ...s.purchases].map(t => t.number)).size === s.invoices.length + s.purchases.length, "Duplicate bill references.");
   for (const p of s.payments) {
     const trade = (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId);
+    if (p.advance) {
+      check(!p.tradeId && !!p.contactId && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid advance payment.");
+      continue;
+    }
     check(!!trade && isPosted(trade) && trade.contactId === p.contactId && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid payment link or amount.");
     check(p.method !== "Cheque" || !!p.chequeNumber && !!p.chequeBank && validDate(p.chequeDate || "") && ["pending", "cleared", "bounced", "cancelled"].includes(p.chequeStatus || "pending"), "Invalid cheque details.");
   }

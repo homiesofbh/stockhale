@@ -18,8 +18,19 @@ import {
 } from "@/lib/stockwell/model";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { uploadAttachment } from "@/lib/stockwell/attachment-client";
+const searchableContactText = (contact: Contact) => {
+  const text = [contact.name, contact.company, contact.phone, contact.mobile, contact.email]
+    .filter(Boolean)
+    .join(" ")
+    .toLowerCase();
+  const digits = [contact.phone, contact.mobile]
+    .filter(Boolean)
+    .join(" ")
+    .replace(/\D/g, "");
+  return { text, digits };
+};
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   text: (f: FormData, key: string) => string;
@@ -45,6 +56,8 @@ type Props = {
   setModal: Dispatch<SetStateAction<string>>;
   canAddSupplier: boolean;
   addSupplier: (supplier: Contact) => void;
+  canAddCustomer: boolean;
+  addCustomer: (customer: Contact) => void;
   canChangeHead: boolean;
 };
 export function TradeForm({
@@ -72,14 +85,22 @@ export function TradeForm({
   setModal,
   canAddSupplier,
   addSupplier,
+  canAddCustomer,
+  addCustomer,
   canChangeHead,
 }: Props) {
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
   const [method, setMethod] = useState("Cash");
+  const [paidAmount, setPaidAmount] = useState(billTotal);
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [supplierError, setSupplierError] = useState("");
   const [supplier, setSupplier] = useState({ name: "", phone: "", email: "", address: "" });
+  const [addingCustomer, setAddingCustomer] = useState(false);
+  const [customerError, setCustomerError] = useState("");
+  const [customerKind, setCustomerKind] = useState<"Walk-in customer" | "Company">("Walk-in customer");
+  const [customer, setCustomer] = useState({ name: "", company: "", phone: "", mobile: "", address: "", email: "" });
+  useEffect(() => setPaidAmount(billTotal), [billTotal]);
   function saveSupplier() {
     try {
       const draft = Object.fromEntries(Object.entries(supplier).map(([key, value]) => [key, value.trim()])) as typeof supplier;
@@ -95,11 +116,27 @@ export function TradeForm({
       setSupplierError(error instanceof Error ? error.message : "Could not add supplier.");
     }
   }
+  function saveCustomer() {
+    try {
+      const draft = Object.fromEntries(Object.entries(customer).map(([key, value]) => [key, value.trim()])) as typeof customer;
+      if (!draft.name && !draft.company) throw new Error("Enter a customer or company name.");
+      const created = { ...draft, id: uid() };
+      addCustomer(created);
+      setContact(created.id);
+      setContactQuery("");
+      setAddingCustomer(false);
+      setCustomerKind("Walk-in customer");
+      setCustomer({ name: "", company: "", phone: "", mobile: "", address: "", email: "" });
+      setCustomerError("");
+    } catch (error) {
+      setCustomerError(error instanceof Error ? error.message : "Could not add customer.");
+    }
+  }
   return (
     <form
       onSubmit={(e) =>
         submit(e, async (f) => {
-          if (addingSupplier) throw new Error("Save or cancel the new supplier before saving the purchase.");
+          if (addingSupplier || addingCustomer) throw new Error("Save or cancel the new contact before saving the transaction.");
           const id = uid();
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
           const attachment = modal === "Purchase" && file ? await uploadAttachment(file, "purchase", id) : undefined;
@@ -141,9 +178,10 @@ export function TradeForm({
         })
       }
     >
-      <div className="form-grid">
-        <div>
+      <div className="form-grid bill-customer-row">
+        <div className="bill-customer-picker">
           <Field label={modal === "Purchase" ? "Supplier" : "Customer (walk-in or company)"}>
+          <div>
           <div>
           <input
             aria-label={modal === "Purchase" ? "Search suppliers" : "Search customers"}
@@ -151,27 +189,30 @@ export function TradeForm({
             value={contactQuery}
             onChange={(e) => setContactQuery(e.target.value)}
           />
-          <GlassSelect name="contact" value={contact} onValueChange={setContact} required={modal === "Purchase"}>
-            <option value="">
-              {modal === "Purchase" ? "Select supplier" : "Walk-in customer"}
-            </option>
+          <input type="hidden" name="contact" value={contact} />
+          <div className="contact-results" role="listbox" aria-label={modal === "Purchase" ? "Matching suppliers" : "Matching customers"}>
             {(modal === "Purchase" ? s.suppliers : s.customers)
-              .filter((c) => [c.name, c.company, c.phone, c.mobile, c.email].join(" ").toLowerCase().includes(contactQuery.toLowerCase()))
+              .filter((c) => {
+                const query = contactQuery.trim().toLowerCase();
+                if (!query) return true;
+                const searchable = searchableContactText(c);
+                const queryDigits = query.replace(/\D/g, "");
+                return searchable.text.includes(query) || (!!queryDigits && searchable.digits.includes(queryDigits));
+              })
               .map((c) => (
-              <option key={c.id} value={c.id}>
-                {modal === "Purchase" ? c.name : [c.name, c.company, c.phone].filter(Boolean).join(" · ")}
-              </option>
+              <button type="button" role="option" aria-selected={contact === c.id} className={contact === c.id ? "contact-result selected" : "contact-result"} key={c.id} onClick={() => setContact(c.id)}>
+                {modal === "Purchase" ? c.name : [c.name, c.company, c.phone || c.mobile].filter(Boolean).join(" · ")}
+              </button>
             ))}
-          </GlassSelect>
+          </div>
+          </div>
+          <p className="field-help">Search by name, company, phone, mobile, or email. Select a result below or add a new customer.</p>
           </div>
           </Field>
-          {modal === "Bill" && !contact && (
-            <>
-              <Field label="Walk-in customer name (optional)"><input name="walkInName" maxLength={200} /></Field>
-              <Field label="Company name (optional)"><input name="walkInCompany" maxLength={200} /></Field>
-              <Field label="Walk-in address (optional)"><input name="walkInAddress" maxLength={500} /></Field>
-              <Field label="Contact number (optional)"><input name="walkInPhone" type="tel" maxLength={40} /></Field>
-            </>
+          {modal === "Bill" && canAddCustomer && !addingCustomer && (
+            <button type="button" className="secondary-button" onClick={() => { setAddingCustomer(true); setCustomerError(""); }}>
+              Add customer
+            </button>
           )}
           {modal === "Purchase" && canAddSupplier && !addingSupplier && (
             <button type="button" className="secondary-button" onClick={() => { setAddingSupplier(true); setSupplierError(""); }}>
@@ -183,6 +224,23 @@ export function TradeForm({
           <input type="date" name="date" required defaultValue={today()} />
         </Field>
       </div>
+      {modal === "Bill" && !contact && !addingCustomer && (
+        <div className="form-grid walk-in-fields">
+          <Field label="Walk-in customer name (optional)"><input name="walkInName" maxLength={200} /></Field>
+          <Field label="Company name (optional)"><input name="walkInCompany" maxLength={200} /></Field>
+          <Field label="Walk-in address (optional)"><input name="walkInAddress" maxLength={500} /></Field>
+          <Field label="Contact number (optional)"><input name="walkInPhone" type="tel" maxLength={40} /></Field>
+        </div>
+      )}
+      {modal === "Bill" && addingCustomer && <fieldset className="inline-supplier inline-customer"><legend>New customer</legend><p className="field-help">Choose whether this is a walk-in customer or a company, then enter the contact details.</p><div className="form-grid">
+        <Field label="Customer type"><GlassSelect value={customerKind} onValueChange={value => setCustomerKind(value as typeof customerKind)}><option>Walk-in customer</option><option>Company</option></GlassSelect></Field>
+        <Field label={customerKind === "Company" ? "Company name" : "Customer name"}><input value={customerKind === "Company" ? customer.company : customer.name} onChange={e => setCustomer(customerKind === "Company" ? { ...customer, company: e.target.value } : { ...customer, name: e.target.value })} required /></Field>
+        {customerKind === "Company" && <Field label="Contact person (optional)"><input value={customer.name} onChange={e => setCustomer({ ...customer, name: e.target.value })} /></Field>}
+        <Field label="Phone"><input type="tel" value={customer.phone} onChange={e => setCustomer({ ...customer, phone: e.target.value })} /></Field>
+        <Field label="Mobile"><input type="tel" value={customer.mobile} onChange={e => setCustomer({ ...customer, mobile: e.target.value })} /></Field>
+        <Field label="Email"><input type="email" value={customer.email} onChange={e => setCustomer({ ...customer, email: e.target.value })} /></Field>
+        <Field label="Address"><input value={customer.address} onChange={e => setCustomer({ ...customer, address: e.target.value })} /></Field>
+      </div>{customerError && <p className="form-error" role="alert">{customerError}</p>}<div className="form-foot"><button type="button" className="secondary-button" onClick={() => { setAddingCustomer(false); setCustomerKind("Walk-in customer"); }}>Cancel customer</button><button type="button" className="primary" onClick={saveCustomer}>Save customer</button></div></fieldset>}
       {modal === "Purchase" && addingSupplier && (
         <fieldset className="inline-supplier">
           <legend>New supplier</legend>
@@ -340,13 +398,13 @@ export function TradeForm({
         </Field>
         <Field label={method === "Cheque" ? "Cheque amount (PKR)" : "Amount paid (PKR)"}>
           <input
-            key={billTotal}
             name="paid"
             type="number"
             min="0"
             max={Math.max(0, billTotal)}
             step="0.01"
-            defaultValue={Math.max(0, billTotal)}
+            value={paidAmount}
+            onChange={(e) => setPaidAmount(Number(e.target.value))}
             required
           />
         </Field>
@@ -392,7 +450,13 @@ export function TradeForm({
           <b>{money(round(((subtotal({ lines }) - lines.reduce((n, l) => n + (l.discount || 0), 0) - discount) * tax) / 100))}</b>
         </span>
         <span className="net-total">
-          Net payable <b>{money(billTotal)}</b>
+          Bill total <b>{money(billTotal)}</b>
+        </span>
+        <span>
+          Amount paid <b>{money(Math.min(Math.max(0, paidAmount || 0), billTotal))}</b>
+        </span>
+        <span className="balance-due">
+          Balance due <b>{money(Math.max(0, billTotal - (paidAmount || 0)))}</b>
         </span>
       </div>
       <div className="form-foot">

@@ -2,7 +2,7 @@
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { findProductByCode, recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
+import { findProductByCode, isPosted, recordReturn, today, uid, type Store } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
 type Props = {
@@ -30,9 +30,15 @@ export function ReturnForm({
   const [product, setProduct] = useState("");
   const [scan, setScan] = useState("");
   const [scanError, setScanError] = useState("");
+  const trades = returnKind === "Sales return" ? s.invoices : s.purchases;
+  const selectedOriginal = trades.find((t) => t.id === selectedTrade);
   const eligible = s.products.filter((p) => returnKind === "Damaged stock" ||
-    (returnKind === "Sales return" ? s.invoices : s.purchases)
-      .find((t) => t.id === selectedTrade)?.lines.some((l) => l.productId === p.id));
+    selectedOriginal?.lines.some((l) => l.productId === p.id));
+  const selectedLine = selectedOriginal?.lines.find((line) => line.productId === product);
+  const returnedQty = selectedTrade && product
+    ? s.returns.filter((entry) => entry.tradeId === selectedTrade && entry.productId === product).reduce((sum, entry) => sum + entry.qty, 0)
+    : 0;
+  const remainingQty = selectedLine ? Math.max(0, selectedLine.qty - returnedQty) : undefined;
   function scanProduct(code = scan) {
     try {
       const match = findProductByCode(s.products, code);
@@ -97,10 +103,10 @@ export function ReturnForm({
               onValueChange={(e) => { setSelectedTrade(e); setProduct(""); setScanError(""); }}
             >
               <option value="">Select transaction</option>
-              {(returnKind === "Sales return" ? s.invoices : s.purchases).map(
+              {trades.filter(isPosted).map(
                 (t) => (
                   <option key={t.id} value={t.id}>
-                    {t.number}
+                    {t.number} · {t.date}
                   </option>
                 ),
               )}
@@ -117,14 +123,15 @@ export function ReturnForm({
             <option value="">Select product</option>
             {eligible.map((p) => (
                 <option key={p.id} value={p.id}>
-                  {p.name}
+                  {p.name} · {p.unit || "piece"}
                 </option>
               ))}
           </GlassSelect>
         </Field>
         <Field label="Quantity">
-          <input name="qty" type="number" min="0.001" step="0.001" required />
+          <input name="qty" type="number" min="0.001" max={remainingQty} step="0.001" required />
         </Field>
+        {remainingQty !== undefined && <div className="return-detail"><span>Available to return</span><strong>{remainingQty} {s.products.find((p) => p.id === product)?.unit || "piece"}</strong><small>{selectedOriginal?.contactId ? "Linked to the original transaction" : "Original transaction selected"}</small></div>}
         <Field label="Reason / remarks">
           <input name="reason" required />
         </Field>

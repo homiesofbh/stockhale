@@ -817,6 +817,7 @@ export function WorkspaceApp() {
               billTotal={billTotal}
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
+              canAddCustomer={canAccess("Customers")}
               canChangeHead={account.member.role === "owner"}
               addSupplier={(supplier) => {
                 if (storageError) throw new Error(storageError);
@@ -824,6 +825,14 @@ export function WorkspaceApp() {
                 workspace.commit(next, "Suppliers", "Supplier added from purchase form.");
                 setS(next);
                 setNotice("Supplier saved and selected.");
+                setError("");
+              }}
+              addCustomer={(customer) => {
+                if (storageError) throw new Error(storageError);
+                const next = { ...s, customers: [...s.customers, customer] };
+                workspace.commit(next, "Customers", "Customer added from billing form.");
+                setS(next);
+                setNotice("Customer saved and selected.");
                 setError("");
               }}
             />

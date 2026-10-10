@@ -8,7 +8,7 @@ import {
   type Store,
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   editProduct: Product | null;
@@ -27,6 +27,10 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
+  const defaultUnits = s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"];
+  const [unit, setUnit] = useState(editProduct?.unit || "piece");
+  const [customUnit, setCustomUnit] = useState("");
+  const isCustomUnit = unit === "__custom__";
   return (
     <form
       onSubmit={(e) =>
@@ -36,7 +40,7 @@ export function ProductForm({
             name: text(f, "name"),
             sku: text(f, "sku"),
             barcode: text(f, "barcode"),
-            unit: text(f, "unit") || "piece",
+            unit: (isCustomUnit ? customUnit : unit).trim().toLowerCase() || "piece",
             category: text(f, "category"),
             cost: num(f, "cost"),
             price: num(f, "price"),
@@ -50,7 +54,13 @@ export function ProductForm({
             active: !editProduct || f.has("active"),
             variantOf: text(f, "variantOf") || undefined,
           };
-          commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
+          const next = saveProduct(s, p, num(f, "opening"));
+          const units = next.units || defaultUnits;
+          const matchingUnit = units.find(existing => existing.trim().toLowerCase() === p.unit);
+          commit(
+            p.unit && !matchingUnit ? { ...next, units: [...units, p.unit] } : next,
+            "Product saved.",
+          );
         })
       }
     >
@@ -75,10 +85,13 @@ export function ProductForm({
           <input name="sku" required defaultValue={editProduct?.sku} />
         </Field>
         <Field label="Measurement unit">
-          <GlassSelect name="unit" defaultValue={editProduct?.unit || "piece"}>
-            {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"]).map((unit) => <option key={unit}>{unit}</option>)}
+          <GlassSelect name="unit" value={unit} onValueChange={setUnit}>
+            {defaultUnits.map((value) => <option key={value}>{value}</option>)}
+            {editProduct?.unit && !defaultUnits.includes(editProduct.unit) && <option>{editProduct.unit}</option>}
+            <option value="__custom__">Add custom UOM…</option>
           </GlassSelect>
         </Field>
+        {isCustomUnit && <Field label="Custom UOM"><input name="customUnit" value={customUnit} onChange={(e) => setCustomUnit(e.target.value)} placeholder="e.g. roll, set, bundle" maxLength={40} required /></Field>}
         <Field label="Colour (optional)"><input name="color" maxLength={80} defaultValue={editProduct?.color || ""} /></Field>
         <Field label="GSM (optional)"><input name="gsm" type="number" min="0" step="0.01" defaultValue={editProduct?.gsm ?? ""} /></Field>
         <Field label="Packing (optional)"><input name="packing" maxLength={80} defaultValue={editProduct?.packing || ""} placeholder="e.g. 25 kg bag" /></Field>

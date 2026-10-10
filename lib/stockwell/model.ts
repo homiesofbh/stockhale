@@ -75,7 +75,7 @@ export type Trade = {
   chequeBank?: string;
   chequeDate?: string;
 };
-export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet"; ledgerAccountId?: string; active?: boolean };
+export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet"; accountNumber?: string; ledgerAccountId?: string; active?: boolean };
 export type Movement = {
   id: string;
   productId: string;
@@ -104,6 +104,7 @@ export type Payment = {
   kind: "Customer" | "Supplier";
   contactId: string;
   tradeId: string;
+  advance?: boolean;
   amount: number;
   method: string;
   financialAccountId?: string;
@@ -226,15 +227,31 @@ export const emptyStore = (): Store => ({
   payments: [],
   expenses: [],
   returns: [],
-  financialAccounts: [
-    { id: "jazzcash", name: "JazzCash", type: "Wallet" },
-    { id: "easypaisa", name: "EasyPaisa", type: "Wallet" },
-    { id: "nayapay", name: "NayaPay", type: "Wallet" },
-  ],
+  financialAccounts: [],
   units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"],
   partners: [],
   crossCheques: [],
 });
+export function normalizeStore(value: Store): Store {
+  const defaults = emptyStore();
+  return {
+    ...defaults,
+    ...value,
+    accounts: value.accounts || [],
+    journals: value.journals || [],
+    bankVouchers: value.bankVouchers || [],
+    corrections: value.corrections || [],
+    walkInLinks: value.walkInLinks || [],
+    chequeEvents: value.chequeEvents || [],
+    dailyCloses: value.dailyCloses || [],
+    financialAccounts: (value.financialAccounts || []).filter(
+      (account) => !["jazzcash", "easypaisa", "nayapay"].includes(account.id),
+    ),
+    units: value.units || defaults.units,
+    partners: value.partners || [],
+    crossCheques: value.crossCheques || [],
+  };
+}
 export const stock = (s: Store, id: string) =>
   roundQty(
     s.movements
@@ -523,6 +540,17 @@ export function recordPayment(s: Store, p: Payment): Store {
     (t) => t.id === p.tradeId && t.contactId === p.contactId,
   );
   requireOpenDate(s, p.date);
+  if (p.advance) {
+    assert(!p.tradeId && !!p.contactId, "Select a customer or supplier for the advance payment.");
+    assert(Number.isFinite(p.amount) && Math.abs(p.amount) >= 0.01 && round(p.amount) === p.amount, "Advance payment must be greater than zero.");
+    assert(s.heads.includes(p.head), "Select a valid account head.");
+    assert(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some(a => a.name === p.method && a.active !== false), "Select a valid payment method.");
+    if (p.method === "Cheque") {
+      assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
+      p.chequeStatus = "pending";
+    }
+    return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
+  }
   assert(!!t && isPosted(t), "Select a bill or purchase belonging to this contact.");
   assert(
     Number.isFinite(p.amount) && Math.abs(p.amount) >= 0.01 && round(p.amount) === p.amount,

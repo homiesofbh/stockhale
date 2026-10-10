@@ -31,6 +31,7 @@ export function WorkspaceSettings({
     [copied, setCopied] = useState(false);
   const inviteInput = useRef<HTMLInputElement>(null);
   const [accountName, setAccountName] = useState("");
+  const [accountNumberInput, setAccountNumberInput] = useState("");
   const [accountType, setAccountType] = useState<"Bank" | "Wallet">("Bank");
   const [unitName, setUnitName] = useState("");
   async function copyInvite() {
@@ -224,8 +225,8 @@ export function WorkspaceSettings({
       <WorkspaceBackup action={action} cache={cache} settings />
       <section className="panel">
         <h2>Bank and wallet accounts</h2>
-        <p>Add each account your business uses. These appear as payment methods when recording bills, payments, and expenses.</p>
-        <form className="form-grid" onSubmit={(e) => {
+        <p>Add each bank or wallet account your business uses. Nothing is preloaded; these appear as payment methods when recording bills, payments, and expenses.</p>
+        <form className="form-grid account-form" onSubmit={(e) => {
           e.preventDefault();
           const name = accountName.trim();
           if (!name) return;
@@ -234,17 +235,20 @@ export function WorkspaceSettings({
             setError("That payment account already exists.");
             return;
           }
-          try { commitStore(saveFinancialAccount(store, { id: uid(), name, type: accountType, active: true })); }
+          const accountNumber = accountNumberInput.trim();
+          try { commitStore(saveFinancialAccount(store, { id: uid(), name, accountNumber: accountNumber || undefined, type: accountType, active: true })); }
           catch (err) { setError(err instanceof Error ? err.message : "Could not add account."); return; }
           setAccountName("");
+          setAccountNumberInput("");
           setNotice("Payment account added.");
         }}>
           <label className="field"><span>Account name</span><input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="e.g. HBL Business Account" maxLength={120} required /></label>
+          <label className="field"><span>Account number (optional)</span><input value={accountNumberInput} onChange={(e) => setAccountNumberInput(e.target.value)} placeholder="e.g. IBAN or account number" maxLength={80} /></label>
           <label className="field"><span>Account type</span><GlassSelect value={accountType} onValueChange={(value) => setAccountType(value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></GlassSelect></label>
           <button className="primary" disabled={busy}>Add account</button>
         </form>
-        <div className="permission-grid">{(store.financialAccounts || []).map((account) => <div key={account.id}>
-          <b>{account.name} · {account.type}</b>
+        <div className="permission-grid account-list">{(store.financialAccounts || []).map((account) => <div key={account.id}>
+          <b>{account.name} · {account.type}{account.accountNumber ? ` · ${account.accountNumber}` : ""}</b>
           <label className="field"><span>Asset ledger account / opening balance</span><GlassSelect value={account.ledgerAccountId || ""} onValueChange={value => {
             try { commitStore(saveFinancialAccount(store, { ...account, ledgerAccountId: value })); setError(""); }
             catch (err) { setError(err instanceof Error ? err.message : "Could not update account."); }
@@ -256,19 +260,19 @@ export function WorkspaceSettings({
         </div>)}</div>
       </section>
       <section className="panel">
-        <h2>Measurement units</h2>
+        <h2>Units of measure (UOM)</h2>
         <p>Manage the units available when creating products, including textile units such as yards.</p>
-        <form className="form-grid" onSubmit={e => {
+        <form className="form-grid uom-form" onSubmit={e => {
           e.preventDefault();
           const unit = unitName.trim().toLowerCase();
-          if (!unit || (store.units || []).includes(unit)) return;
+          if (!unit || (store.units || []).some(existing => existing.trim().toLowerCase() === unit)) return;
           commitStore({ ...store, units: [...(store.units || []), unit] });
           setUnitName(""); setNotice("Measurement unit added.");
         }}>
-          <label className="field"><span>New unit</span><input value={unitName} onChange={e => setUnitName(e.target.value)} placeholder="e.g. yard" maxLength={40} required /></label>
+          <label className="field"><span>New UOM</span><input value={unitName} onChange={e => setUnitName(e.target.value)} placeholder="e.g. yard, roll, bundle" maxLength={40} required /></label>
           <button className="primary">Add unit</button>
         </form>
-        <div className="permission-grid">{(store.units || []).map(unit => <span key={unit} className="badge">{unit}</span>)}</div>
+        <div className="uom-list">{(store.units || []).map(unit => <span key={unit} className="badge">{unit}</span>)}</div>
       </section>
       <section className="panel">
         <h2>Previous browser records</h2>

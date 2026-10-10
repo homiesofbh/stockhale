@@ -1,7 +1,7 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
 import { verifyChange, cacheKey, type Cache, type Workspace } from "./workspace";
-import type { Store } from "./model";
+import { normalizeStore, type Store } from "./model";
 import { configureServiceWorker } from "./service-worker-client";
 export async function workspaceRequest(body?: unknown) {
   const res = await fetch("/api/workspace", {
@@ -30,6 +30,7 @@ export function useWorkspace() {
       throw new Error(
         "Workspace changed in another tab. Reload to preserve pending records.",
       );
+    value = { ...value, workspace: { ...value.workspace, store: normalizeStore(value.workspace.store) } };
     localStorage.setItem(key, JSON.stringify(value));
     localStorage.setItem("stockwell.active", value.workspace.id);
     current.current = value;
@@ -94,6 +95,7 @@ export function useWorkspace() {
         raw = id && localStorage.getItem(cacheKey(id));
       if (raw) {
         const c = JSON.parse(raw) as Cache;
+        c.workspace.store = normalizeStore(c.workspace.store);
         current.current = c;
         setCache(c);
         setReady(true);

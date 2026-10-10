@@ -6,7 +6,7 @@ import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getAuth } from "./auth";
 import { query, transaction } from "./database";
-import { emptyStore } from "./model";
+import { emptyStore, normalizeStore } from "./model";
 import { modules, verifyChange, type Member } from "./workspace";
 export { db } from "./database";
 type Row = Record<string, any>;
@@ -106,7 +106,7 @@ async function readSnapshot(user: Row) {
     name: w.name,
     image: w.image,
     revision: w.revision,
-    store: JSON.parse(w.store),
+    store: normalizeStore(JSON.parse(w.store)),
     member: m,
     members:
       m.role === "owner"

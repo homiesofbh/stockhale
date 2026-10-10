@@ -40,6 +40,7 @@ export function PaymentForm({
   setSelectedTrade,
 }: Props) {
   const [method, setMethod] = useState("Cash");
+  const [advance, setAdvance] = useState(false);
   const [forwardCheque, setForwardCheque] = useState(false);
   const [destinationKind, setDestinationKind] = useState<"Supplier" | "Partner">("Supplier");
   return (
@@ -51,17 +52,18 @@ export function PaymentForm({
               date: text(f, "date"),
               kind: paymentKind as "Customer" | "Supplier",
               contactId: selectedContact.startsWith("walkin:") ? "" : selectedContact,
-              tradeId: text(f, "trade"),
+              tradeId: advance ? "" : text(f, "trade"),
+              advance,
               amount:
                 round(num(f, "amount")) *
-                (balance(
-                  s,
-                  (paymentKind === "Customer" ? s.invoices : s.purchases).find(
-                    (t) => t.id === selectedTrade,
-                  )!,
-                ) < 0
-                  ? -1
-                  : 1),
+                (advance
+                  ? paymentKind === "Customer" ? 1 : -1
+                  : balance(
+                      s,
+                      (paymentKind === "Customer" ? s.invoices : s.purchases).find(
+                        (t) => t.id === selectedTrade,
+                      )!,
+                    ) < 0 ? -1 : 1),
               method: text(f, "method") as "Cash" | "Bank",
               head: text(f, "head"),
               notes: text(f, "notes"),
@@ -115,14 +117,15 @@ export function PaymentForm({
             {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
           </GlassSelect>
         </Field>
+        <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={advance} onChange={e => { setAdvance(e.target.checked); setSelectedTrade(""); }} /> Advance payment (not linked to a bill yet)</label>
         <Field label="Bill / purchase with a pending balance or credit">
           <GlassSelect
             name="trade"
-            required
+            required={!advance}
             value={selectedTrade}
             onValueChange={(e) => setSelectedTrade(e)}
           >
-            <option value="">Select transaction</option>
+            <option value="">{advance ? "No bill — unapplied advance" : "Select transaction"}</option>
             {(paymentKind === "Customer" ? s.invoices : s.purchases)
               .filter(
                 (t) => (selectedContact.startsWith("walkin:") ? `walkin:${t.id}` === selectedContact : t.contactId === selectedContact) && balance(s, t) !== 0,
