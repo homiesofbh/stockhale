@@ -473,6 +473,8 @@ export function WorkspaceApp() {
                   query={productSearch}
                   onChange={setProductSearch}
                   canSearch={canAccess("Inventory")}
+                  canSearchCustomers={canAccess("Customers")}
+                  canSearchSuppliers={canAccess("Suppliers")}
                 />
                 <div hidden={!!productSearch.trim()}>
                   <div
@@ -628,6 +630,7 @@ export function WorkspaceApp() {
                           s={s}
                           inRange={inRange}
                           matches={matches}
+                          category={category}
                           open={open}
                           owner={account.member.role === "owner"}
                           commit={commit}

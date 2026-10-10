@@ -7,9 +7,9 @@ import { JournalForm } from "@/components/stockwell/forms/journal-form";
 import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib/stockwell/journals";
 import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
-import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
+import { Badge, Table, Modal, Empty, Field } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { money, today, uid, type Store } from "@/lib/stockwell/model";
+import { money, today, uid, round, type Store } from "@/lib/stockwell/model";
 // Parse record dates in UTC so week boundaries do not shift with device timezone.
 function transactionWeek(date: string) {
   const day = new Date(`${date}T00:00:00Z`);
@@ -69,7 +69,9 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
     if (!visible.has(account.id) || ancestors.includes(account.id)) return null;
     const children = sorted.filter(a => a.parentId === account.id && visible.has(a.id));
     const journalBalance = journalAccountBalance(s, account);
-    const count = accounting.filter(r => r.head === account.name && inRange(r.date)).length;
+    const accountTransactions = accounting.filter(r => r.head === account.name && inRange(r.date));
+    const count = accountTransactions.length;
+    const transactionTotal = round(accountTransactions.reduce((sum, row) => sum + row.amount, 0));
     return <li className="account-branch" key={account.id}>
       <article className="chart-account-card" aria-label={`Account ${account.name}`}>
         <div className="chart-account-top"><span className="chart-account-code">{account.code}</span><Badge>{account.type}</Badge></div>
@@ -77,6 +79,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
         {account.parentId && <p className="chart-account-parent">Under {accounts.find(a => a.id === account.parentId)?.name}</p>}
         <dl className="chart-account-balance"><div><dt>Opening balance</dt><dd>{money(account.openingBalance)}</dd></div><div><dt>Nature</dt><dd>{account.nature}</dd></div></dl>
         <p className="chart-account-date">{account.openingDate ? `As of ${account.openingDate}` : "No opening date recorded"}</p>
+        <p className="chart-account-activity">Net transaction amount <b>{money(transactionTotal)}</b><small>Selected period · includes sales, purchases, expenses and posted entries</small></p>
         <p className="chart-account-journal-balance">Opening + posted vouchers <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
         {account.description && <p className="chart-account-description">{account.description}</p>}
         <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span>{actor.role === "owner" && <button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button>}</div>
@@ -88,22 +91,27 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
     <>
       <section className="card partner-records-card">
         <div className="section-head"><div><h2>Partner contributions and withdrawals</h2><p>Record money introduced by or taken by a business partner.</p></div></div>
-        <div className="form-grid partner-form">
-          <input aria-label="Partner name" placeholder="Partner name" value={partner} onChange={e => setPartner(e.target.value)} />
-          <GlassSelect aria-label="Partner entry type" value={partnerKind} onValueChange={value => setPartnerKind(value as typeof partnerKind)}><option>Withdrawal</option><option>Contribution</option></GlassSelect>
-          <input aria-label="Partner amount" type="number" min="0.01" step="0.01" placeholder="Amount (PKR)" value={partnerAmount} onChange={e => setPartnerAmount(e.target.value)} />
-          <GlassSelect aria-label="Partner payment method" value={partnerMethod} onValueChange={setPartnerMethod}>
-            <option value="Cash">Cash</option>
-            <option value="Bank transfer">Bank transfer</option>
-            <option value="Cheque">Cheque</option>
-            <option value="Card">Card</option>
-            <option value="Mobile wallet">Mobile wallet</option>
-            <option value="Online payment">Online payment</option>
-            {(s.financialAccounts || [])
-              .filter(account => account.active !== false && account.name !== "Cash")
-              .map(account => <option key={account.id} value={account.name}>{account.name} · {account.type}</option>)}
-          </GlassSelect>
-          <button className="primary" onClick={() => { const amount = Number(partnerAmount); if (!partner.trim() || !Number.isFinite(amount) || amount <= 0) return; commit({ ...s, partners: [...(s.partners || []), { id: uid(), date: today(), partner: partner.trim(), kind: partnerKind, amount, method: partnerMethod.trim() || "Cash", notes: "" }] }, "Partner entry recorded."); setPartner(""); setPartnerAmount(""); }}>Record entry</button>
+        <div className="partner-entry-form">
+          <div className="form-grid partner-form">
+            <Field label="Partner name"><input placeholder="Enter partner name" value={partner} onChange={e => setPartner(e.target.value)} /></Field>
+            <Field label="Entry type"><GlassSelect value={partnerKind} onValueChange={value => setPartnerKind(value as typeof partnerKind)}><option>Withdrawal</option><option>Contribution</option></GlassSelect></Field>
+            <Field label="Amount (PKR)"><input type="number" min="0.01" step="0.01" placeholder="0.00" value={partnerAmount} onChange={e => setPartnerAmount(e.target.value)} /></Field>
+            <Field label="Payment method"><GlassSelect value={partnerMethod} onValueChange={setPartnerMethod}>
+              <option value="Cash">Cash</option>
+              <option value="Bank transfer">Bank transfer</option>
+              <option value="Cheque">Cheque</option>
+              <option value="Card">Card</option>
+              <option value="Mobile wallet">Mobile wallet</option>
+              <option value="Online payment">Online payment</option>
+              {(s.financialAccounts || [])
+                .filter(account => account.active !== false && account.name !== "Cash")
+                .map(account => <option key={account.id} value={account.name}>{account.name} · {account.type}</option>)}
+            </GlassSelect></Field>
+          </div>
+          <div className="partner-form-actions">
+            <p className="form-hint">{partnerKind === "Contribution" ? "Money introduced into the business." : "Money taken out of the business."}</p>
+            <button className="primary" type="button" onClick={() => { const amount = Number(partnerAmount); if (!partner.trim() || !Number.isFinite(amount) || amount <= 0) return; commit({ ...s, partners: [...(s.partners || []), { id: uid(), date: today(), partner: partner.trim(), kind: partnerKind, amount, method: partnerMethod.trim() || "Cash", notes: "" }] }, "Partner entry recorded."); setPartner(""); setPartnerAmount(""); }}>Record {partnerKind.toLowerCase()}</button>
+          </div>
         </div>
         <Table headers={["Date", "Partner", "Type", "Amount", "Method"]} rows={(s.partners || []).slice().reverse().map(p => [p.date, p.partner, p.kind, money(p.amount), p.method])} empty="No partner entries" />
       </section>

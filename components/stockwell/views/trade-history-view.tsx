@@ -22,7 +22,7 @@ export function TradeHistoryView({
   const links = (attachments: any[] = []) => <>{attachments.map(a => <button key={a.id} className="link" onClick={async () => { try { window.open(await attachmentDownloadUrl(a.key), "_blank", "noopener,noreferrer"); } catch (e) { setError(e instanceof Error ? e.message : "Could not open attachment."); } }}>{a.name}</button>)}</>;
   return (
     <>
-      <div className="sub-actions">
+      <div className="sub-actions mt-4 mx-2">
         <span>
           {module === "Billing" ? invoices.length : purchases.length} records
         </span>

@@ -111,6 +111,7 @@ pnpm test:integration
 pnpm build
 ```
 
+
 The integration suite requires a local PostgreSQL role that can create databases. It defaults to `postgresql://localhost/postgres`, creates a uniquely named test database, and removes it afterward. Set `STOCKWELL_TEST_DATABASE_URL` to a dedicated test admin connection when needed. It never reuses application tables. Unit tests need no database. `npm run <script>` can also run these scripts.
 
 ### Excel exports and weekly local backups

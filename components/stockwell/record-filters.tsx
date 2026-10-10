@@ -106,6 +106,18 @@ export function RecordFilters({
           </GlassSelect>
         </>
       )}
+      {module === "Expenses" && (
+        <GlassSelect
+          aria-label="Expense category"
+          value={category}
+          onValueChange={(e) => setCategory(e)}
+        >
+          <option>All</option>
+          {s.expenseCategories.map((c) => (
+            <option key={c}>{c}</option>
+          ))}
+        </GlassSelect>
+      )}
       {!["Inventory", "Suppliers", "Customers"].includes(module) && (
         <div className="date-filter">
           <input

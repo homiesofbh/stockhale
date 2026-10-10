@@ -10,10 +10,12 @@ type Props = {
   query: string;
   onChange: (query: string) => void;
   canSearch: boolean;
+  canSearchCustomers?: boolean;
+  canSearchSuppliers?: boolean;
 };
 
-export function ProductSearch({ store, query, onChange, canSearch }: Props) {
-  if (!canSearch) return null;
+export function ProductSearch({ store, query, onChange, canSearch, canSearchCustomers = canSearch, canSearchSuppliers = canSearch }: Props) {
+  if (!canSearch && !canSearchCustomers && !canSearchSuppliers) return null;
   return (
     <>
       <form
@@ -22,14 +24,14 @@ export function ProductSearch({ store, query, onChange, canSearch }: Props) {
       >
         <Search size={18} strokeWidth={1.6} />
         <input
-          aria-label="Search products"
-          placeholder="Search for a product"
+          aria-label="Search products, customers, and suppliers"
+          placeholder="Search products, customers, or suppliers"
           value={query}
           onChange={(event) => onChange(event.target.value)}
         />
         <button
-          aria-label="Clear product search"
-          title="Clear product search"
+          aria-label="Clear search"
+          title="Clear search"
           type="button"
           onClick={() => onChange("")}
         >
@@ -68,9 +70,18 @@ export function ProductSearch({ store, query, onChange, canSearch }: Props) {
                 money(product.price),
               ])}
             />
-          ) : (
-            <Empty title="Inventory access required" />
-          )}
+          ) : null}
+          {(canSearchCustomers || canSearchSuppliers) && <>
+            <div className="page-heading global-search-subheading"><div><h2>Contacts</h2><p>Matching customers and suppliers.</p></div></div>
+            <Table
+              headers={["Name", "Type", "Company", "Phone", "Email"]}
+              empty="No matching customers or suppliers"
+              rows={[...(canSearchCustomers ? store.customers.map((contact) => [contact, "Customer"] as const) : []), ...(canSearchSuppliers ? store.suppliers.map((contact) => [contact, "Supplier"] as const) : [])]
+                .filter(([contact]) => [contact.name, contact.company, contact.phone, contact.mobile, contact.email].filter(Boolean).join(" ").toLowerCase().includes(query.trim().toLowerCase()))
+                .map(([contact, type]) => [contact.name || contact.company, type, contact.company || "—", contact.phone || contact.mobile || "—", contact.email || "—"])}
+            />
+          </>}
+          {!canSearch && !canSearchCustomers && !canSearchSuppliers && <Empty title="No search access" />}
         </section>
       )}
     </>
