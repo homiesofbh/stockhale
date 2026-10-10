@@ -1,7 +1,12 @@
+import { backupChecksum, validateRecoveryBackup, type RecoveryBackup } from "./recovery";
+import { validateStore } from "./operation-validation";
+import { validateBanks } from "./bank-vouchers";
+import { validateAccounts } from "./accounts";
+import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getAuth } from "./auth";
 import { query, transaction } from "./database";
-import { emptyStore } from "./model";
+import { emptyStore, normalizeStore } from "./model";
 import { modules, verifyChange, type Member } from "./workspace";
 export { db } from "./database";
 type Row = Record<string, any>;
@@ -66,7 +71,7 @@ async function event(
   module: string,
   action: string,
   records: string,
-  id = randomUUID(),
+  id: string = randomUUID(),
   occurredAt = new Date().toISOString(),
 ) {
   await query(
@@ -83,6 +88,10 @@ async function event(
     ],
   );
 }
+export async function recordAudit(user: Row, module: string, action: string, records: string) {
+  const w = await workspace(user);
+  await event(w, user, module, action, records);
+}
 export async function snapshot(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -97,7 +106,7 @@ async function readSnapshot(user: Row) {
     name: w.name,
     image: w.image,
     revision: w.revision,
-    store: JSON.parse(w.store),
+    store: normalizeStore(JSON.parse(w.store)),
     member: m,
     members:
       m.role === "owner"
@@ -258,7 +267,7 @@ export async function mutate(user: Row, body: Row) {
         required(c.action, 300);
         if (!Number.isFinite(Date.parse(c.occurredAt)))
           throw new Error("Invalid event time.");
-        const records = verifyChange(store, c.store, c.module);
+        const records = verifyChange(store, c.store, c.module, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
         await event(w, user, c.module, c.action, records, c.id, c.occurredAt);
         store = c.store;
         revision++;
@@ -272,6 +281,45 @@ export async function mutate(user: Row, body: Row) {
       return { accepted };
     }
     owner(w, user);
+    if (body.action === "backup" || body.action === "backup-recovery") {
+      const audit = await all('SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC,id DESC', w.id);
+      let store = JSON.parse(w.store);
+      if (body.action === "backup-recovery") {
+        const point = await row("SELECT records FROM events WHERE id=$1 AND workspace=$2 AND action=$3", required(body.eventId), w.id, "Pre-restore safety snapshot");
+        if (!point) throw new Error("Recovery point not found.");
+        store = JSON.parse(point.records).store;
+      }
+      const backup = { format: "stockwell-backup" as const, version: 1 as const, workspaceId: w.id, workspaceName: w.name, revision: w.revision, exportedAt: new Date().toISOString(), store, audit: audit as any, checksum: "" };
+      backup.checksum = await backupChecksum(backup);
+      return { backup };
+    }
+    if (body.action === "restore") {
+      if (body.revision !== w.revision) throw Object.assign(new Error("Workspace changed. Reload and review the restore again."), { status: 409 });
+      if (body.confirmation !== w.name) throw new Error("Type the exact workspace name to confirm restore.");
+      const reason = required(body.reason, 2000), backup = await validateRecoveryBackup(body.backup, w.id);
+      await event(w, user, "Settings", "Pre-restore safety snapshot", JSON.stringify({ store: JSON.parse(w.store), revision: w.revision, savedAt: new Date().toISOString(), reason }));
+      const existingAudit = await all("SELECT id,workspace FROM events WHERE id=ANY($1::text[])", backup.audit.map(a => a.id));
+      if (existingAudit.some(a => a.workspace !== w.id)) throw new Error("Backup audit ID belongs to another workspace.");
+      const existingIds = new Set(existingAudit.map(a => a.id)), missing = backup.audit.filter(a => !existingIds.has(a.id));
+      for (let offset = 0; offset < missing.length; offset += 500) {
+        await query(`INSERT INTO events(id,workspace,actor,module,action,records,"occurredAt","receivedAt","emailStatus")
+          SELECT e.id,$1,e.actor,e.module,e.action,e.records,e."occurredAt",e."receivedAt",'sent'
+          FROM jsonb_to_recordset($2::jsonb) AS e(id text,actor text,module text,action text,records text,"occurredAt" text,"receivedAt" text)`, [w.id, JSON.stringify(missing.slice(offset, offset + 500))]);
+      }
+      await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2", [JSON.stringify(backup.store), w.id]);
+      await event(w, user, "Settings", "Backup restored", JSON.stringify({ reason, exportedAt: backup.exportedAt, restoredRevision: backup.revision, previousRevision: w.revision }));
+      return {};
+    }
+    if (body.action === "approve-offline-expense") {
+      if (body.revision !== w.revision) throw Object.assign(new Error("Workspace changed before approval. Reload and review again."), { status: 409 });
+      const c = body.change, reason = required(body.reason, 2000);
+      if (!c || c.module !== "Expenses" || !await row('SELECT "user" FROM members WHERE workspace=$1 AND "user"=$2', w.id, c.actorId)) throw new Error("Choose a pending expense from a current workspace member.");
+      if (await row("SELECT id FROM events WHERE id=$1 AND workspace=$2", c.id, w.id)) throw new Error("This change was already accepted.");
+      const records = verifyChange(JSON.parse(w.store), c.store, c.module, { actor: { id: c.actorId, role: "member" }, occurredAt: c.occurredAt, receivedAt: new Date().toISOString(), allowLateExpense: true });
+      await event(w, user, "Expenses", "Approved offline expense", JSON.stringify({ originalActor: c.actorId, reason, records }), required(c.id), c.occurredAt);
+      await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2", [JSON.stringify(c.store), w.id]);
+      return {};
+    }
     if (body.action === "import") {
       if (w.revision !== 0)
         throw new Error("Import is available only for a new empty workspace.");
@@ -284,6 +332,13 @@ export async function mutate(user: Row, body: Row) {
         )
       )
         throw new Error("Invalid legacy records.");
+      if (store.accounts !== undefined && !Array.isArray(store.accounts)) throw new Error("Invalid account records.");
+      if (store.journals !== undefined && !Array.isArray(store.journals)) throw new Error("Invalid journal records.");
+      validateStore(store);
+      validateAccounts(store);
+      validateJournals(store);
+      if (store.bankVouchers !== undefined && !Array.isArray(store.bankVouchers)) throw new Error("Invalid bank voucher records.");
+      validateBanks(store);
       await query("UPDATE workspaces SET store=$1,revision=1 WHERE id=$2", [
         JSON.stringify(store),
         w.id,
@@ -389,7 +444,7 @@ export async function deliverEmails() {
   try {
     for (const e of await all(
       `WITH due AS (
-         SELECT id FROM events WHERE "emailStatus" <> $1 AND "nextAttempt" <= $2
+         SELECT id FROM events WHERE "emailStatus" <> $1 AND "nextAttempt" <= $2 AND action <> 'Pre-restore safety snapshot'
          ORDER BY "receivedAt" LIMIT 10 FOR UPDATE SKIP LOCKED
        ), claimed AS (
          UPDATE events SET "nextAttempt"=$3 FROM due WHERE events.id=due.id RETURNING events.*

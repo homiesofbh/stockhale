@@ -2642,6 +2642,40 @@ footer span:last-child {
 .settings-page p {
   margin: 12px 0 20px;
 }
+.backup-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+}
+.backup-panel-head h2 { margin-bottom: 6px; }
+.backup-panel-head p { margin: 0; color: #746a80; line-height: 1.55; }
+.backup-settings-shell { padding: 28px 0; }
+.backup-settings-shell .panel { padding: 28px; margin-bottom: 24px; border-radius: 28px; background: #ffffff40; border: 1px solid #ffffff70; }
+.backup-settings-shell .panel h2 { margin-bottom: 14px; }
+.backup-settings-shell .panel > p { margin: 0 0 18px; line-height: 1.6; }
+.backup-settings-shell input[type="file"] { width: min(100%, 520px); min-height: 48px; }
+.backup-settings-shell .field input[type="file"] { width: 100%; }
+.backup-status {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  border: 1px solid #ffffff80;
+  border-radius: 999px;
+  color: #746a80;
+  font-size: 10px;
+  font-weight: 650;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+.backup-controls { display: grid; gap: 18px; }
+.backup-copy { display: grid; gap: 10px; }
+.backup-copy p { margin: 0; line-height: 1.6; }
+.backup-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.backup-notice { margin: 16px 0 0 !important; color: #5e766b; }
+.backup-reminder-footer { display: grid; gap: 12px; margin-top: 18px; padding-top: 18px; border-top: 1px solid #ffffff80; }
+.backup-reminder-footer p { margin: 0; color: #746a80; font-size: 12px; line-height: 1.6; }
+.modal .backup-actions { margin-top: 2px; }
+.modal .backup-copy p { line-height: 1.6; }
 .permission-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -3046,6 +3080,149 @@ small, .eyebrow, .text-button { font-size: 12px; }
   .team-signup-link-controls { flex-direction: column; }
   .team-signup-link-controls input { width: 100%; flex: auto; font-size: 16px; }
   .team-signup-link-controls button { width: 100%; }
+}
+
+
+/* Chart of accounts: separate cards with visible parent/child branches. */
+.chart-accounts-section { margin-bottom: 28px; }
+.chart-accounts-section > .section-head { padding: 0 0 24px; }
+.chart-accounts-grid, .chart-account-children { list-style: none; padding: 0; margin: 0; }
+.chart-accounts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr)); gap: 20px; align-items: start; }
+.account-branch { min-width: 0; }
+.chart-account-card { background: #ffffff45; border: 1px solid #ffffff80; border-radius: 20px; padding: 22px; overflow-wrap: anywhere; }
+.chart-account-top { display: flex; align-items: center; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.chart-account-code { font-size: 12px; letter-spacing: .08em; font-variant-numeric: tabular-nums; color: #756184; }
+.chart-account-card h3 { font-size: 19px; line-height: 1.3; margin: 20px 0 8px; }
+.chart-account-parent, .chart-account-date { font-size: 12px; color: #756184; line-height: 1.5; margin: 0; }
+.chart-account-balance { display: flex; justify-content: space-between; gap: 16px; margin: 24px 0 6px; }
+.chart-account-balance dt { font-size: 11px; color: #756184; margin-bottom: 8px; }
+.chart-account-balance dd { margin: 0; font-size: 16px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.chart-account-balance > div:last-child { text-align: right; }
+.chart-account-balance > div:last-child dd { font-size: 13px; }
+.chart-account-description { font-size: 13px; line-height: 1.6; margin: 18px 0 0; white-space: pre-wrap; }
+.chart-account-footer { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; border-top: 1px solid #ffffff70; margin-top: 24px; padding-top: 14px; }
+.chart-account-footer > span { font-size: 12px; color: #756184; }
+.chart-account-footer button { min-height: 36px; }
+.chart-account-children { margin: 14px 0 0 12px; padding-left: 12px; border-left: 2px solid #b9a6c666; display: grid; gap: 14px; }
+.chart-account-children .chart-account-children { margin-left: 0; padding-left: 0; border-left: 0; }
+@media (max-width: 600px) {
+  .chart-accounts-grid { grid-template-columns: 1fr; gap: 16px; }
+  .chart-account-card { padding: 20px; }
+}
+
+.account-week-pagination { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; padding: 0 28px 22px; }
+.account-week-pagination > span { color: #756184; font-size: 12px; }
+.account-week-pagination button { min-height: 40px; }
+.account-week-pagination button:disabled { opacity: .45; cursor: default; }
+@media (max-width: 600px) {
+  .account-week-pagination { padding: 0 18px 18px; gap: 12px; }
+  .account-week-pagination > span { order: -1; width: 100%; text-align: center; }
+}
+
+.chart-account-journal-balance { display: flex; flex-direction: column; gap: 6px; margin: 18px 0 0; font-size: 11px; color: #756184; }
+.chart-account-journal-balance b { font-size: 14px; font-weight: 500; color: #493753; }
+.journal-lines { display: grid; gap: 16px; margin: 24px 0 18px; }
+.journal-line { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 12px; padding: 18px 0; border-top: 1px solid #b9a6c644; }
+.journal-line-number { grid-column: 1 / -1; color: #756184; font-size: 12px; }
+.journal-totals { display: flex; justify-content: space-between; flex-wrap: wrap; gap: 16px; padding: 22px 0; margin-top: 16px; border-top: 1px solid #b9a6c644; }
+.journal-totals span { display: grid; gap: 8px; color: #756184; font-size: 12px; }
+.journal-totals b { color: #493753; font-size: 16px; font-weight: 500; }
+@media (max-width: 600px) { .journal-line { grid-template-columns: 1fr 1fr; } .journal-line > .field:first-of-type, .journal-line > .field:last-of-type { grid-column: 1 / -1; } }
+
+/* Form system: shared rhythm, hierarchy, and resilient responsive layout. */
+form:not(.form-grid):not(.global-search) { display: grid; gap: 20px; min-width: 0; }
+form > p:not(.form-hint):not(.form-error):not([role="alert"]), form > .form-copy {
+  margin: 0; padding: 14px 16px; border: 1px solid rgba(255,255,255,.62); border-radius: 14px;
+  background: rgba(255,255,255,.22); color: #625b6e; font-size: 12px; line-height: 1.65;
+}
+.field { min-width: 0; gap: 7px; }
+.field > span:first-child { min-height: 19px; color: #594d68; font-size: 12px; font-weight: 650; letter-spacing: .01em; }
+.field input:not([type="checkbox"]):not([type="radio"]), .field select, .field textarea {
+  width: 100%; min-width: 0; min-height: 48px; border: 1px solid rgba(151,132,171,.28); border-radius: 14px;
+  background: rgba(255,255,255,.72); box-shadow: inset 0 1px 0 rgba(255,255,255,.9), 0 4px 16px rgba(74,57,96,.06);
+  transition: border-color .2s, background .2s, box-shadow .2s;
+}
+.field textarea { min-height: 104px; resize: vertical; line-height: 1.55; }
+.field input:not([type="checkbox"]):not([type="radio"]):hover, .field select:hover, .field textarea:hover { border-color: rgba(112,90,137,.46); background: rgba(255,255,255,.88); }
+.field input:not([type="checkbox"]):not([type="radio"]):focus-visible, .field select:focus-visible, .field textarea:focus-visible {
+  border-color: #8c73a1; background: #fff; box-shadow: 0 0 0 3px rgba(140,115,161,.16), inset 0 1px 0 #fff; outline: none;
+}
+.field input:disabled, .field select:disabled, .field textarea:disabled, .field input[readonly] { background: rgba(224,219,234,.58); color: #776d81; cursor: not-allowed; }
+.form-grid { width: 100%; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: 20px 24px; }
+.form-grid > *, .form-wide, .field { min-width: 0; }
+.form-wide { grid-column: 1 / -1; }
+.form-foot { align-items: center; margin-top: 4px; padding-top: 20px; flex-wrap: wrap; }
+.form-foot > button { min-height: 44px; }
+.form-hint { margin: 0; padding: 0 2px; color: #746a80; line-height: 1.65; }
+.form-error, .error-banner { margin: 0; border-radius: 14px; }
+.checkbox-row { display: flex; align-items: center; gap: 10px; min-height: 44px; color: #594d68; font-size: 12px; font-weight: 600; }
+.checkbox-row input, .permission-grid input { width: 18px; height: 18px; flex: 0 0 18px; accent-color: #6f5a80; }
+.inline-supplier { margin: 0; padding: 20px; border-color: rgba(151,132,171,.3); background: rgba(255,255,255,.24); }
+.account-form { align-items: end; }
+.account-form .primary { min-height: 48px; }
+.account-list > div { min-width: 0; padding: 16px; border: 1px solid rgba(255,255,255,.62); border-radius: 16px; background: rgba(255,255,255,.22); }
+.account-list b { display: block; margin-bottom: 12px; overflow-wrap: anywhere; color: #514460; font-size: 13px; }
+.account-list .field { margin-bottom: 12px; }
+.uom-list { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.uom-list .badge { min-width: 58px; justify-content: center; }
+.return-detail { display: grid; gap: 4px; align-content: center; min-height: 48px; padding: 8px 14px; border: 1px solid rgba(151,132,171,.28); border-radius: 14px; background: rgba(255,255,255,.32); }
+.return-detail span { color: #62546f; font-size: 11px; }
+.return-detail strong { color: #514460; font-size: 14px; }
+.return-detail small { margin: 0; font-size: 10px; }
+.contact-results { display: grid; gap: 6px; max-height: 148px; overflow-y: auto; margin-top: 8px; }
+.contact-result { width: 100%; padding: 10px 12px; border: 1px solid transparent; border-radius: 11px; background: rgba(255,255,255,.3); text-align: left; font-size: 12px; }
+.contact-result:hover, .contact-result.selected { border-color: rgba(112,90,137,.42); background: rgba(255,255,255,.72); }
+.bill-customer-row { align-items: start; }
+.bill-customer-picker { min-width: 0; padding: 14px; border: 1px solid rgba(255,255,255,.58); border-radius: 18px; background: rgba(255,255,255,.16); }
+.bill-customer-picker > .field { gap: 8px; }
+.field-help { margin: 8px 0 0; color: #776d81; font-size: 11px; line-height: 1.5; }
+.inline-customer { display: grid; gap: 12px; }
+.inline-customer .field-help { margin: 0; }
+.modal:has(.bill-lines) { max-width: 960px; }
+.uom-form { grid-template-columns: minmax(0, 1fr) auto; align-items: end; }
+.uom-form .primary { min-height: 48px; white-space: nowrap; }
+@media (max-width: 700px) {
+  .form-grid { grid-template-columns: minmax(0, 1fr); gap: 18px; }
+  .form-wide { grid-column: auto; }
+  .form-foot { justify-content: stretch; }
+  .form-foot > button { flex: 1 1 150px; }
+  .uom-form { grid-template-columns: minmax(0, 1fr) auto; }
+  .modal:has(.bill-lines) { width: calc(100% - 24px); padding-inline: 16px; }
+}
+
+.journal-register-actions { display: flex; align-items: center; flex-wrap: wrap; gap: 12px; }
+.journal-register-reference { display: grid; gap: 6px; min-width: 100px; max-width: 280px; white-space: normal; overflow-wrap: anywhere; }
+.journal-register-reference small { color: #756184; font-size: 11px; line-height: 1.5; white-space: pre-wrap; }
+
+/* Keep scrolling available without visible scrollbar chrome. */
+html,
+body,
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+html::-webkit-scrollbar,
+body::-webkit-scrollbar,
+*::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.bank-balance-note { margin: 0; padding: 18px 28px; color: #756184; font-size: 12px; line-height: 1.6; }
+
+.audit-details { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 360px; overflow: auto; padding: 16px; font-size: 12px; }
+
+.daily-close-form { padding: 24px 28px; border-top: 1px solid #b9a6c644; }
+
+.daily-close-card { margin-top: 24px; }
+
+@media print {
+  .report-toolbar, .workspace-header, nav, button, .daily-close-form { display: none !important; }
+  .card { box-shadow: none !important; border: 1px solid #bbb; break-inside: avoid; }
+  body { background: white !important; color: black !important; }
+  table { font-size: 10pt; }
 }
 
 /* Export appears outside settings-page; keep its layout self-contained. */

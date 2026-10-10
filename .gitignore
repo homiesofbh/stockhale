@@ -372,4 +372,18 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Application account model (the generic Python lib rule above is unrelated).
+!lib/
+lib/*
+!lib/stockwell/
+lib/stockwell/*
+!lib/stockwell/accounts.ts
+!lib/stockwell/journals.ts
+!lib/stockwell/bank-vouchers.ts
+!lib/stockwell/operations.ts
+!lib/stockwell/operation-validation.ts
+!lib/stockwell/recovery.ts
+!lib/stockwell/attachments.ts
+!lib/stockwell/attachment-client.ts
 .neon

@@ -2,6 +2,7 @@
 import { Table } from "@/components/stockwell/ui";
 import {
   contactBalance,
+  isPosted,
   money,
   type Contact,
   type Store,
@@ -36,21 +37,24 @@ export function ContactsView({
       <section className="card">
         <Table
           headers={[
-            module === "Customers" ? "Company name" : "Supplier name",
+            module === "Customers" ? "Customer / company" : "Supplier name",
             "Contact details",
             "Address",
             "Outstanding balance",
             "",
           ]}
           rows={(module === "Suppliers" ? s.suppliers : s.customers)
-            .filter((c) => matches(c.name, c.phone, c.email, c.address, c.ntn))
+            .filter((c) => matches(c.name, c.company, c.phone, c.mobile, c.email, c.address, c.ntn, c.contactPerson, c.salesTaxNumber, c.description))
             .map((c) => [
               <button className="link" onClick={() => setDetailContact(c)}>
                 {c.name}
+                {c.company && <small>{c.company}</small>}
                 {c.ntn && <small>NTN: {c.ntn}</small>}
+                {c.salesTaxNumber && <small>Sales tax: {c.salesTaxNumber}</small>}
               </button>,
               <>
                 {c.phone || "—"}
+                <small>{c.mobile}</small>
                 <small>{c.email}</small>
               </>,
               c.address || "—",
@@ -79,7 +83,7 @@ export function ContactsView({
             <div>
               <h2>{detailContact.name}</h2>
               <p>
-                {[detailContact.phone, detailContact.email, detailContact.address, detailContact.ntn ? `NTN: ${detailContact.ntn}` : ""].filter(Boolean).join(" · ") || "No optional details provided."}
+                {[detailContact.company, detailContact.contactPerson, detailContact.phone, detailContact.mobile, detailContact.email, detailContact.address, detailContact.ntn ? `NTN: ${detailContact.ntn}` : "", detailContact.salesTaxNumber ? `Sales tax: ${detailContact.salesTaxNumber}` : "", detailContact.description].filter(Boolean).join(" · ") || "No optional details provided."}
               </p>
             </div>
             <button
@@ -122,7 +126,7 @@ export function ContactsView({
             headers={["Date", "Reference", "Amount", "Method", "Notes"]}
             rows={[
               ...(module === "Suppliers" ? s.purchases : s.invoices)
-                .filter((t) => t.contactId === detailContact.id && t.paid > 0)
+                .filter((t) => isPosted(t) && t.contactId === detailContact.id && t.paid > 0)
                 .map((t) => [
                   t.date,
                   t.number,

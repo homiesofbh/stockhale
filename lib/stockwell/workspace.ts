@@ -1,3 +1,7 @@
+import { validateOperations, type ValidationContext } from "./operation-validation";
+import { validateBanks } from "./bank-vouchers";
+import { validateJournals } from "./journals";
+import { validateAccounts } from "./accounts";
 import type { Store } from "./model";
 export const modules = [
   "Dashboard",
@@ -63,13 +67,20 @@ export type Change = {
 export type Cache = { workspace: Workspace; queue: Change[]; revision: number };
 export const cacheKey = (id: string) => `stockwell.workspace.${id}`;
 export const collectionModules: Record<string, string[]> = {
-  products: ["Inventory"],
+  products: ["Inventory", "Purchases"],
   categories: ["Inventory"],
   units: ["Inventory"],
   movements: ["Inventory", "Purchases", "Billing", "Returns & Damage"],
-  customers: ["Customers"],
+  customers: ["Customers", "Billing"],
   suppliers: ["Suppliers"],
   heads: ["Accounts Heads"],
+  accounts: ["Accounts Heads"],
+  journals: ["Accounts Heads"],
+  bankVouchers: ["Payments"],
+  corrections: ["Billing", "Purchases"],
+  walkInLinks: ["Billing"],
+  chequeEvents: ["Payments"],
+  dailyCloses: ["Reports"],
   financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],
@@ -77,6 +88,8 @@ export const collectionModules: Record<string, string[]> = {
   payments: ["Payments", "Billing", "Purchases"],
   expenses: ["Expenses"],
   returns: ["Returns & Damage"],
+  partners: ["Accounts Heads"],
+  crossCheques: ["Payments"],
 };
 export function changesBetween(before: Store, after: Store) {
   return Object.keys(collectionModules).filter(
@@ -85,7 +98,7 @@ export function changesBetween(before: Store, after: Store) {
       JSON.stringify(after[k as keyof Store] ?? []),
   );
 }
-export function verifyChange(before: Store, after: Store, module: string) {
+export function verifyChange(before: Store, after: Store, module: string, context?: ValidationContext) {
   if (!modules.includes(module as (typeof modules)[number]))
     throw new Error("Unknown module.");
   if (
@@ -101,10 +114,14 @@ export function verifyChange(before: Store, after: Store, module: string) {
   if (!changed.length) throw new Error("No records changed.");
   if (changed.some((k) => !collectionModules[k].includes(module)))
     throw new Error("This module cannot change those records.");
+  if (changed.includes("accounts") || changed.includes("heads")) validateAccounts(after, before);
+  if (changed.includes("journals") || changed.includes("accounts") || changed.includes("heads")) validateJournals(after, before);
+  validateBanks(after, before);
+  if (context) validateOperations(before, after, module, context);
   return changed
     .map(
       (k) =>
-        `${k}: ${JSON.stringify(after[k as keyof Store]) === JSON.stringify(before[k as keyof Store]) ? "unchanged" : recordDiff(before[k as keyof Store] as unknown[], after[k as keyof Store] as unknown[])}`,
+        `${k}: ${JSON.stringify(after[k as keyof Store]) === JSON.stringify(before[k as keyof Store]) ? "unchanged" : recordDiff((before[k as keyof Store] ?? []) as unknown[], (after[k as keyof Store] ?? []) as unknown[])}`,
     )
     .join("; ");
 }
@@ -124,7 +141,7 @@ function recordDiff(a: unknown[], b: unknown[]) {
     .filter((id) => old.get(id) !== next.get(id))
     .map(
       (id) =>
-        `${!old.has(id) ? "added" : !next.has(id) ? "removed" : "updated"} ${id}${old.has(id) && next.has(id) ? fieldDiff(old.get(id)!, next.get(id)!) : recordLabel(next.get(id)||old.get(id)!)}`,
+        `${!old.has(id) ? "added" : !next.has(id) ? "removed" : "updated"} ${id}${old.has(id) && next.has(id) ? fieldDiff(old.get(id)!, next.get(id)!) : ` (${next.get(id) || old.get(id)})`}`,
     )
     .join(", ");
 }
@@ -145,7 +162,7 @@ function fieldDiff(a: string, b: string) {
       .filter((k) => JSON.stringify(before[k]) !== JSON.stringify(after[k]))
       .map(
         (k) =>
-          `${k}: ${JSON.stringify(before[k])?.slice(0, 100)} → ${JSON.stringify(after[k])?.slice(0, 100)}`,
+          `${k}: ${JSON.stringify(before[k])} → ${JSON.stringify(after[k])}`,
       )
       .join(", ") +
     ")"

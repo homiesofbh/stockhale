@@ -52,10 +52,15 @@ export function InventoryView({
             "Product",
             "SKU / Barcode",
             "Category",
+            "Colour / GSM",
+            "Packing / Store / Size",
             "Stock",
             "Cost price",
             "Selling price",
+            "Max stock",
             "Status",
+            "Suppliers",
+            "Variant",
             "",
           ]}
           rows={s.products
@@ -80,12 +85,17 @@ export function InventoryView({
                 <small>{p.barcode || "No barcode assigned"}</small>
               </>,
               p.category,
+              [p.color, p.gsm ? `${p.gsm} GSM` : ""].filter(Boolean).join(" · ") || "—",
+              [p.packing, p.store, p.size].filter(Boolean).join(" · ") || "—",
               <b>{stock(s, p.id)} {p.unit || "piece"}</b>,
               money(p.cost),
               money(p.price),
+              p.maximum ?? "—",
               <Badge tone={stock(s, p.id) <= p.low ? "amber" : "green"}>
                 {stock(s, p.id) <= p.low ? "Low stock" : "In stock"}
               </Badge>,
+              (p.supplierIds || []).map(id => s.suppliers.find(supplier => supplier.id === id)?.name).filter(Boolean).join(", ") || "—",
+              p.variantOf ? `Variant of ${s.products.find(parent => parent.id === p.variantOf)?.name || "unknown"}` : "Standalone",
               <button
                 className="link"
                 onClick={() => {

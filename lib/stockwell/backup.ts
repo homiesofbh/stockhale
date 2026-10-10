@@ -1,3 +1,4 @@
+import { validateRecoveryBackup, type RecoveryBackup } from "./recovery";
 import type { Cache } from "./workspace";
 
 export const BACKUP_WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -57,9 +58,23 @@ export async function createBackupWorkbook(cache: Cache) {
   return book.xlsx.writeBuffer();
 }
 
+export async function completeBackup(cache: Cache): Promise<RecoveryBackup> {
+  if (cache.workspace.member.role !== "owner") throw new Error("Only the workspace owner can export all data.");
+  if (cache.queue.length) throw new Error("Sync pending changes before creating a complete restorable backup. Export pending changes separately if sync needs review.");
+  const response = await fetch("/api/workspace", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ action: "backup" }), cache: "no-store" });
+  const data = await response.json();
+  if (!response.ok) throw new Error(data.error || "Backup failed.");
+  if (data.backup.revision !== cache.revision) throw new Error("Workspace changed. Sync and retry backup.");
+  return validateRecoveryBackup(data.backup, cache.workspace.id);
+}
+export function downloadRecovery(backup: RecoveryBackup) {
+  const url = URL.createObjectURL(new Blob([JSON.stringify(backup)], { type: "application/json" }));
+  const a = document.createElement("a"); a.href = url; a.download = `stockhale-backup-${backup.workspaceId}-${backup.exportedAt.replace(/[:.]/g, "-")}.json`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 10000);
+}
 export async function downloadBackup(cache: Cache) {
   if (cache.workspace.member.role !== "owner") throw new Error("Only the workspace owner can export all data.");
-  const data = await createBackupWorkbook(cache);
+  const recovery = await completeBackup(cache);
+  const data = await createBackupWorkbook({ ...cache, workspace: { ...cache.workspace, store: recovery.store, audit: recovery.audit }, recovery } as Cache);
   const url = URL.createObjectURL(new Blob([new Uint8Array(data)], {
     type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
   }));

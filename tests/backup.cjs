@@ -18,6 +18,9 @@ test('weekly backup stays due after snooze expires and resets after download', (
 test('Excel preserves collections, literal strings and a lossless large snapshot', async () => {
   const store = emptyStore();
   store.categories = ['=1+1', 'اردو', 'x'.repeat(40000)];
+  store.bankVouchers = [{ id: 'bank-voucher', number: 'BV-00001', date: '2026-10-09', kind: 'Receipt', accountId: 'jazzcash', toAccountId: '', counterAccountId: 'account', amount: 10, reference: 'Preserve voucher', notes: '', status: 'draft', createdAt: 1 }];
+  store.accounts = [{ id: 'account', code: '1000', name: 'Cash', parentId: '', type: 'Asset', nature: 'Debit', openingBalance: 25, openingDate: '2026-10-01', description: '' }];
+  store.journals = [{ id: 'journal', number: 'JV-00001', date: '2026-10-09', status: 'draft', reference: '=literal reference', notes: 'Backup journal', createdAt: 1, lines: [{ id: 'line', accountId: 'account', debit: 10, credit: 0, description: 'Preserve line' }] }];
   const member = { id: 'owner', name: 'Owner', email: 'owner@example.test', role: 'owner', modules: [] };
   const cache = { workspace: { id: 'test', name: 'Store', revision: 1, store, member, members: [member], audit: [], image: '', emailConfigured: false }, queue: [{ id: 'pending', store }], revision: 1 };
   const data = await createBackupWorkbook(cache);

@@ -39,3 +39,58 @@ test("billing search can find a company's optional NTN without changing legacy c
   assert.equal(filterTrades(companyStore, companyStore.invoices, { ...filters, query: "0012345-6" }).length, 4);
   assert.equal(filterTrades(store, store.invoices, { ...filters, query: "0012345-6" }).length, 0);
 });
+
+for (const supplier of [false, true]) {
+  const kind = supplier ? "Supplier" : "Customer";
+  const report = supplier ? "Payables report" : "Receivables report";
+  const ledger = supplier ? "Supplier ledger" : "Customer ledger";
+  const fixture = () => {
+    const s = structuredClone(store);
+    const bill = trade("due", "2026-10-01", "Cash", 0, supplier ? "supplier" : "customer");
+    s.invoices = supplier ? [] : [bill];
+    s.purchases = supplier ? [bill] : [];
+    s.payments = [{ id: "payment", date: "2026-10-02", kind, contactId: bill.contactId, tradeId: bill.id, amount: 100, method: "Cheque", head: "Bank", notes: "", chequeStatus: "pending", chequeDate: "2026-10-03" }];
+    return { s, bill };
+  };
+  test(`${kind} ledger excludes pending, bounced, and unconfirmed cheques`, () => {
+    for (const status of ["pending", "bounced", undefined]) {
+      const { s, bill } = fixture();
+      s.payments[0].chequeStatus = status;
+      const rows = createReportData(s, { ...filters, report: ledger, reportContact: "" }).rows;
+      assert.equal(rows.length, 1);
+      assert.equal(rows[0][6], 100);
+      assert.equal(m.balance(s, bill), 100);
+    }
+  });
+  test(`${kind} clearance preserves receipt date and settles on clearance date`, () => {
+    const { s, bill } = fixture();
+    const cleared = m.clearCheque(s, "payment");
+    assert.equal(cleared.payments[0].date, "2026-10-02");
+    assert.equal(cleared.payments[0].clearedDate, m.today());
+    cleared.payments[0].clearedDate = "2026-10-10";
+    const before = createReportData(cleared, { ...filters, to: "2026-10-09", status: "Unpaid", report, reportContact: "" }).rows;
+    assert.equal(before[0][8], 0);
+    assert.equal(before[0][9], 100);
+    assert.equal(createReportData(cleared, { ...filters, to: "2026-10-10", report, reportContact: "" }).rows.length, 0);
+    const rows = createReportData(cleared, { ...filters, report: ledger, reportContact: "" }).rows;
+    assert.equal(rows[1][0], "2026-10-10");
+    assert.equal(rows[1][6], m.balance(cleared, bill));
+    assert.equal(m.financialRows(cleared).find(r => r.type === `${kind} payment`).date, "2026-10-10");
+  });
+  test(`${kind} outstanding uses dated payments and returns with inclusive cutoff`, () => {
+    const { s } = fixture();
+    s.payments = [{ ...s.payments[0], method: "Cash", chequeStatus: undefined, amount: 30, date: "2026-10-05" }];
+    s.returns = [{ id: "return", tradeId: "due", date: "2026-10-08", amount: 20, kind: supplier ? "Purchase return" : "Sales return" }];
+    const row = to => createReportData(s, { ...filters, to, report, reportContact: "" }).rows[0];
+    assert.deepEqual(row("2026-10-04").slice(7), [0, 0, 100]);
+    assert.deepEqual(row("2026-10-05").slice(7), [0, 30, 70]);
+    assert.deepEqual(row("2026-10-08").slice(7), [20, 30, 50]);
+    assert.deepEqual(row("").slice(7), [20, 30, 50]);
+  });
+  test(`${kind} legacy cleared cheques retain their recorded settlement date`, () => {
+    const { s } = fixture();
+    s.payments[0].chequeStatus = "cleared";
+    assert.equal(createReportData(s, { ...filters, to: "2026-10-01", report, reportContact: "" }).rows[0][9], 100);
+    assert.equal(createReportData(s, { ...filters, to: "2026-10-02", report, reportContact: "" }).rows.length, 0);
+  });
+}

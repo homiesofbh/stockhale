@@ -40,37 +40,48 @@ export function PaymentForm({
   setSelectedTrade,
 }: Props) {
   const [method, setMethod] = useState("Cash");
+  const [advance, setAdvance] = useState(false);
+  const [forwardCheque, setForwardCheque] = useState(false);
+  const [destinationKind, setDestinationKind] = useState<"Supplier" | "Partner">("Supplier");
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) =>
-          commit(
-            recordPayment(s, {
+        submit(e, (f) => {
+          const payment = {
               id: uid(),
               date: text(f, "date"),
               kind: paymentKind as "Customer" | "Supplier",
               contactId: selectedContact.startsWith("walkin:") ? "" : selectedContact,
-              tradeId: text(f, "trade"),
+              tradeId: advance ? "" : text(f, "trade"),
+              advance,
               amount:
                 round(num(f, "amount")) *
-                (balance(
-                  s,
-                  (paymentKind === "Customer" ? s.invoices : s.purchases).find(
-                    (t) => t.id === selectedTrade,
-                  )!,
-                ) < 0
-                  ? -1
-                  : 1),
+                (advance
+                  ? paymentKind === "Customer" ? 1 : -1
+                  : balance(
+                      s,
+                      (paymentKind === "Customer" ? s.invoices : s.purchases).find(
+                        (t) => t.id === selectedTrade,
+                      )!,
+                    ) < 0 ? -1 : 1),
               method: text(f, "method") as "Cash" | "Bank",
               head: text(f, "head"),
               notes: text(f, "notes"),
               chequeNumber: text(f, "chequeNumber"),
               chequeBank: text(f, "chequeBank"),
               chequeDate: text(f, "chequeDate"),
-            }),
-            "Payment recorded. Balance updated.",
-          ),
-        )
+            };
+          let next = recordPayment(s, payment);
+          if (forwardCheque && paymentKind === "Customer" && method === "Cheque") {
+            const destinationId = text(f, "destination");
+            const destinationName = destinationKind === "Supplier"
+              ? s.suppliers.find(c => c.id === destinationId)?.name || ""
+              : destinationId;
+            if (!destinationName) throw new Error("Select the supplier or enter the partner name receiving this cheque.");
+            next = { ...next, crossCheques: [...(next.crossCheques || []), { id: uid(), sourcePaymentId: payment.id, date: payment.date, customerId: payment.contactId, destinationKind, destinationId, destinationName, amount: Math.abs(payment.amount), status: "pending", notes: text(f, "destinationNotes") }] };
+          }
+          commit(next, forwardCheque ? "Customer cheque recorded for submission." : "Payment recorded. Balance updated.");
+        })
       }
     >
       <div className="form-grid">
@@ -106,14 +117,15 @@ export function PaymentForm({
             {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
           </GlassSelect>
         </Field>
+        <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={advance} onChange={e => { setAdvance(e.target.checked); setSelectedTrade(""); }} /> Advance payment (not linked to a bill yet)</label>
         <Field label="Bill / purchase with a pending balance or credit">
           <GlassSelect
             name="trade"
-            required
+            required={!advance}
             value={selectedTrade}
             onValueChange={(e) => setSelectedTrade(e)}
           >
-            <option value="">Select transaction</option>
+            <option value="">{advance ? "No bill — unapplied advance" : "Select transaction"}</option>
             {(paymentKind === "Customer" ? s.invoices : s.purchases)
               .filter(
                 (t) => (selectedContact.startsWith("walkin:") ? `walkin:${t.id}` === selectedContact : t.contactId === selectedContact) && balance(s, t) !== 0,
@@ -135,7 +147,7 @@ export function PaymentForm({
         <Field label="Payment method">
           <GlassSelect name="method" value={method} onValueChange={setMethod}>
             <option>Cash</option>
-            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            {(s.financialAccounts || []).filter(a => a.active !== false).map((account) => <option key={account.id}>{account.name}</option>)}
             <option>Cheque</option>
           </GlassSelect>
         </Field>
@@ -143,6 +155,14 @@ export function PaymentForm({
           <Field label="Cheque number"><input name="chequeNumber" required maxLength={80} /></Field>
           <Field label="Cheque bank"><input name="chequeBank" required maxLength={120} /></Field>
           <Field label="Expected clearance date"><input name="chequeDate" type="date" required /></Field>
+          {paymentKind === "Customer" && <>
+            <label className="checkbox-row"><input type="checkbox" checked={forwardCheque} onChange={e => setForwardCheque(e.target.checked)} /> Submit this cheque to a supplier or partner</label>
+            {forwardCheque && <>
+              <Field label="Submit to"><GlassSelect name="destinationKind" value={destinationKind} onValueChange={value => setDestinationKind(value as typeof destinationKind)}><option>Supplier</option><option>Partner</option></GlassSelect></Field>
+              {destinationKind === "Supplier" ? <Field label="Supplier"><GlassSelect name="destination"><option value="">Select supplier</option>{s.suppliers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</GlassSelect></Field> : <Field label="Partner name"><input name="destination" placeholder="Partner name" required /></Field>}
+              <Field label="Submission notes"><input name="destinationNotes" /></Field>
+            </>}
+          </>}
         </>}
         <Field label="Account head">
           <GlassSelect

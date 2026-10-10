@@ -7,6 +7,7 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
+    "lint": "oxlint",
     "build:cloudflare": "opennextjs-cloudflare build",
     "deploy:cloudflare": "opennextjs-cloudflare deploy",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
@@ -16,9 +17,11 @@
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:import-sqlite": "tsx scripts/import-sqlite.ts",
-    "test:integration": "tsx --test tests/workspace.test.ts"
+    "test:integration": "node --import tsx --test tests/workspace.test.ts tests/workspace-p1.test.ts"
   },
   "dependencies": {
+    "@aws-sdk/client-s3": "^3.1147.0",
+    "@aws-sdk/s3-request-presigner": "^3.1147.0",
     "@base-ui/react": "^1.5.0",
     "@fontsource-variable/inter": "^5.3.0",
     "@fontsource/syne": "^5.3.0",
@@ -44,6 +47,7 @@
     "@types/pg": "^8.23.1",
     "@types/react": "^19",
     "@types/react-dom": "^19",
+    "oxlint": "^1.87.0",
     "postcss": "^8.5",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.23.15",

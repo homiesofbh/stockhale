@@ -1,39 +1,31 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { round, today, uid, type Store } from "@/lib/stockwell/model";
+import { saveExpense, previousDate, type Actor } from "@/lib/stockwell/operations";
+import { paymentAccountId, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { type FormEvent } from "react";
+import { uploadAttachment } from "@/lib/stockwell/attachment-client";
 type Props = {
-  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
+  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   num: (f: FormData, key: string) => number;
   commit: (next: Store, message: string) => void;
   s: Store;
+  actor: Actor;
   text: (f: FormData, key: string) => string;
 };
-export function ExpenseForm({ submit, num, commit, s, text }: Props) {
+export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) => {
+        submit(e, async (f) => {
           const amount = num(f, "amount");
           if (!Number.isFinite(amount) || amount <= 0)
             throw new Error("Amount must be greater than zero.");
+          const id = uid();
+          const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
+          const attachment = file ? await uploadAttachment(file, "expense", id) : undefined;
           commit(
-            {
-              ...s,
-              expenses: [
-                ...s.expenses,
-                {
-                  id: uid(),
-                  date: text(f, "date"),
-                  category: text(f, "category"),
-                  head: text(f, "head"),
-                  amount: round(amount),
-                  method: text(f, "method") as "Cash" | "Bank",
-                  notes: text(f, "notes"),
-                },
-              ],
-            },
+            saveExpense(s, { id, date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes"), attachments: attachment ? [attachment] : undefined }, actor),
             "Expense recorded.",
           );
         })
@@ -58,17 +50,18 @@ export function ExpenseForm({ submit, num, commit, s, text }: Props) {
           <input name="amount" type="number" min="0.01" step="0.01" required />
         </Field>
         <Field label="Date">
-          <input name="date" type="date" defaultValue={today()} required />
+          <input name="date" type="date" defaultValue={today()} min={actor.role === "owner" ? undefined : previousDate(today(), 2)} max={today()} required />
         </Field>
         <Field label="Paid from">
           <GlassSelect name="method">
             <option>Cash</option>
-            {(s.financialAccounts || []).map((account) => <option key={account.id}>{account.name}</option>)}
+            {(s.financialAccounts || []).filter(a => a.active !== false).map((account) => <option key={account.id}>{account.name}</option>)}
           </GlassSelect>
         </Field>
         <Field label="Notes / details">
           <input name="notes" />
         </Field>
+        <Field label="Evidence attachment (PDF/JPG/PNG/WEBP, max 5 MB)"><input name="attachment" type="file" accept="application/pdf,image/jpeg,image/png,image/webp" /></Field>
       </div>
       <div className="form-foot">
         <button className="primary">Save expense</button>

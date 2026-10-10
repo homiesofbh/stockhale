@@ -86,15 +86,15 @@ export function Table({
 }
 export function Modal({
   title,
+  eyebrow = "STOCKHALE / NEW RECORD",
   children,
   close,
-  eyebrow = "STOCKHALE / NEW RECORD",
   className = "",
 }: {
   title: string;
+  eyebrow?: string;
   children: ReactNode;
   close: () => void;
-  eyebrow?: string;
   className?: string;
 }) {
   const dialog = useRef<HTMLDialogElement>(null);

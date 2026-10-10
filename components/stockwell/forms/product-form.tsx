@@ -8,7 +8,7 @@ import {
   type Store,
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
-import { type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
   editProduct: Product | null;
@@ -27,6 +27,10 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
+  const defaultUnits = s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"];
+  const [unit, setUnit] = useState(editProduct?.unit || "piece");
+  const [customUnit, setCustomUnit] = useState("");
+  const isCustomUnit = unit === "__custom__";
   return (
     <form
       onSubmit={(e) =>
@@ -36,13 +40,27 @@ export function ProductForm({
             name: text(f, "name"),
             sku: text(f, "sku"),
             barcode: text(f, "barcode"),
-            unit: text(f, "unit") || "piece",
+            unit: (isCustomUnit ? customUnit : unit).trim().toLowerCase() || "piece",
             category: text(f, "category"),
             cost: num(f, "cost"),
             price: num(f, "price"),
             low: num(f, "low"),
+            maximum: num(f, "maximum") || undefined,
+            color: text(f, "color"),
+            gsm: num(f, "gsm") || undefined,
+            packing: text(f, "packing"),
+            store: text(f, "store"),
+            size: text(f, "size"),
+            active: !editProduct || f.has("active"),
+            variantOf: text(f, "variantOf") || undefined,
           };
-          commit(saveProduct(s, p, num(f, "opening")), "Product saved.");
+          const next = saveProduct(s, p, num(f, "opening"));
+          const units = next.units || defaultUnits;
+          const matchingUnit = units.find(existing => existing.trim().toLowerCase() === p.unit);
+          commit(
+            p.unit && !matchingUnit ? { ...next, units: [...units, p.unit] } : next,
+            "Product saved.",
+          );
         })
       }
     >
@@ -67,10 +85,19 @@ export function ProductForm({
           <input name="sku" required defaultValue={editProduct?.sku} />
         </Field>
         <Field label="Measurement unit">
-          <GlassSelect name="unit" defaultValue={editProduct?.unit || "piece"}>
-            {(s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter"]).map((unit) => <option key={unit}>{unit}</option>)}
+          <GlassSelect name="unit" value={unit} onValueChange={setUnit}>
+            {defaultUnits.map((value) => <option key={value}>{value}</option>)}
+            {editProduct?.unit && !defaultUnits.includes(editProduct.unit) && <option>{editProduct.unit}</option>}
+            <option value="__custom__">Add custom UOM…</option>
           </GlassSelect>
         </Field>
+        {isCustomUnit && <Field label="Custom UOM"><input name="customUnit" value={customUnit} onChange={(e) => setCustomUnit(e.target.value)} placeholder="e.g. roll, set, bundle" maxLength={40} required /></Field>}
+        <Field label="Colour (optional)"><input name="color" maxLength={80} defaultValue={editProduct?.color || ""} /></Field>
+        <Field label="GSM (optional)"><input name="gsm" type="number" min="0" step="0.01" defaultValue={editProduct?.gsm ?? ""} /></Field>
+        <Field label="Packing (optional)"><input name="packing" maxLength={80} defaultValue={editProduct?.packing || ""} placeholder="e.g. 25 kg bag" /></Field>
+        <Field label="Store (optional)"><input name="store" maxLength={80} defaultValue={editProduct?.store || ""} /></Field>
+        <Field label="Size (optional)"><input name="size" maxLength={80} defaultValue={editProduct?.size || ""} /></Field>
+        <Field label="Variant parent (optional)"><GlassSelect name="variantOf" defaultValue={editProduct?.variantOf || ""}><option value="">Standalone product</option>{s.products.filter(x => x.id !== editProduct?.id).map(x => <option key={x.id} value={x.id}>{x.name} · {x.sku}</option>)}</GlassSelect></Field>
         <Field label="Cost price (PKR)">
           <input
             name="cost"
@@ -103,6 +130,9 @@ export function ProductForm({
           />
         </Field>
         </div>
+        <Field label="Maximum stock (optional)">
+          <input name="maximum" type="number" min="0" step="0.001" defaultValue={editProduct?.maximum ?? ""} />
+        </Field>
         {!editProduct && (
           <Field label="Opening stock">
             <input
@@ -123,6 +153,7 @@ export function ProductForm({
         Stock changes after creation are recorded through purchases, billing,
         returns, or stock adjustments.
       </p>
+      {editProduct && <label className="checkbox-row"><input name="active" type="checkbox" defaultChecked={editProduct.active !== false} /> Active product</label>}
       <div className="form-foot">
         <button
           type="button"

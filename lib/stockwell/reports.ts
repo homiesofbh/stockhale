@@ -1,11 +1,20 @@
+import { cashFlow, cashStatement, chequeSettlements, paymentAt, tradeAt } from "./operations";
+import { bankStatement } from "./bank-vouchers";
+import { chartAccounts } from "./accounts";
+import { journalAccountBalance } from "./journals";
 import {
   balance,
+  isPosted,
+  today,
   financialRows,
   paid,
+  isSettledPayment,
+  paymentDate,
   periodMatch,
   profit,
   returned,
   round,
+  roundQty,
   stock,
   subtotal,
   total,
@@ -25,20 +34,33 @@ export function createReportData(
   rows: unknown[][];
 } {
   const { report, reportContact, from, to, query } = options;
-  const invoices = filterTrades(s, s.invoices, options);
-  const purchases = filterTrades(s, s.purchases, options, true);
+  // The start date selects bills; all settlements through the end date count,
+  // including those before the start date. Status filtering uses that same snapshot.
+  const asOf: Store = to ? {
+    ...s,
+    invoices: s.invoices.map(t => tradeAt(s, t, to)),
+    purchases: s.purchases.map(t => tradeAt(s, t, to)),
+    payments: s.payments.map(p => paymentAt(s, p, to)).filter((p) => paymentDate(p) <= to),
+    returns: s.returns.filter((r) => r.date <= to),
+  } : s;
+  const invoices = filterTrades(asOf, asOf.invoices, options);
+  const purchases = filterTrades(asOf, asOf.purchases, options, true);
   const accounting = financialRows(s);
   const matches = (...values: unknown[]) => matchesQuery(query, ...values);
   const inRange = (date: string) => periodMatch(date, from, to);
   const pName = (id: string) =>
     s.products.find((p) => p.id === id)?.name || "Unknown item";
-  const cName = (id: string, supplier = false) =>
-    (supplier ? s.suppliers : s.customers).find((c) => c.id === id)?.name ||
-    "Walk-in customer";
+  const cName = (id: string, supplier = false, trade?: { walkInName?: string; walkInCompany?: string; walkInPhone?: string }) => {
+    const contact = (supplier ? s.suppliers : s.customers).find((c) => c.id === id);
+    if (contact) return [contact.name, contact.company, contact.phone].filter(Boolean).join(" · ");
+    return [trade?.walkInName, trade?.walkInCompany, trade?.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer";
+  };
   if (
     [
       "Billing report",
       "Sales report",
+      "Cash-sale report",
+      "Credit-sale report",
       "Purchase report",
       "Receivables report",
       "Payables report",
@@ -46,9 +68,11 @@ export function createReportData(
   ) {
     const supplier =
       report === "Purchase report" || report === "Payables report";
-    let list = supplier ? purchases : invoices;
+    let list = (supplier ? purchases : invoices).filter(isPosted);
+    if (report === "Cash-sale report") list = list.filter(t => t.method === "Cash");
+    if (report === "Credit-sale report") list = list.filter(t => balance(asOf, t) > 0);
     if (report === "Receivables report" || report === "Payables report")
-      list = list.filter((t) => balance(s, t) !== 0);
+      list = list.filter((t) => balance(asOf, t) !== 0);
     return {
       columns: [
         "Reference",
@@ -65,28 +89,81 @@ export function createReportData(
       rows: list.map((t) => [
         t.number,
         t.date,
-        cName(t.contactId, supplier),
+        cName(t.contactId, supplier, t),
         subtotal(t),
         t.discount,
         t.tax,
         total(t),
-        returned(s, t.id),
-        paid(s, t),
-        balance(s, t),
+        returned(asOf, t.id),
+        paid(asOf, t),
+        balance(asOf, t),
       ]),
     };
   }
+  if (report === "Payment report") {
+    const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.tradeId, p.amount, p.method, p.chequeStatus || "—", p.notes]);
+    return { columns: ["Date", "Kind", "Transaction", "Amount", "Method", "Cheque status", "Notes"], rows };
+  }
+  if (report === "Account aging report") {
+    const through = to || today();
+    const age = (date: string) => Math.max(0, Math.floor((Date.parse(`${through}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86400000));
+    const contacts = [...s.customers.map(c => ({ ...c, kind: "Customer" })), ...s.suppliers.map(c => ({ ...c, kind: "Supplier" }))];
+    const rows = contacts.map(c => {
+      const trades = c.kind === "Customer" ? asOf.invoices : asOf.purchases;
+      const buckets = [0, 0, 0, 0];
+      trades.filter(t => isPosted(t) && t.contactId === c.id && balance(asOf, t) > 0).forEach(t => { const days = age(t.date); buckets[days < 30 ? 0 : days < 60 ? 1 : days < 90 ? 2 : 3] += balance(asOf, t); });
+      return [c.kind, c.name, c.company || "", ...buckets.map(round), round(buckets.reduce((n, v) => n + v, 0))];
+    }).filter(row => row[7] !== 0 && matches(row[0], row[1], row[2]));
+    return { columns: ["Type", "Contact", "Company", "Current", "30–59 days", "60–89 days", "90+ days", "Total outstanding"], rows };
+  }
+  if (report === "Yearly summary") {
+    const years = new Set<string>();
+    [...s.invoices, ...s.purchases, ...s.expenses, ...s.payments].forEach(r => years.add(r.date.slice(0, 4)));
+    const rows = [...years].sort().map(year => {
+      const sales = s.invoices.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
+      const purchases = s.purchases.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
+      const expenses = s.expenses.filter(e => e.date.startsWith(year)).reduce((n, e) => n + e.amount, 0);
+      const receipts = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Customer").reduce((n, p) => n + p.amount, 0);
+      const payments = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Supplier").reduce((n, p) => n + p.amount, 0);
+      return [year, round(sales), round(purchases), round(expenses), round(receipts), round(payments), round(receipts - payments)];
+    }).filter(row => matches(row[0]));
+    return { columns: ["Year", "Sales", "Purchases", "Expenses", "Customer receipts", "Supplier payments", "Net cash movement"], rows };
+  }
+  if (report === "Trial balance") {
+    const rows = chartAccounts(s).map(a => { const balance = journalAccountBalance(s, a, to || today()); return [a.code, a.name, a.type, balance > 0 ? balance : 0, balance < 0 ? -balance : 0]; }).filter(r => Number(r[3]) || Number(r[4]));
+    return { columns: ["Code", "Account", "Type", "Debit", "Credit"], rows };
+  }
+  if (report === "Income statement") {
+    const p = profit(s, from, to);
+    return { columns: ["Measure", "Amount (PKR)"], rows: [["Revenue", p.revenue], ["Cost of goods sold", p.cogs], ["Operating expenses", p.expenses], ["Damaged stock", p.damage], ["Net income", p.net]] };
+  }
+  if (report === "Balance sheet") {
+    const rows = chartAccounts(s).filter(a => ["Asset", "Liability", "Equity"].includes(a.type)).map(a => [a.code, a.name, a.type, journalAccountBalance(s, a, to || today())]).filter(r => Number(r[3]));
+    return { columns: ["Code", "Account", "Type", "Balance"], rows };
+  }
+  if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId, t.number.startsWith("PUR"), t), t.walkInName, t.walkInCompany, t.walkInPhone)).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR"), t), total(t)]) };
+  if (report === "Cash-in-hand report" || report === "Cash-flow report") {
+    const statement = report === "Cash-in-hand report" ? cashStatement(s, from, to || today()) : cashFlow(s, from, to || today());
+    return { columns: ["Measure", "Amount (PKR)"], rows: [["Opening balance", statement.opening], ["Opening adjustments", statement.openingAdjustment], ["Receipts", statement.receipts], ["Payments", statement.payments], ["Net movement", round(statement.receipts - statement.payments)], ["Closing balance", statement.closing]] };
+  }
+  if (report === "Bank-balance report") return { columns: ["Account", "Type", "Opening", "Opening adjustments", "Receipts", "Payments", "Closing"], rows: (s.financialAccounts || []).filter(a => matches(a.name, a.type)).map(a => { const b = bankStatement(s, a, from, to || today()); return [a.name, a.type, b.opening, b.openingAdjustment, b.receipts, b.payments, b.closing]; }) };
   if (report === "Inventory report")
     return {
       columns: [
         "SKU",
         "Product",
         "Category",
+        "Colour",
+        "GSM",
+        "Packing",
+        "Store",
+        "Size",
         "Stock",
         "Cost price",
         "Selling price",
         "Inventory value",
         "Low-stock threshold",
+        "Maximum-stock threshold",
       ],
       rows: s.products
         .filter((p) => matches(p.name, p.sku, p.category))
@@ -94,38 +171,58 @@ export function createReportData(
           p.sku,
           p.name,
           p.category,
+          p.color || "",
+          p.gsm ?? "",
+          p.packing || "",
+          p.store || "",
+          p.size || "",
           stock(s, p.id),
           p.cost,
           p.price,
           round(stock(s, p.id) * p.cost),
           p.low,
+          p.maximum ?? "",
         ]),
     };
   if (report === "Stock movement report")
-    return {
+    return (() => {
+      const balances = new Map<string, number>();
+      const rows = [...s.movements]
+        .filter(m => !to || m.date <= to)
+        .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
+        .flatMap(m => {
+          const balance = roundQty((balances.get(m.productId) || 0) + m.qty);
+          balances.set(m.productId, balance);
+          return inRange(m.date) && matches(pName(m.productId), m.reference, m.reason) ? [[m.date, pName(m.productId), m.type, m.qty, balance, m.reference, m.reason]] : [];
+        });
+      return {
       columns: [
         "Date",
         "Product",
         "Type",
         "Quantity change",
+        "Running balance",
         "Reference",
         "Reason",
       ],
-      rows: s.movements
-        .filter(
-          (m) =>
-            inRange(m.date) &&
-            matches(pName(m.productId), m.reference, m.reason),
-        )
-        .map((m) => [
-          m.date,
-          pName(m.productId),
-          m.type,
-          m.qty,
-          m.reference,
-          m.reason,
-        ]),
-    };
+      rows,
+    }; })();
+  if (report === "Stock aging report") {
+    const through = to || today();
+    const rows = s.products.filter(p => matches(p.name, p.sku, p.category)).map(p => {
+      const movements = s.movements.filter(m => m.productId === p.id && m.date <= through && m.qty > 0).sort((a, b) => a.date.localeCompare(b.date));
+      const qty = stock(s, p.id);
+      const oldest = movements[0]?.date || "";
+      const days = oldest ? Math.max(0, Math.floor((Date.parse(`${through}T12:00:00Z`) - Date.parse(`${oldest}T12:00:00Z`)) / 86400000)) : 0;
+      return [p.sku, p.name, qty, oldest || "—", days, round(qty * p.cost)];
+    }).filter(row => Number(row[2]) > 0);
+    return { columns: ["SKU", "Product", "Current stock", "Oldest receipt", "Age (days)", "Stock value"], rows };
+  }
+  if (report === "Daily cash sheet") {
+    const date = to || from || today();
+    const statement = cashStatement(s, date, date);
+    return { columns: ["Date", "Opening cash", "Receipts", "Payments", "Expected closing", "Counted cash", "Variance"], rows: [[date, statement.opening, statement.receipts, statement.payments, statement.closing, (s.dailyCloses || []).find(c => c.date === date && c.status === "closed")?.counted ?? "—", (s.dailyCloses || []).find(c => c.date === date && c.status === "closed")?.variance ?? "—"]] };
+  }
   if (report === "Expense report")
     return {
       columns: [
@@ -168,6 +265,8 @@ export function createReportData(
       order: number;
     }[] = [];
     trades
+      .map(t => (s.corrections || []).find(c => c.tradeId === t.id)?.before || t)
+      .filter(isPosted)
       .filter(
         (t) => t.contactId && (!reportContact || t.contactId === reportContact),
       )
@@ -175,7 +274,7 @@ export function createReportData(
         entries.push({
           date: t.date,
           ref: t.number,
-          name: cName(t.contactId, supplier),
+          name: cName(t.contactId, supplier, t),
           type: supplier ? "Purchase" : "Bill",
           charge: total(t),
           payment: t.paid,
@@ -188,7 +287,7 @@ export function createReportData(
             entries.push({
               date: r.date,
               ref: t.number,
-              name: cName(t.contactId, supplier),
+              name: cName(t.contactId, supplier, t),
               type: r.kind,
               charge: -r.amount,
               payment: 0,
@@ -197,23 +296,11 @@ export function createReportData(
             }),
           );
       });
-    s.payments
-      .filter(
-        (p) =>
-          p.kind === kind && (!reportContact || p.contactId === reportContact),
-      )
-      .forEach((p) =>
-        entries.push({
-          date: p.date,
-          ref: trades.find((t) => t.id === p.tradeId)?.number || "",
-          name: cName(p.contactId, supplier),
-          type: "Payment",
-          charge: 0,
-          payment: p.amount,
-          id: p.contactId,
-          order: p.createdAt || 0,
-        }),
-      );
+    (s.corrections || []).filter(c => c.kind === (supplier ? "Purchase" : "Sale") && (!reportContact || c.after.contactId === reportContact)).forEach(c => entries.push({ date: c.date, ref: c.after.number, name: cName(c.after.contactId, supplier, c.after), type: c.after.status === "void" ? "Bill reversal" : "Bill correction", charge: (isPosted(c.after) ? total(c.after) : 0) - total(c.before), payment: (isPosted(c.after) ? c.after.paid : 0) - c.before.paid, id: c.after.contactId, order: Date.parse(c.occurredAt) }));
+    s.payments.filter(p => p.kind === kind && (!reportContact || p.contactId === reportContact)).forEach(p => {
+      const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, status: "paid" }];
+      settlements.forEach(e => entries.push({ date: e.date, ref: trades.find(t => t.id === p.tradeId)?.number || "", name: cName(p.contactId, supplier, trades.find(t => t.id === p.tradeId)), type: e.status === "bounced" ? "Cheque bounce" : "Payment", charge: 0, payment: e.amount, id: p.contactId, order: p.createdAt || 0 }));
+    });
     const balances = new Map<string, number>();
     const rows: unknown[][] = [];
     entries
@@ -243,6 +330,8 @@ export function createReportData(
         "Account head",
         "Transaction count",
         "Net transaction amount",
+        "Voucher debits",
+        "Voucher credits",
         "Cash movement",
         "Bank movement",
       ],
@@ -256,6 +345,8 @@ export function createReportData(
             h,
             rows.length,
             round(rows.reduce((n, r) => n + r.amount, 0)),
+            round(rows.reduce((n, r) => n + (r.debit || 0), 0)),
+            round(rows.reduce((n, r) => n + (r.credit || 0), 0)),
             round(rows.reduce((n, r) => n + r.cash, 0)),
             round(rows.reduce((n, r) => n + r.bank, 0)),
           ];
@@ -269,6 +360,8 @@ export function createReportData(
       "Account head",
       "Method",
       "Amount",
+      "Voucher debit",
+      "Voucher credit",
       "Cash movement",
       "Bank movement",
     ],
@@ -281,6 +374,8 @@ export function createReportData(
         r.head,
         r.method,
         r.amount,
+        r.debit ?? "",
+        r.credit ?? "",
         r.cash,
         r.bank,
       ]),

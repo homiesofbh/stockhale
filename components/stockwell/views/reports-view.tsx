@@ -1,4 +1,6 @@
 "use client";
+import { DailyClosingView } from "./daily-closing-view";
+import type { Actor } from "@/lib/stockwell/operations";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Badge, Field, Table } from "@/components/stockwell/ui";
 import { csv } from "@/lib/stockwell/downloads";
@@ -6,6 +8,8 @@ import { type Store } from "@/lib/stockwell/model";
 import { FileText } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
+  actor: Actor;
+  commit: (s: Store, message: string) => void;
   report: string;
   setReport: Dispatch<SetStateAction<string>>;
   setReportContact: Dispatch<SetStateAction<string>>;
@@ -17,6 +21,7 @@ type Props = {
   };
 };
 export function ReportsView({
+  actor, commit,
   report,
   setReport,
   setReportContact,
@@ -37,16 +42,30 @@ export function ReportsView({
               }}
             >
               {[
+                "Cash-in-hand report",
+                "Bank-balance report",
+                "Cash-flow report",
+                "Unposted bills",
                 "Billing report",
                 "Sales report",
+                "Cash-sale report",
+                "Credit-sale report",
                 "Purchase report",
                 "Inventory report",
                 "Stock movement report",
+                "Stock aging report",
+                "Daily cash sheet",
                 "Expense report",
                 "Customer ledger",
                 "Supplier ledger",
                 "Receivables report",
                 "Payables report",
+                "Payment report",
+                "Account aging report",
+                "Yearly summary",
+                "Trial balance",
+                "Income statement",
+                "Balance sheet",
                 "Accounts Head report",
                 "Profit summary",
                 "Date-wise transaction report",
@@ -75,18 +94,23 @@ export function ReportsView({
             </Field>
           )}
         </div>
-        <button
-          className="secondary-button"
-          onClick={() =>
-            csv(
-              report.toLowerCase().replaceAll(" ", "-"),
-              reportResult.columns,
-              reportResult.rows,
-            )
-          }
-        >
-          <FileText size={16} /> Download CSV
-        </button>
+        <div className="report-actions">
+          <button
+            className="secondary-button"
+            onClick={() =>
+              csv(
+                report.toLowerCase().replaceAll(" ", "-"),
+                reportResult.columns,
+                reportResult.rows,
+              )
+            }
+          >
+            <FileText size={16} /> Download CSV
+          </button>
+          <button className="secondary-button" onClick={() => window.print()}>
+            Print report
+          </button>
+        </div>
       </div>
       <section className="card">
         <div className="section-head">
@@ -97,7 +121,9 @@ export function ReportsView({
                 ? "Current stock snapshot. Date filters do not change this report."
                 : report.includes("ledger")
                   ? "Running balance includes transactions before the selected start date."
-                  : "Figures reflect the selected date range."}{" "}
+                  : ["Billing report", "Sales report", "Purchase report", "Receivables report", "Payables report"].includes(report)
+                    ? "Bills are selected by date range. Paid, return credit, balance, and status are calculated through the end date, or through today’s recorded activity when no end date is selected."
+                    : "Figures reflect the selected date range."}{" "}
               Amounts in PKR.
             </p>
           </div>
@@ -116,6 +142,7 @@ export function ReportsView({
           )}
         />
       </section>
+      <DailyClosingView s={s} actor={actor} commit={commit} />
     </>
   );
 }

@@ -1,10 +1,12 @@
 "use client";
+import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balance,
   findProductByCode,
   emptyStore,
   financialRows,
+  isPosted,
   money,
   paid,
   periodMatch,
@@ -25,20 +27,23 @@ import { ChevronRight, Plus, Search, X } from "lucide-react";
 import { descriptions, type Module } from "./navigation";
 import { Badge, Empty, Field, Modal, Table } from "./ui";
 import { downloadInvoicePdf, type InvoicePaper } from "@/lib/stockwell/invoice-pdf";
-import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
 import { WorkspaceSettings } from "@/components/stockwell/workspace-settings";
 import { accessibleModule, canAccessModule } from "@/lib/stockwell/workspace";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import { AdjustmentForm } from "@/components/stockwell/forms/adjustment-form";
 import { ContactForm } from "@/components/stockwell/forms/contact-form";
 import { ExpenseForm } from "@/components/stockwell/forms/expense-form";
+import { retryAttachmentQueue } from "@/lib/stockwell/attachment-client";
 import { MovementsForm } from "@/components/stockwell/forms/movements-form";
 import { PaymentForm } from "@/components/stockwell/forms/payment-form";
 import { ProductForm } from "@/components/stockwell/forms/product-form";
 import { ReturnForm } from "@/components/stockwell/forms/return-form";
+import { WalkInReview } from "@/components/stockwell/views/walk-in-review";
+import { TradeActions } from "@/components/stockwell/trade-actions";
 import { TradeForm } from "@/components/stockwell/forms/trade-form";
 import { InvoicePreview } from "@/components/stockwell/invoice-preview";
 import { RecordFilters } from "@/components/stockwell/record-filters";
+import { AccountForm } from "@/components/stockwell/forms/account-form";
 import { AccountHeadsView } from "@/components/stockwell/views/account-heads-view";
 import { ContactsView } from "@/components/stockwell/views/contacts-view";
 import { DashboardView } from "@/components/stockwell/views/dashboard-view";
@@ -66,6 +71,7 @@ export function WorkspaceApp() {
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [requestedModule, setModule] = useState<Module>("Dashboard");
+  const [routeReady, setRouteReady] = useState(false);
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -100,11 +106,49 @@ export function WorkspaceApp() {
   const scanInput = useRef<HTMLInputElement>(null);
   const savedRaw = useRef<string | null>(null);
   useEffect(() => {
+    const hash = window.location.hash.slice(1);
+    const savedModule = (Object.keys(descriptions) as Module[]).find(
+      (name) => name.toLowerCase().replaceAll(" ", "-") === hash,
+    );
+    if (savedModule) setModule(savedModule);
+    setRouteReady(true);
+  }, []);
+  useEffect(() => {
+    if (!routeReady) return;
+    const nextHash = requestedModule === "Dashboard"
+      ? ""
+      : `#${requestedModule.toLowerCase().replaceAll(" ", "-")}`;
+    if (window.location.hash !== nextHash)
+      window.history.replaceState(null, "", `${window.location.pathname}${nextHash}`);
+  }, [requestedModule, routeReady]);
+  useEffect(() => {
     if (workspace.cache) {
       setS(workspace.cache.workspace.store);
       setReady(true);
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);
+  useEffect(() => {
+    const retry = async () => {
+      if (!navigator.onLine || !workspace.cache) return;
+      const completed = await retryAttachmentQueue();
+      if (!completed.length) return;
+      let next = workspace.cache.workspace.store;
+      for (const item of completed) {
+        const key = item.recordType === "expense" ? "expenses" : "purchases";
+        next = { ...next, [key]: next[key].map((record: any) => record.id === item.recordId ? { ...record, attachments: (record.attachments || []).map((a: any) => a.id === item.pendingId ? item : a) } : record) };
+      }
+      workspace.commit(next, completed[0].recordType === "expense" ? "Expenses" : "Purchases", "Offline attachments uploaded.");
+      setS(next);
+    };
+    window.addEventListener("online", retry);
+    void retry();
+    return () => window.removeEventListener("online", retry);
+  }, [workspace.cache]);
+  useEffect(() => {
+    if (!invoice) return;
+    const latest = [...s.invoices, ...s.purchases].find(t => t.id === invoice.id);
+    if (latest && JSON.stringify(latest) !== JSON.stringify(invoice)) setInvoice(latest);
+  }, [s, invoice?.id]);
   const account = workspace.cache?.workspace;
   const canAccess = (name: string) => !!account && canAccessModule(account.member, name);
   const module = (account ? accessibleModule(account.member, requestedModule) : "Dashboard") as Module;
@@ -169,11 +213,11 @@ export function WorkspaceApp() {
       setScan("");
     }
   }
-  function submit(e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) {
+  async function submit(e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) {
     e.preventDefault();
     setError("");
     try {
-      fn(new FormData(e.currentTarget));
+      await fn(new FormData(e.currentTarget));
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not save this record.");
     }
@@ -189,11 +233,11 @@ export function WorkspaceApp() {
     "Walk-in customer";
   const paymentStatus = (trade: Trade) => getPaymentStatus(s, trade);
   const filters = { query, from, to, status, paymentMethod };
-  const invoices = filterTrades(s, s.invoices, filters);
+  const invoices = filterTrades(s, s.invoices, filters).filter(t => module !== "Sales" || isPosted(t));
   const purchases = filterTrades(s, s.purchases, filters, true);
   const accounting = financialRows(s);
   const cash = accounting.reduce((n, r) => n + r.cash, 0);
-  const bank = accounting.reduce((n, r) => n + r.bank, 0);
+  const bank = round((s.financialAccounts || []).reduce((n, a) => n + bankStatement(s, a).closing, 0) + accounting.filter(r => !r.financialAccountId).reduce((n, r) => n + r.bank, 0));
   const receivables = s.invoices.reduce(
     (n, t) => n + Math.max(balance(s, t), 0),
     0,
@@ -294,11 +338,12 @@ export function WorkspaceApp() {
       t.contactId ? cName(t.contactId, supplier) : [t.walkInName, t.walkInCompany].filter(Boolean).join(" · ") || "Walk-in customer",
       `${t.lines.reduce((n, l) => n + l.qty, 0)} units`,
       money(total(t)),
-      <Badge tone={balance(s, t) === 0 ? "green" : "amber"}>
+      <Badge tone={t.status === "draft" ? "amber" : t.status === "void" ? "" : balance(s, t) === 0 ? "green" : "amber"}>
         {paymentStatus(t)}
       </Badge>,
       money(paid(s, t)),
       money(balance(s, t)),
+      <div className="journal-register-actions"><TradeActions s={s} trade={t} kind={supplier ? "Purchase" : "Sale"} actor={account!.member} commit={(next, message) => { workspace.commit(next, supplier ? "Purchases" : "Billing", message); setS(next); setNotice(message); }} />
       <button
         className="icon-button"
         aria-label={`View ${t.number}`}
@@ -308,7 +353,7 @@ export function WorkspaceApp() {
         }}
       >
         <ChevronRight size={18} />
-      </button>,
+      </button></div>,
     ]);
   const basicHeaders = [
     "Invoice",
@@ -328,18 +373,19 @@ export function WorkspaceApp() {
   useEffect(() => {
     setPdfError("");
   }, [invoice?.id, paper]);
-  const start = new Date();
-  if (dashboardPeriod === "This month") start.setDate(1);
+  const start = new Date(`${today()}T12:00:00Z`);
+  if (dashboardPeriod === "This month") start.setUTCDate(1);
   if (dashboardPeriod === "This week")
-    start.setDate(start.getDate() - ((start.getDay() + 6) % 7));
+    start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
   const dashboardFrom =
-    dashboardPeriod === "All time" ? "" : start.toLocaleDateString("en-CA");
+    dashboardPeriod === "All time" ? "" : start.toISOString().slice(0, 10);
   const dashboardProfit = profit(s, dashboardFrom, today());
-  const dashboardInvoices = s.invoices.filter((t) =>
+  const dashboardInvoices = s.invoices.filter(isPosted).filter((t) =>
     periodMatch(t.date, dashboardFrom, today()),
   );
   async function saveInvoicePdf() {
     if (!invoice || pdfBusy) return;
+    if (!isPosted(invoice)) { setPdfError("Post the bill before issuing an invoice PDF."); return; }
     setPdfBusy(true);
     setPdfError("");
     try {
@@ -399,13 +445,12 @@ export function WorkspaceApp() {
           className={`workspace ${module === "Dashboard" ? "dashboard-workspace" : ""}`}
         >
           <main>
-            {account.member.role === "owner" && workspace.cache && (
-              <WorkspaceBackup key={account.id} cache={workspace.cache} settings={module === "Settings"} />
-            )}
+            
             {module === "Settings" && account.member.role === "owner" ? (
               <WorkspaceSettings
                 workspace={account}
                 action={workspace.action}
+                cache={workspace.cache!}
                 store={s}
                 commitStore={(next) => {
                   workspace.commit(next, "Accounts Heads", "Payment accounts updated.");
@@ -458,7 +503,7 @@ export function WorkspaceApp() {
                           <Plus size={17} /> New bill
                         </button>
                       )}
-                      {action && (
+                      {action && (module !== "Accounts Heads" || account.member.role === "owner") && (
                         <button
                           className="primary"
                           disabled={!!storageError}
@@ -547,6 +592,7 @@ export function WorkspaceApp() {
                           setEditProduct={setEditProduct}
                         />
                       )}
+                      {module === "Billing" && <WalkInReview s={s} actor={account.member} commit={commit} />}
                       {(module === "Purchases" || module === "Billing") && (
                         <TradeHistoryView
                           module={module}
@@ -569,6 +615,8 @@ export function WorkspaceApp() {
                       )}
                       {module === "Accounts Heads" && (
                         <AccountHeadsView
+                          actor={account.member}
+                          commit={commit}
                           s={s}
                           matches={matches}
                           accounting={accounting}
@@ -581,10 +629,13 @@ export function WorkspaceApp() {
                           inRange={inRange}
                           matches={matches}
                           open={open}
+                          owner={account.member.role === "owner"}
+                          commit={commit}
                         />
                       )}
                       {module === "Payments" && (
                         <PaymentsView
+                          actor={account.member}
                           receivables={receivables}
                           payables={payables}
                           cash={cash}
@@ -619,6 +670,8 @@ export function WorkspaceApp() {
                       )}
                       {module === "Reports" && (
                         <ReportsView
+                          actor={account.member}
+                          commit={commit}
                           report={report}
                           setReport={setReport}
                           setReportContact={setReportContact}
@@ -670,7 +723,8 @@ export function WorkspaceApp() {
               setModal={setModal}
             />
           )}
-          {["Category", "Expense category", "Head"].includes(modal) && (
+          {modal === "Head" && <AccountForm s={s} commit={commit} />}
+          {["Category", "Expense category"].includes(modal) && (
             <>
               <div className="tag-list">
                 {(modal === "Category"
@@ -730,6 +784,7 @@ export function WorkspaceApp() {
               submit={submit}
               editContact={editContact}
               text={text}
+              num={num}
               module={module}
               commit={commit}
               s={s}
@@ -762,6 +817,8 @@ export function WorkspaceApp() {
               billTotal={billTotal}
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
+              canAddCustomer={canAccess("Customers")}
+              canChangeHead={account.member.role === "owner"}
               addSupplier={(supplier) => {
                 if (storageError) throw new Error(storageError);
                 const next = { ...s, suppliers: [...s.suppliers, supplier] };
@@ -770,10 +827,19 @@ export function WorkspaceApp() {
                 setNotice("Supplier saved and selected.");
                 setError("");
               }}
+              addCustomer={(customer) => {
+                if (storageError) throw new Error(storageError);
+                const next = { ...s, customers: [...s.customers, customer] };
+                workspace.commit(next, "Customers", "Customer added from billing form.");
+                setS(next);
+                setNotice("Customer saved and selected.");
+                setError("");
+              }}
             />
           )}
           {modal === "Expense" && (
             <ExpenseForm
+              actor={account.member}
               submit={submit}
               num={num}
               commit={commit}

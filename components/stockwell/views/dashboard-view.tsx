@@ -6,6 +6,7 @@ import { Badge, Empty, Stat, Table } from "@/components/stockwell/ui";
 import {
   balance,
   money,
+  isPosted,
   periodMatch,
   stock,
   today,
@@ -47,7 +48,7 @@ type Props = {
   setLines: Dispatch<SetStateAction<Line[]>>;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
   cName: (id: string, supplier?: boolean) => string;
-  paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid";
+  paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid" | "Draft" | "Voided";
   cash: number;
   bank: number;
   receivables: number;
@@ -131,7 +132,7 @@ export function DashboardView({
               <dt>Purchases</dt>
               <dd>
                 {
-                  s.purchases.filter((t) =>
+                  s.purchases.filter(isPosted).filter((t) =>
                     periodMatch(t.date, dashboardFrom, today()),
                   ).length
                 }
@@ -141,7 +142,7 @@ export function DashboardView({
               <dt>Billing today</dt>
               <dd>
                 {money(
-                  s.invoices
+                  s.invoices.filter(isPosted)
                     .filter((t) => t.date === today())
                     .reduce((n, t) => n + total(t), 0),
                 )}
@@ -260,7 +261,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Invoice", "Customer", "Total", "Payment"]}
-            rows={s.invoices
+            rows={s.invoices.filter(isPosted)
               .slice(-5)
               .reverse()
               .map((t) => [
@@ -345,7 +346,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Reference", "Supplier", "Amount"]}
-            rows={s.purchases
+            rows={s.purchases.filter(isPosted)
               .slice(-4)
               .reverse()
               .map((t) => [
@@ -364,7 +365,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Date", "Product", "Quantity"]}
-            rows={s.invoices
+            rows={s.invoices.filter(isPosted)
               .slice(-4)
               .reverse()
               .flatMap((t) =>
