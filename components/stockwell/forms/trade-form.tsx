@@ -100,6 +100,15 @@ export function TradeForm({
   const [customerError, setCustomerError] = useState("");
   const [customerKind, setCustomerKind] = useState<"Walk-in customer" | "Company">("Walk-in customer");
   const [customer, setCustomer] = useState({ name: "", company: "", phone: "", mobile: "", address: "", email: "" });
+  const contacts = modal === "Purchase" ? s.suppliers : s.customers;
+  const contactSearch = contactQuery.trim().toLowerCase();
+  const matchingContacts = contactSearch
+    ? contacts.filter((c) => {
+        const searchable = searchableContactText(c);
+        const queryDigits = contactSearch.replace(/\D/g, "");
+        return searchable.text.includes(contactSearch) || (!!queryDigits && searchable.digits.includes(queryDigits));
+      })
+    : [];
   useEffect(() => setPaidAmount(billTotal), [billTotal]);
   function saveSupplier() {
     try {
@@ -182,7 +191,6 @@ export function TradeForm({
         <div className="bill-customer-picker">
           <Field label={modal === "Purchase" ? "Supplier" : "Customer (walk-in or company)"}>
           <div>
-          <div>
           <input
             aria-label={modal === "Purchase" ? "Search suppliers" : "Search customers"}
             placeholder={modal === "Purchase" ? "Search suppliers…" : "Search customers…"}
@@ -190,23 +198,17 @@ export function TradeForm({
             onChange={(e) => setContactQuery(e.target.value)}
           />
           <input type="hidden" name="contact" value={contact} />
-          <div className="contact-results" role="listbox" aria-label={modal === "Purchase" ? "Matching suppliers" : "Matching customers"}>
-            {(modal === "Purchase" ? s.suppliers : s.customers)
-              .filter((c) => {
-                const query = contactQuery.trim().toLowerCase();
-                if (!query) return true;
-                const searchable = searchableContactText(c);
-                const queryDigits = query.replace(/\D/g, "");
-                return searchable.text.includes(query) || (!!queryDigits && searchable.digits.includes(queryDigits));
-              })
+          {contactSearch && <div className="contact-results" role="listbox" aria-label={modal === "Purchase" ? "Matching suppliers" : "Matching customers"}>
+            {matchingContacts
               .map((c) => (
-              <button type="button" role="option" aria-selected={contact === c.id} className={contact === c.id ? "contact-result selected" : "contact-result"} key={c.id} onClick={() => setContact(c.id)}>
+                <button type="button" role="option" aria-selected={contact === c.id} className={contact === c.id ? "contact-result selected" : "contact-result"} key={c.id} onClick={() => { setContact(c.id); setContactQuery(""); }}>
                 {modal === "Purchase" ? c.name : [c.name, c.company, c.phone || c.mobile].filter(Boolean).join(" · ")}
               </button>
-            ))}
-          </div>
-          </div>
-          <p className="field-help">Search by name, company, phone, mobile, or email. Select a result below or add a new customer.</p>
+              ))}
+            {matchingContacts.length === 0 && <p className="field-help">No matching {modal === "Purchase" ? "suppliers" : "customers"}.</p>}
+          </div>}
+          {contact && !contactSearch && <p className="selected-contact">Selected: <b>{contacts.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.company}</b> <button type="button" className="link" onClick={() => setContact("")}>Clear</button></p>}
+          <p className="field-help">Type a name, company, phone, mobile, or email to search. Select a result below.</p>
           </div>
           </Field>
           {modal === "Bill" && canAddCustomer && !addingCustomer && (
