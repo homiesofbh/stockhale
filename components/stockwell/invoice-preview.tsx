@@ -76,7 +76,7 @@ export function InvoicePreview({
           {pdfError}
         </div>
       )}
-      <style>{`@media print { @page { size: ${paper === "A4" ? "A4" : paper + " 297mm"}; margin: ${paper === "A4" ? "12mm" : "2mm"}; } }`}</style>
+      <style>{`@media print { @page { size: ${paper === "A4" ? "A4" : paper + " 297mm"}; margin: 0; } }`}</style>
       <article
         className={`print-sheet ${paper === "A4" ? "a4" : "receipt"}`}
         style={paper === "A4" ? {} : { width: paper }}
@@ -172,7 +172,6 @@ export function InvoicePreview({
         </div>
         <div className="invoice-thanks">
           Thank you for your business.
-          <small>Generated with StockHale</small>
         </div>
       </article>
     </div>

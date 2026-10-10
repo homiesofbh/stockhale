@@ -2318,7 +2318,7 @@ footer span:last-child {
     background: white;
   }
   .print-sheet {
-    padding: 0 !important;
+    padding: 12mm !important;
     margin: 0 auto !important;
     box-shadow: none !important;
     min-height: 0 !important;
@@ -2327,6 +2327,9 @@ footer span:last-child {
   .print-sheet.a4,
   .print-sheet.receipt {
     width: 100% !important;
+  }
+  .print-sheet.receipt {
+    padding: 2mm !important;
   }
   tr,
   .invoice-totals,

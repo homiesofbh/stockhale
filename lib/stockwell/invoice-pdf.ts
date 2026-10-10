@@ -333,10 +333,6 @@ export function createInvoicePdf(
   doc.text("Thank you for your business.", width / 2, y + 3, {
     align: "center",
   });
-  y += 5;
-  setFont(receipt ? 7 : 8);
-  doc.setTextColor(126, 121, 141);
-  doc.text("Generated with StockHale", width / 2, y + 3, { align: "center" });
   y += 8;
   documentPages.push({ height: currentHeight, used: y });
   for (let page = 1; page <= doc.getNumberOfPages(); page++) {
