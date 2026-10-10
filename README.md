@@ -79,5 +79,3 @@ when it regains focus. The browser controls the final save location and may ask 
 the app cannot verify a completed save or run downloads when closed. If a download is
 cancelled or blocked, retry from Settings. These workbooks are downloadable copies; there
 is currently no Excel restore/import flow.
-
-
