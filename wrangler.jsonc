@@ -33,6 +33,7 @@
   "vars": {
     "BETTER_AUTH_URL": "https://stockhale.app",
     "DISABLE_PUBLIC_SIGNUP": "false",
+    "RESEND_FROM": "StockHale <alerts@stockhale.app>",
     "STOCKHALE_RUNTIME": "cloudflare"
   },
   "observability": {
