@@ -9,6 +9,42 @@ function publicSignupDisabled() {
   return process.env.DISABLE_PUBLIC_SIGNUP === "true";
 }
 
+function passwordResetDeliveryConfigured() {
+  return !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM);
+}
+
+async function sendPasswordResetEmail({
+  email,
+  token,
+}: {
+  email: string;
+  token: string;
+}) {
+  const baseURL = process.env.BETTER_AUTH_URL || process.env.STOCKWELL_ORIGIN;
+  if (!baseURL || !passwordResetDeliveryConfigured())
+    throw new Error("Password reset email is not configured.");
+  const resetURL = new URL("/reset-password", baseURL);
+  resetURL.searchParams.set("token", token);
+  const url = resetURL.href;
+  const htmlURL = url.replace(/&/g, "&amp;").replace(/"/g, "&quot;");
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: process.env.RESEND_FROM,
+      to: [email],
+      subject: "Reset your StockHale password",
+      text: `Reset your StockHale password: ${url}\n\nThis link expires in one hour and can only be used once. If you did not request a reset, you can safely ignore this email.`,
+      html: `<p>Reset your StockHale password:</p><p><a href="${htmlURL}">Reset password</a></p><p>This link expires in one hour and can only be used once. If you did not request a reset, you can safely ignore this email.</p>`,
+    }),
+    signal: AbortSignal.timeout(8000),
+  });
+  if (!response.ok) throw new Error("Password reset email could not be sent.");
+}
+
 function createAuth(database: BetterAuthOptions["database"], allowTeamSignup = false) {
   const secret = process.env.BETTER_AUTH_SECRET;
   const baseURL = process.env.BETTER_AUTH_URL || process.env.STOCKWELL_ORIGIN;
@@ -41,6 +77,14 @@ function createAuth(database: BetterAuthOptions["database"], allowTeamSignup = f
       disableSignUp: publicSignupDisabled() && !allowTeamSignup,
       minPasswordLength: 12,
       maxPasswordLength: 128,
+      revokeSessionsOnPasswordReset: true,
+      sendResetPassword: async ({ user, token }) => {
+        // Do not hold the response open for a mail provider. Better Auth has
+        // already created the short-lived, single-use verification token.
+        void sendPasswordResetEmail({ email: user.email, token }).catch(
+          (error) => console.error("Password reset email failed:", error),
+        );
+      },
       password: {
         hash: hashPassword,
         // Preserve passwords when importing the previous SQLite database.
@@ -62,6 +106,8 @@ function createAuth(database: BetterAuthOptions["database"], allowTeamSignup = f
     },
   });
 }
+
+export { passwordResetDeliveryConfigured };
 
 let auth: ReturnType<typeof createAuth> | undefined;
 export function getAuth(client?: PoolClient, allowTeamSignup = false) {

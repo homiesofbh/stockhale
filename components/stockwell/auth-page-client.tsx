@@ -199,6 +199,11 @@ export function AuthPageClient({
             ) : null}
           </p>
         )}
+        {!signup && (
+          <p>
+            <a href="/forgot-password">Forgot your password?</a>
+          </p>
+        )}
         {!team && !invite && (
           <p>
             <a href="/team-sign-up">Team member signup</a>

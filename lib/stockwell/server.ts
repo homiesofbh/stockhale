@@ -4,7 +4,7 @@ import { validateBanks } from "./bank-vouchers";
 import { validateAccounts } from "./accounts";
 import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
-import { getAuth } from "./auth";
+import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
 import { emptyStore, normalizeStore } from "./model";
 import { modules, verifyChange, type Member } from "./workspace";
@@ -222,6 +222,28 @@ export async function authenticate(body: Row, request: Request) {
     await query("DELETE FROM limits WHERE key=$1", [key]);
     return { user, headers: result.headers };
   });
+}
+export async function requestPasswordReset(body: Row, request: Request) {
+  if (!passwordResetDeliveryConfigured())
+    throw Object.assign(
+      new Error("Password reset is unavailable until RESEND_API_KEY and RESEND_FROM are configured."),
+      { status: 503 },
+    );
+  await getAuth().api.requestPasswordReset({
+    body: { email: email(body.email) },
+    headers: request.headers,
+  });
+  // Do not reveal whether this address belongs to an account.
+  return { ok: true };
+}
+export async function resetPassword(body: Row, request: Request) {
+  if (typeof body.password !== "string" || body.password.length > 128)
+    throw new Error("Enter a password of at most 128 characters.");
+  await getAuth().api.resetPassword({
+    body: { newPassword: body.password, token: required(body.token, 500) },
+    headers: request.headers,
+  });
+  return { ok: true };
 }
 export async function mutate(user: Row, body: Row) {
   return transaction(async () => {

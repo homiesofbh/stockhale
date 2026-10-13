@@ -1,6 +1,8 @@
 import {
   authorize,
   authenticate,
+  requestPasswordReset,
+  resetPassword,
   snapshot,
   mutate,
   logout,
@@ -67,6 +69,10 @@ export async function POST(request: Request) {
     if (body?.action !== "restore" && text.length > 8_000_000) throw new Error("Request too large.");
     if (!body || typeof body !== "object" || Array.isArray(body))
       throw new Error("Invalid request body.");
+    if (body.action === "request-password-reset")
+      return Response.json(await requestPasswordReset(body, request), { headers });
+    if (body.action === "reset-password")
+      return Response.json(await resetPassword(body, request), { headers });
     if (["signin", "signup", "team-signup"].includes(body.action)) {
       const { user, headers: authHeaders } = await authenticate(body, request);
       return Response.json(await snapshot(user), {

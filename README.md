@@ -59,7 +59,11 @@ the ignored `.dev.vars` file, using an isolated Neon development branch. Run
 Use `.env.local` and `pnpm dev` for ordinary Next.js development.
 Run `pnpm cf-typegen` to generate Cloudflare binding types.
 
-Optional mail delivery needs `RESEND_API_KEY` and `RESEND_FROM` Worker secrets.
+Password reset and optional activity-email delivery need `RESEND_API_KEY` and
+`RESEND_FROM` Worker secrets. `RESEND_FROM` must be a sender on a
+Resend-verified domain. The sign-in page exposes **Forgot your password?** once
+these are configured; reset links are single-use, expire after one hour, and
+invalidate existing sessions after a successful reset.
 Workers drain the durable email outbox through API activity instead of a persistent timer.
 The configuration alone does not provision Neon, apply migrations, create the R2
 bucket, configure registrar DNS, or deploy the Worker.
