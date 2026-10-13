@@ -5,6 +5,18 @@ import { getCloudflareContext } from "@opennextjs/cloudflare";
 const transactions = new AsyncLocalStorage<PoolClient>();
 const scope = new AsyncLocalStorage<{ pool: Pool }>();
 
+let standalone: Pool | undefined;
+
+function inWorker() {
+  try {
+    getCloudflareContext();
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+
 function connectionString(): string | undefined {
   try {
     const env = getCloudflareContext().env as unknown as {
@@ -38,10 +50,33 @@ export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
   }
 }
 
-export function db() {
+export function db(): Pool {
   const s = scope.getStore();
-  if (!s) throw new Error("db() called outside withDatabase().");
-  return s.pool;
+  if (s) return s.pool;
+  // Scripts, tests and local tooling only. Never reuse a global pool on Workers.
+  if (inWorker())
+    throw new Error("db() called outside withDatabase().");
+  if (!standalone) {
+    const cs = process.env.DATABASE_URL;
+    if (!cs)
+      throw Object.assign(
+        new Error("Database is not configured. Set DATABASE_URL and run pnpm db:migrate."),
+        { status: 503 },
+      );
+    standalone = new Pool({
+      connectionString: cs,
+      max: 5,
+      idleTimeoutMillis: 10_000,
+      allowExitOnIdle: true,
+    });
+    standalone.on("error", () => console.error("An idle database connection failed."));
+  }
+  return standalone;
+}
+
+export async function closeDatabase() {
+  await standalone?.end();
+  standalone = undefined;
 }
 
 export async function query(sql: string, args: unknown[] = []) {
