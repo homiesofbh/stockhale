@@ -1,32 +1,47 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient } from "pg";
-import { attachDatabasePool } from "@vercel/functions";
+import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const transactions = new AsyncLocalStorage<PoolClient>();
-let pool: Pool | undefined;
+const scope = new AsyncLocalStorage<{ pool: Pool }>();
+
+function connectionString(): string | undefined {
+  try {
+    const env = getCloudflareContext().env as unknown as {
+      HYPERDRIVE?: { connectionString: string };
+    };
+    if (env.HYPERDRIVE) return env.HYPERDRIVE.connectionString;
+  } catch {
+    // not running under the Cloudflare runtime (local dev)
+  }
+  return process.env.DATABASE_URL;
+}
+
+export function defer(p: Promise<unknown>) {
+  try {
+    getCloudflareContext().ctx.waitUntil(p);
+  } catch {
+    // local dev: the promise just runs unattended
+  }
+}
+
+export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
+  const cs = connectionString();
+  if (!cs)
+    throw Object.assign(new Error("Database is not configured."), { status: 503 });
+  const pool = new Pool({ connectionString: cs, max: 2, connectionTimeoutMillis: 8000 });
+  pool.on("error", () => console.error("A database connection failed."));
+  try {
+    return await scope.run({ pool }, fn);
+  } finally {
+    defer(pool.end().catch(() => {}));
+  }
+}
 
 export function db() {
-  if (!pool) {
-    if (!process.env.DATABASE_URL)
-      throw Object.assign(
-        new Error(
-          "Database is not configured. Set DATABASE_URL and run pnpm db:migrate.",
-        ),
-        { status: 503 },
-      );
-    pool = new Pool({
-      connectionString: process.env.DATABASE_URL,
-      max: 5,
-      idleTimeoutMillis: 10_000,
-      connectionTimeoutMillis: 15_000,
-      allowExitOnIdle: true,
-    });
-    pool.on("error", () =>
-      console.error("An idle database connection failed."),
-    );
-    if (process.env.VERCEL) attachDatabasePool(pool);
-  }
-  return pool;
+  const s = scope.getStore();
+  if (!s) throw new Error("db() called outside withDatabase().");
+  return s.pool;
 }
 
 export async function query(sql: string, args: unknown[] = []) {
@@ -46,9 +61,4 @@ export async function transaction<T>(fn: (client: PoolClient) => Promise<T>) {
   } finally {
     client.release();
   }
-}
-
-export async function closeDatabase() {
-  await pool?.end();
-  pool = undefined;
 }

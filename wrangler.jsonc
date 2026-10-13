@@ -1,42 +1,48 @@
 {
-  "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "stockhale",
-  "main": ".open-next/worker.js",
-  "compatibility_date": "2026-10-08",
-  "compatibility_flags": [
-    "nodejs_compat",
-    "global_fetch_strictly_public"
-  ],
-  "assets": {
-    "directory": ".open-next/assets",
-    "binding": "ASSETS"
-  },
-  "services": [
-    {
-      "binding": "WORKER_SELF_REFERENCE",
-      "service": "stockhale"
-    }
-  ],
-  "r2_buckets": [
-    {
-      "binding": "NEXT_INC_CACHE_R2_BUCKET",
-      "bucket_name": "stockhale-opennext-cache"
-    }
-  ],
-  "routes": [
-    {
-      "pattern": "stockhale.app",
-      "zone_name": "stockhale.app",
-      "custom_domain": true
-    }
-  ],
-  "vars": {
-    "BETTER_AUTH_URL": "https://stockhale.app",
-    "DISABLE_PUBLIC_SIGNUP": "false",
-    "RESEND_FROM": "StockHale <alerts@stockhale.app>",
-    "STOCKHALE_RUNTIME": "cloudflare"
-  },
-  "observability": {
-    "enabled": true
-  }
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "stockhale",
+	"main": ".open-next/worker.js",
+	"compatibility_date": "2026-10-08",
+	"compatibility_flags": [
+		"nodejs_compat",
+		"global_fetch_strictly_public"
+	],
+	"assets": {
+		"directory": ".open-next/assets",
+		"binding": "ASSETS"
+	},
+	"services": [
+		{
+			"binding": "WORKER_SELF_REFERENCE",
+			"service": "stockhale"
+		}
+	],
+	"r2_buckets": [
+		{
+			"binding": "NEXT_INC_CACHE_R2_BUCKET",
+			"bucket_name": "stockhale-opennext-cache"
+		}
+	],
+	"routes": [
+		{
+			"pattern": "stockhale.app",
+			"zone_name": "stockhale.app",
+			"custom_domain": true
+		}
+	],
+	"vars": {
+		"BETTER_AUTH_URL": "https://stockhale.app",
+		"DISABLE_PUBLIC_SIGNUP": "false",
+		"RESEND_FROM": "StockHale <alerts@stockhale.app>",
+		"STOCKHALE_RUNTIME": "cloudflare"
+	},
+	"observability": {
+		"enabled": true
+	},
+	"hyperdrive": [
+		{
+			"binding": "HYPERDRIVE",
+			"id": "78af408867d74d1cabb873df65b217c2"
+		}
+	]
 }

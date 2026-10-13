@@ -460,55 +460,66 @@ export async function logout(request: Request) {
 }
 let delivering = false;
 export async function deliverEmails() {
-  if (delivering || !process.env.RESEND_API_KEY || !process.env.RESEND_FROM)
+  if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM)
     return;
-  delivering = true;
-  try {
-    for (const e of await all(
-      `WITH due AS (
-         SELECT id FROM events WHERE "emailStatus" <> $1 AND "nextAttempt" <= $2 AND action <> 'Pre-restore safety snapshot'
-         ORDER BY "receivedAt" LIMIT 10 FOR UPDATE SKIP LOCKED
-       ), claimed AS (
-         UPDATE events SET "nextAttempt"=$3 FROM due WHERE events.id=due.id RETURNING events.*
-       )
-       SELECT claimed.*,users.email,workspaces.name FROM claimed
-       JOIN workspaces ON claimed.workspace=workspaces.id JOIN users ON workspaces.owner=users.id`,
-      "sent",
-      Date.now(),
-      Date.now() + 120000,
-    )) {
-      try {
-        const response = await fetch("https://api.resend.com/emails", {
-          method: "POST",
-          headers: {
-            Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
-            "Content-Type": "application/json",
-            "Idempotency-Key": `stockwell/${e.id}`,
-          },
-          body: JSON.stringify({
-            from: process.env.RESEND_FROM,
-            to: [e.email],
-            subject: `${e.name}: ${e.action}`,
-            text: `${e.actor}\n${e.module}: ${e.action}\nRecords: ${e.records}\nAction time: ${e.occurredAt}\nSynced: ${e.receivedAt}`,
-          }),
-          signal: AbortSignal.timeout(8000),
-        });
-        if (!response.ok) throw new Error("Email provider rejected delivery");
-        await query("UPDATE events SET \"emailStatus\"='sent' WHERE id=$1", [
+
+  for (const e of await all(
+    `WITH due AS (
+       SELECT id FROM events
+       WHERE "emailStatus" <> $1
+         AND "nextAttempt" <= $2
+         AND action <> 'Pre-restore safety snapshot'
+       ORDER BY "receivedAt"
+       LIMIT 10
+       FOR UPDATE SKIP LOCKED
+     ), claimed AS (
+       UPDATE events
+       SET "nextAttempt"=$3
+       FROM due
+       WHERE events.id=due.id
+       RETURNING events.*
+     )
+     SELECT claimed.*, users.email, workspaces.name
+     FROM claimed
+     JOIN workspaces ON claimed.workspace=workspaces.id
+     JOIN users ON workspaces.owner=users.id`,
+    "sent",
+    Date.now(),
+    Date.now() + 120000,
+  )) {
+    try {
+      const response = await fetch("https://api.resend.com/emails", {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+          "Content-Type": "application/json",
+          "Idempotency-Key": `stockwell/${e.id}`,
+        },
+        body: JSON.stringify({
+          from: process.env.RESEND_FROM,
+          to: [e.email],
+          subject: `${e.name}: ${e.action}`,
+          text: `${e.actor}\n${e.module}: ${e.action}\nRecords: ${e.records}\nAction time: ${e.occurredAt}\nSynced: ${e.receivedAt}`,
+        }),
+        signal: AbortSignal.timeout(8000),
+      });
+
+      if (!response.ok)
+        throw new Error("Email provider rejected delivery");
+
+      await query(
+        'UPDATE events SET "emailStatus"=\'sent\' WHERE id=$1',
+        [e.id],
+      );
+    } catch {
+      await query(
+        'UPDATE events SET "emailStatus"=\'retrying\',attempts=attempts+1,"nextAttempt"=$1 WHERE id=$2',
+        [
+          Date.now() +
+            Math.min(3600000, 30000 * 2 ** Math.min(e.attempts, 7)),
           e.id,
-        ]);
-      } catch {
-        await query(
-          'UPDATE events SET "emailStatus"=\'retrying\',attempts=attempts+1,"nextAttempt"=$1 WHERE id=$2',
-          [
-            Date.now() +
-              Math.min(3600000, 30000 * 2 ** Math.min(e.attempts, 7)),
-            e.id,
-          ],
-        );
-      }
+        ],
+      );
     }
-  } finally {
-    delivering = false;
   }
 }

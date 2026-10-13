@@ -109,9 +109,8 @@ function createAuth(database: BetterAuthOptions["database"], allowTeamSignup = f
 
 export { passwordResetDeliveryConfigured };
 
-let auth: ReturnType<typeof createAuth> | undefined;
 export function getAuth(client?: PoolClient, allowTeamSignup = false) {
-  if (!client) return (auth ??= createAuth(db()));
+  if (!client) return createAuth(db());
   // Account, credential, session and workspace creation share one transaction.
   // The outer transaction owns this connection and its release/commit lifecycle.
   const scopedClient = new Proxy(client, {
