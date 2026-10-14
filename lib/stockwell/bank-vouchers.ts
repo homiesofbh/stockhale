@@ -46,7 +46,7 @@ export function validateBanks(s: Store, before?: Store) {
     check(Number.isFinite(v.amount) && v.amount > 0 && Number.isSafeInteger(Math.round(v.amount * 100)) && round(v.amount) === v.amount, "Amount must be positive with at most two decimals.");
     check(Number.isFinite(v.createdAt) && v.createdAt > 0 && typeof v.reference === "string" && v.reference.length <= 200 && typeof v.notes === "string" && v.notes.length <= 2000, "Invalid voucher details.");
     const bank = banks.find(a => a.id === v.accountId);
-    check(!!bank, "Select an existing bank or wallet.");
+    check(!!bank, "Select an existing bank or wallet; Link it in Settings.");
     const destination = banks.find(a => a.id === v.toAccountId);
     if (v.kind === "Transfer") check(!!destination && destination.id !== bank!.id && v.counterAccountId === "", "Transfers need two different accounts.");
     else check(v.toAccountId === "" && !!chart.find(a => a.id === v.counterAccountId) && !banks.some(a => a.ledgerAccountId === v.counterAccountId), "Select a counter-account; use Transfer for another bank or wallet.");

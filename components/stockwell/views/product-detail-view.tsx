@@ -1,0 +1,25 @@
+"use client";
+import { Badge, Stat, Table } from "@/components/stockwell/ui";
+import { isPosted, money, stock, type Product, type Store, type Trade } from "@/lib/stockwell/model";
+import { ArrowDownLeft, ArrowUpRight, Package, ReceiptText } from "lucide-react";
+
+type Props = { s: Store; product: Product };
+function contactName(s: Store, trade: Trade, kind: "purchase" | "sale") {
+  const collection = kind === "purchase" ? s.suppliers : s.customers;
+  return collection.find((contact) => contact.id === trade.contactId)?.name ||
+    (kind === "sale" ? trade.walkInCompany || trade.walkInName || "Walk-in customer" : "Supplier not assigned");
+}
+export function ProductDetailView({ s, product }: Props) {
+  const currentStock = stock(s, product.id);
+  const movements = s.movements.filter((m) => m.productId === product.id).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const purchases = s.purchases.filter((t) => isPosted(t) && t.lines.some((l) => l.productId === product.id)).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const sales = s.invoices.filter((t) => isPosted(t) && t.lines.some((l) => l.productId === product.id)).slice().sort((a, b) => b.date.localeCompare(a.date));
+  const lineFor = (trade: Trade) => trade.lines.find((l) => l.productId === product.id)!;
+  return <div className="product-detail">
+    <section className="product-detail-hero"><div className="product-detail-title"><span className="product-icon"><Package size={20} /></span><div><span className="eyebrow">Inventory item</span><h3>{product.name}</h3><p>{product.sku}{product.barcode ? ` · ${product.barcode}` : ""}</p></div></div><Badge tone={currentStock <= product.low ? "amber" : "green"}>{currentStock <= product.low ? "Low stock" : "In stock"}</Badge></section>
+    <div className="product-detail-stats"><Stat label="Current stock" value={`${currentStock} ${product.unit || "piece"}`} detail="Available now" accent /><Stat label="Cost price" value={money(product.cost)} detail="Current average cost" /><Stat label="Selling price" value={money(product.price)} detail="Current list price" /><Stat label="Stock value" value={money(currentStock * product.cost)} detail="At cost price" /></div>
+    <section className="product-detail-grid"><div className="product-detail-panel"><div className="section-head"><div><h3>Item details</h3><p>Attributes used to identify and search this item.</p></div></div><dl className="detail-list"><div><dt>Colour</dt><dd>{product.color || "—"}</dd></div><div><dt>GSM</dt><dd>{product.gsm ? `${product.gsm} GSM` : "—"}</dd></div><div><dt>Category</dt><dd>{product.category || "—"}</dd></div><div><dt>Packing / store / size</dt><dd>{[product.packing, product.store, product.size].filter(Boolean).join(" · ") || "—"}</dd></div><div><dt>Suppliers</dt><dd>{(product.supplierIds || []).map((id) => s.suppliers.find((supplier) => supplier.id === id)?.name).filter(Boolean).join(", ") || "—"}</dd></div><div><dt>Maximum stock</dt><dd>{product.maximum ?? "—"}</dd></div></dl></div><div className="product-detail-panel"><div className="section-head"><div><h3>Latest activity</h3><p>Most recent purchase and sale for this item.</p></div></div><div className="detail-activity"><div><ArrowDownLeft size={16} /><span>Last purchased</span><b>{purchases[0] ? `${purchases[0].date} · ${contactName(s, purchases[0], "purchase")}` : "No purchase recorded"}</b></div><div><ArrowUpRight size={16} /><span>Last sold</span><b>{sales[0] ? `${sales[0].date} · ${contactName(s, sales[0], "sale")}` : "No sale recorded"}</b></div></div></div></section>
+    <section className="product-detail-panel"><div className="section-head"><div><h3>Stock history</h3><p>Every quantity change affecting this item.</p></div></div><Table headers={["Date", "Movement", "Quantity", "Reference", "Reason"]} rows={movements.map((m) => [m.date, <span className="movement-type"><span>{m.qty > 0 ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}</span>{m.type}</span>, <Badge tone={m.qty > 0 ? "green" : "amber"}>{m.qty > 0 ? "+" : ""}{m.qty} {product.unit || "piece"}</Badge>, m.reference || "—", m.reason || "—"])} empty="No stock history for this item" /></section>
+    <section className="product-detail-grid"><div className="product-detail-panel"><div className="section-head"><div><h3>Purchasing details</h3><p>Supplier and quantity received.</p></div></div><Table headers={["Date", "Supplier", "Qty", "Cost"]} rows={purchases.map((t) => { const l = lineFor(t); return [t.date, contactName(s, t, "purchase"), `${l.qty} ${product.unit || "piece"}`, money(l.price)]; })} empty="No purchases recorded" /></div><div className="product-detail-panel"><div className="section-head"><div><h3>Sales details</h3><p>Which party received the item.</p></div></div><Table headers={["Date", "Party", "Invoice", "Qty"]} rows={sales.map((t) => { const l = lineFor(t); return [t.date, contactName(s, t, "sale"), <span className="movement-type"><ReceiptText size={14} />{t.number}</span>, `${l.qty} ${product.unit || "piece"}`]; })} empty="No sales recorded" /></div></section>
+  </div>;
+}

@@ -55,7 +55,7 @@ export function RecordFilters({
         <input
           value={query}
           onChange={(e) => setQuery(e.target.value)}
-          placeholder={`Search ${module.toLowerCase()}…`}
+          placeholder={module === "Inventory" ? "Search inventory by name, colour, GSM…" : `Search ${module.toLowerCase()}…`}
           aria-label="Search records"
         />
       </label>

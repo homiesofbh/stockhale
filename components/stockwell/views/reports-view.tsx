@@ -61,6 +61,7 @@ export function ReportsView({
                 "Receivables report",
                 "Payables report",
                 "Payment report",
+                "Partner capital report",
                 "Account aging report",
                 "Yearly summary",
                 "Trial balance",

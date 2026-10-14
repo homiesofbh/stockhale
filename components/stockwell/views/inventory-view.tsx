@@ -11,6 +11,7 @@ type Props = {
   category: string;
   status: string;
   setEditProduct: Dispatch<SetStateAction<Product | null>>;
+  selectProduct: (product: Product) => void;
 };
 export function InventoryView({
   s,
@@ -20,9 +21,13 @@ export function InventoryView({
   category,
   status,
   setEditProduct,
+  selectProduct,
 }: Props) {
+  const totalStockValue = s.products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0);
+  const totalStockUnits = s.products.reduce((total, product) => total + stock(s, product.id), 0);
   return (
     <>
+      <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>Total value of stock</h2><p>Money currently held in inventory at cost price.</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
       <div className="sub-actions">
         <span>
           {s.products.length} products{" "}
@@ -66,7 +71,7 @@ export function InventoryView({
           rows={s.products
             .filter(
               (p) =>
-                matches(p.name, p.sku, p.barcode, p.category) &&
+                matches(p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.gsm ? `${p.gsm} GSM` : "") &&
                 (category === "All" || p.category === category) &&
                 (status === "All" ||
                   (status === "Low stock"
@@ -78,7 +83,7 @@ export function InventoryView({
                 <span className="product-icon">
                   <Package size={18} />
                 </span>
-                <b>{p.name}</b>
+                <button className="product-name-button" onClick={() => selectProduct(p)} aria-label={`View details for ${p.name}`}><b>{p.name}</b></button>
               </div>,
               <>
                 {p.sku}

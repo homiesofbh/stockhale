@@ -95,6 +95,7 @@ export type PartnerEntry = {
   kind: "Contribution" | "Withdrawal";
   amount: number;
   method: string;
+  financialAccountId?: string;
   notes: string;
 };
 export type Payment = {
@@ -184,6 +185,7 @@ export type Store = {
   returns: ReturnRecord[];
   financialAccounts?: FinancialAccount[];
   units?: string[];
+  partnerNames?: string[];
   partners?: PartnerEntry[];
   crossCheques?: CrossCheque[];
 };
@@ -199,6 +201,14 @@ export const money = (n: number) =>
     currency: "PKR",
     maximumFractionDigits: 2,
   }).format(n);
+export const standardUnits = ["yard", "meter", "kg", "piece", "g", "liter", "ml", "box", "pack", "dozen"];
+export function orderedUnits(units: string[] = standardUnits) {
+  const order = new Map(standardUnits.map((unit, index) => [unit, index]));
+  return units
+    .map((unit, index) => ({ unit, index, priority: order.get(unit.trim().toLowerCase()) ?? standardUnits.length }))
+    .sort((a, b) => a.priority - b.priority || a.index - b.index)
+    .map(({ unit }) => unit);
+}
 export const emptyStore = (): Store => ({
   version: 1,
   products: [],
@@ -228,7 +238,8 @@ export const emptyStore = (): Store => ({
   expenses: [],
   returns: [],
   financialAccounts: [],
-  units: ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"],
+  units: standardUnits,
+  partnerNames: [],
   partners: [],
   crossCheques: [],
 });
@@ -248,6 +259,7 @@ export function normalizeStore(value: Store): Store {
       (account) => !["jazzcash", "easypaisa", "nayapay"].includes(account.id),
     ),
     units: value.units || defaults.units,
+    partnerNames: value.partnerNames || [],
     partners: value.partners || [],
     crossCheques: value.crossCheques || [],
   };
@@ -734,9 +746,20 @@ export function financialRows(s: Store): FinancialRow[] {
   );
   s.payments.forEach(p => {
     const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, accountId: p.financialAccountId, status: "paid" }];
+    const forwarded = p.method === "Cheque" && (s.crossCheques || []).some(c => c.sourcePaymentId === p.id);
     settlements.forEach(entry => push(entry.date, (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId)?.number || "", `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
-      p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
+      forwarded ? "Credit adjustment" : p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
       entry.amount * (p.kind === "Customer" ? 1 : -1), entry.amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId));
+  });
+  (s.partners || []).forEach(p => {
+    const contribution = p.kind === "Contribution";
+    const amount = contribution ? p.amount : -p.amount;
+    push(p.date, p.partner, `Partner ${p.kind.toLowerCase()}`, p.method === "Cash" ? "Cash" : p.method, p.method, amount, amount, "", p.financialAccountId);
+    rows.at(-1)!.debit = contribution ? p.amount : 0;
+    rows.at(-1)!.credit = contribution ? 0 : p.amount;
+    push(p.date, p.partner, `Partner ${p.kind.toLowerCase()}`, `${contribution ? "Partner capital" : "Partner drawings"} · ${p.partner}`, "Journal adjustment", -amount, 0);
+    rows.at(-1)!.debit = contribution ? 0 : p.amount;
+    rows.at(-1)!.credit = contribution ? p.amount : 0;
   });
   (s.corrections || []).forEach(c => {
     const sign = c.kind === "Sale" ? 1 : -1;

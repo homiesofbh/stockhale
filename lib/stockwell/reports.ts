@@ -104,6 +104,19 @@ export function createReportData(
     const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.tradeId, p.amount, p.method, p.chequeStatus || "—", p.notes]);
     return { columns: ["Date", "Kind", "Transaction", "Amount", "Method", "Cheque status", "Notes"], rows };
   }
+  if (report === "Partner capital report") {
+    const partners = Array.from(new Set((s.partners || []).map(entry => entry.partner))).sort((a, b) => a.localeCompare(b));
+    const rows = partners.map(partner => {
+      const entries = (s.partners || []).filter(entry => entry.partner === partner && (!to || entry.date <= to));
+      const opening = round(entries.filter(entry => !!from && entry.date < from).reduce((sum, entry) => sum + (entry.kind === "Contribution" ? entry.amount : -entry.amount), 0));
+      const contributions = round(entries.filter(entry => inRange(entry.date) && entry.kind === "Contribution").reduce((sum, entry) => sum + entry.amount, 0));
+      const drawings = round(entries.filter(entry => inRange(entry.date) && entry.kind === "Withdrawal").reduce((sum, entry) => sum + entry.amount, 0));
+      const closing = round(opening + contributions - drawings);
+      return [partner, opening, contributions, drawings, closing];
+    }).filter(row => matches(row[0]) && (Number(row[1]) || Number(row[2]) || Number(row[3]) || Number(row[4])));
+    const totals: (string | number)[] = ["TOTAL", ...[1, 2, 3, 4].map(index => round(rows.reduce((sum, row) => sum + Number(row[index]), 0)))];
+    return { columns: ["Partner", "Opening capital", "Contributions", "Drawings / withdrawals", "Closing capital"], rows: rows.length ? [...rows, totals] : [] };
+  }
   if (report === "Account aging report") {
     const through = to || today();
     const age = (date: string) => Math.max(0, Math.floor((Date.parse(`${through}T12:00:00Z`) - Date.parse(`${date}T12:00:00Z`)) / 86400000));
@@ -335,7 +348,7 @@ export function createReportData(
         "Cash movement",
         "Bank movement",
       ],
-      rows: s.heads
+      rows: Array.from(new Set([...s.heads, ...accounting.map(row => row.head)]))
         .filter((h) => matches(h))
         .map((h) => {
           const rows = accounting.filter(

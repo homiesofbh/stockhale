@@ -7,9 +7,8 @@ import { JournalForm } from "@/components/stockwell/forms/journal-form";
 import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib/stockwell/journals";
 import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
-import { Badge, Table, Modal, Empty, Field } from "@/components/stockwell/ui";
-import { GlassSelect } from "@/components/stockwell/glass-select";
-import { money, today, uid, round, type Store } from "@/lib/stockwell/model";
+import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
+import { money, round, type Store } from "@/lib/stockwell/model";
 // Parse record dates in UTC so week boundaries do not shift with device timezone.
 function transactionWeek(date: string) {
   const day = new Date(`${date}T00:00:00Z`);
@@ -37,10 +36,6 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   const [journalEditor, setJournalEditor] = useState<JournalVoucher | "new" | null>(null);
   const [journalDetails, setJournalDetails] = useState<JournalVoucher | null>(null);
   const [selectedWeek, setSelectedWeek] = useState("");
-  const [partner, setPartner] = useState("");
-  const [partnerKind, setPartnerKind] = useState<"Contribution" | "Withdrawal">("Withdrawal");
-  const [partnerAmount, setPartnerAmount] = useState("");
-  const [partnerMethod, setPartnerMethod] = useState("Cash");
   const transactions = accounting
     .filter(r => inRange(r.date) && matches(r.head, r.reference, r.type))
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -89,32 +84,6 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   }
   return (
     <>
-      <section className="card partner-records-card">
-        <div className="section-head"><div><h2>Partner contributions and withdrawals</h2><p>Record money introduced by or taken by a business partner.</p></div></div>
-        <div className="partner-entry-form">
-          <div className="form-grid partner-form">
-            <Field label="Partner name"><input placeholder="Enter partner name" value={partner} onChange={e => setPartner(e.target.value)} /></Field>
-            <Field label="Entry type"><GlassSelect value={partnerKind} onValueChange={value => setPartnerKind(value as typeof partnerKind)}><option>Withdrawal</option><option>Contribution</option></GlassSelect></Field>
-            <Field label="Amount (PKR)"><input type="number" min="0.01" step="0.01" placeholder="0.00" value={partnerAmount} onChange={e => setPartnerAmount(e.target.value)} /></Field>
-            <Field label="Payment method"><GlassSelect value={partnerMethod} onValueChange={setPartnerMethod}>
-              <option value="Cash">Cash</option>
-              <option value="Bank transfer">Bank transfer</option>
-              <option value="Cheque">Cheque</option>
-              <option value="Card">Card</option>
-              <option value="Mobile wallet">Mobile wallet</option>
-              <option value="Online payment">Online payment</option>
-              {(s.financialAccounts || [])
-                .filter(account => account.active !== false && account.name !== "Cash")
-                .map(account => <option key={account.id} value={account.name}>{account.name} · {account.type}</option>)}
-            </GlassSelect></Field>
-          </div>
-          <div className="partner-form-actions">
-            <p className="form-hint">{partnerKind === "Contribution" ? "Money introduced into the business." : "Money taken out of the business."}</p>
-            <button className="primary" type="button" onClick={() => { const amount = Number(partnerAmount); if (!partner.trim() || !Number.isFinite(amount) || amount <= 0) return; commit({ ...s, partners: [...(s.partners || []), { id: uid(), date: today(), partner: partner.trim(), kind: partnerKind, amount, method: partnerMethod.trim() || "Cash", notes: "" }] }, "Partner entry recorded."); setPartner(""); setPartnerAmount(""); }}>Record {partnerKind.toLowerCase()}</button>
-          </div>
-        </div>
-        <Table headers={["Date", "Partner", "Type", "Amount", "Method"]} rows={(s.partners || []).slice().reverse().map(p => [p.date, p.partner, p.kind, money(p.amount), p.method])} empty="No partner entries" />
-      </section>
       <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
         <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
         {visible.size ? <ul className="chart-accounts-grid">{roots.map(account => renderAccount(account))}</ul> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}

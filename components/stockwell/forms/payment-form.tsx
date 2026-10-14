@@ -42,11 +42,21 @@ export function PaymentForm({
   const [method, setMethod] = useState("Cash");
   const [advance, setAdvance] = useState(false);
   const [forwardCheque, setForwardCheque] = useState(false);
+  const [existingChequeId, setExistingChequeId] = useState("");
   const [destinationKind, setDestinationKind] = useState<"Supplier" | "Partner">("Supplier");
+  const receivedCustomerCheques = s.payments.filter((payment) => payment.kind === "Customer" && payment.method === "Cheque" && payment.amount > 0 && (payment.chequeStatus || "pending") === "pending" && !(s.crossCheques || []).some((crossCheque) => crossCheque.sourcePaymentId === payment.id));
   return (
     <form
       onSubmit={(e) =>
         submit(e, (f) => {
+          if (forwardCheque && existingChequeId) {
+            const source = s.payments.find((payment) => payment.id === existingChequeId);
+            const destinationId = text(f, "destination");
+            const destinationName = destinationKind === "Supplier" ? s.suppliers.find(c => c.id === destinationId)?.name || "" : destinationId;
+            if (!source || source.kind !== "Customer" || source.method !== "Cheque" || !destinationName) throw new Error("Select an unforwarded pending customer cheque and its destination.");
+            commit({ ...s, crossCheques: [...(s.crossCheques || []), { id: uid(), sourcePaymentId: source.id, date: text(f, "date"), customerId: source.contactId, destinationKind, destinationId, destinationName, amount: Math.abs(source.amount), status: "pending", notes: text(f, "destinationNotes") }] }, "Existing customer cheque submitted for forwarding.");
+            return;
+          }
           const payment = {
               id: uid(),
               date: text(f, "date"),
@@ -92,6 +102,7 @@ export function PaymentForm({
               setPaymentKind(e);
               setSelectedContact("");
               setSelectedTrade("");
+              setExistingChequeId("");
             }}
           >
             <option>Customer</option>
@@ -158,6 +169,7 @@ export function PaymentForm({
           {paymentKind === "Customer" && <>
             <label className="checkbox-row"><input type="checkbox" checked={forwardCheque} onChange={e => setForwardCheque(e.target.checked)} /> Submit this cheque to a supplier or partner</label>
             {forwardCheque && <>
+              <Field label="Received customer cheque (optional)"><GlassSelect value={existingChequeId} onValueChange={setExistingChequeId}><option value="">Forward the new cheque being recorded</option>{receivedCustomerCheques.map(payment => <option key={payment.id} value={payment.id}>{payment.chequeNumber} · {payment.chequeBank} · {money(Math.abs(payment.amount))}</option>)}</GlassSelect></Field>
               <Field label="Submit to"><GlassSelect name="destinationKind" value={destinationKind} onValueChange={value => setDestinationKind(value as typeof destinationKind)}><option>Supplier</option><option>Partner</option></GlassSelect></Field>
               {destinationKind === "Supplier" ? <Field label="Supplier"><GlassSelect name="destination"><option value="">Select supplier</option>{s.suppliers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</GlassSelect></Field> : <Field label="Partner name"><input name="destination" placeholder="Partner name" required /></Field>}
               <Field label="Submission notes"><input name="destinationNotes" /></Field>

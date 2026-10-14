@@ -40,6 +40,7 @@ export function TradeHistoryView({
                   "Purchase",
                   "Supplier",
                   "Quantity",
+                  "UOM",
                   "Net total",
                   "Status",
                   "Paid",

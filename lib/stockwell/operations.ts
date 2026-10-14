@@ -88,19 +88,20 @@ export function paymentAt(s: Store, p: Payment, through: string): Payment {
 }
 export function changeCheque(s: Store, paymentId: string, status: ChequeEvent["status"], date: string, accountId: string, reason: string, actor: Actor): Store {
   const p = s.payments.find(p => p.id === paymentId && p.method === "Cheque");
+  const forwarded = (s.crossCheques || []).find(c => c.sourcePaymentId === paymentId);
   check(!!p && ((!p.chequeStatus || p.chequeStatus === "pending") || p.chequeStatus === "cleared" && status === "bounced"), "This cheque cannot make that transition.");
   check(validDate(date) && date >= p!.date && date >= (p!.clearedDate || p!.date) && date <= today(), "Cheque action date must follow receipt/clearance and cannot be in the future.");
   requireOpenDate(s, date);
   check(!!reason.trim(), "Enter the cheque action reason.");
   if (status === "cleared") {
-    check(!!s.financialAccounts?.find(a => a.id === accountId && a.active !== false), "Select the bank or wallet receiving/paying the cheque.");
+    if (!forwarded) check(!!s.financialAccounts?.find(a => a.id === accountId && a.active !== false), "Select the bank or wallet receiving/paying the cheque.");
     const trade = [...s.invoices, ...s.purchases].find(t => t.id === p!.tradeId);
     check(!!trade && isPosted(trade), "Cheque must belong to a posted bill.");
     const due = balance(s, trade!);
     check(p!.amount > 0 ? p!.amount <= due : p!.amount >= due, "Cheque exceeds the remaining bill balance.");
   }
   const event: ChequeEvent = { id: uid(), paymentId, status, date, accountId: status === "cleared" ? accountId : p!.financialAccountId || "", reason: reason.trim(), actorId: actor.id, occurredAt: new Date().toISOString() };
-  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, financialAccountId: accountId } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), chequeEvents: [...(s.chequeEvents || []), event] };
+  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, ...(accountId ? { financialAccountId: accountId } : {}) } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), crossCheques: forwarded ? (s.crossCheques || []).map(c => c.id === forwarded.id ? { ...c, status: status === "cleared" ? "cleared" : status === "bounced" ? "bounced" : c.status } : c) : s.crossCheques, chequeEvents: [...(s.chequeEvents || []), event] };
 }
 export function cashStatement(s: Store, from = "", to = today()) {
   const cash = chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset");

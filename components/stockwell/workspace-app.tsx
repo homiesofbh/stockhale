@@ -47,8 +47,10 @@ import { AccountForm } from "@/components/stockwell/forms/account-form";
 import { AccountHeadsView } from "@/components/stockwell/views/account-heads-view";
 import { ContactsView } from "@/components/stockwell/views/contacts-view";
 import { DashboardView } from "@/components/stockwell/views/dashboard-view";
+import { DailyClosingView } from "@/components/stockwell/views/daily-closing-view";
 import { ExpensesView } from "@/components/stockwell/views/expenses-view";
 import { InventoryView } from "@/components/stockwell/views/inventory-view";
+import { ProductDetailView } from "@/components/stockwell/views/product-detail-view";
 import { NotificationsView } from "@/components/stockwell/views/notifications-view";
 import { PaymentsView } from "@/components/stockwell/views/payments-view";
 import { ReportsView } from "@/components/stockwell/views/reports-view";
@@ -84,6 +86,7 @@ export function WorkspaceApp() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [editProduct, setEditProduct] = useState<Product | null>(null);
+  const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [editContact, setEditContact] = useState<Contact | null>(null);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [invoice, setInvoice] = useState<Trade | null>(null);
@@ -336,7 +339,8 @@ export function WorkspaceApp() {
         <small>{t.date}</small>
       </button>,
       t.contactId ? cName(t.contactId, supplier) : [t.walkInName, t.walkInCompany].filter(Boolean).join(" · ") || "Walk-in customer",
-      `${t.lines.reduce((n, l) => n + l.qty, 0)} units`,
+      t.lines.map((l) => l.qty).join(", "),
+      t.lines.map((l) => l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece").join(", "),
       money(total(t)),
       <Badge tone={t.status === "draft" ? "amber" : t.status === "void" ? "" : balance(s, t) === 0 ? "green" : "amber"}>
         {paymentStatus(t)}
@@ -359,6 +363,7 @@ export function WorkspaceApp() {
     "Invoice",
     "Customer",
     "Quantity",
+    "UOM",
     "Net total",
     "Status",
     "Paid",
@@ -567,7 +572,7 @@ export function WorkspaceApp() {
                     />
                   ) : (
                     <>
-                      <RecordFilters
+                      {module !== "Closing" && <RecordFilters
                         query={query}
                         setQuery={setQuery}
                         module={module}
@@ -582,7 +587,7 @@ export function WorkspaceApp() {
                         to={to}
                         setFrom={setFrom}
                         setTo={setTo}
-                      />
+                      />}
                       {module === "Inventory" && (
                         <InventoryView
                           s={s}
@@ -592,6 +597,7 @@ export function WorkspaceApp() {
                           category={category}
                           status={status}
                           setEditProduct={setEditProduct}
+                          selectProduct={(product) => { setDetailProduct(product); open("Product details"); }}
                         />
                       )}
                       {module === "Billing" && <WalkInReview s={s} actor={account.member} commit={commit} />}
@@ -683,6 +689,7 @@ export function WorkspaceApp() {
                           reportResult={reportResult}
                         />
                       )}
+                      {module === "Closing" && <DailyClosingView s={s} actor={account.member} commit={commit} />}
                     </>
                   )}
                 </div>
@@ -704,6 +711,7 @@ export function WorkspaceApp() {
                 ? editProduct
                   ? "Edit product"
                   : "Add product"
+                : modal === "Product details" ? detailProduct?.name || "Product details"
                 : modal === "Contact"
                   ? `${editContact ? "Edit" : "Add"} ${module === "Suppliers" ? "supplier" : "customer"}`
                   : modal
@@ -715,6 +723,7 @@ export function WorkspaceApp() {
               {error}
             </div>
           )}
+          {modal === "Product details" && detailProduct && <ProductDetailView s={s} product={detailProduct} />}
           {modal === "Product" && (
             <ProductForm
               submit={submit}
@@ -873,7 +882,6 @@ export function WorkspaceApp() {
               text={text}
               returnKind={returnKind}
               selectedTrade={selectedTrade}
-              num={num}
               setReturnKind={setReturnKind}
               setSelectedTrade={setSelectedTrade}
             />

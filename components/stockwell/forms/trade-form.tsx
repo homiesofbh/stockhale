@@ -5,6 +5,7 @@ import { Field, Table } from "@/components/stockwell/ui";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   money,
+  orderedUnits,
   recordTrade,
   round,
   stock,
@@ -91,6 +92,7 @@ export function TradeForm({
 }: Props) {
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
+  const [productQuery, setProductQuery] = useState("");
   const [method, setMethod] = useState("Cash");
   const [paidAmount, setPaidAmount] = useState(billTotal);
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -109,6 +111,8 @@ export function TradeForm({
         return searchable.text.includes(contactSearch) || (!!queryDigits && searchable.digits.includes(queryDigits));
       })
     : [];
+  const productSearch = productQuery.trim().toLowerCase();
+  const selectableProducts = s.products.filter((p) => p.active !== false && (!productSearch || [p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.unit].filter(Boolean).join(" ").toLowerCase().includes(productSearch)));
   useEffect(() => setPaidAmount(billTotal), [billTotal]);
   function saveSupplier() {
     try {
@@ -267,25 +271,29 @@ export function TradeForm({
         </fieldset>
       )}
       <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
+      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(s, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}</div>}</div></Field>
       <Field label="Or choose a product">
-        <GlassSelect value="" onValueChange={(e) => addLine(e)}>
+        <GlassSelect value="" onValueChange={(e) => { addLine(e); setProductQuery(""); }}>
           <option value="">Select product to add</option>
-          {s.products.filter((p) => p.active !== false).map((p) => (
+          {selectableProducts.map((p) => (
             <option value={p.id} key={p.id}>
               {p.name} · {p.sku} · {stock(s, p.id)} in stock
             </option>
           ))}
         </GlassSelect>
       </Field>
+      </div>
       <div className="bill-lines">
         {lines.length ? (
           <Table
             headers={[
               "Product",
+              "Colour",
               "Quantity",
+              "UOM",
+              "Number of rolls",
               modal === "Purchase" ? "Cost price" : "Unit price",
               "Line discount",
-              ...(modal === "Purchase" ? ["Packages"] : []),
               "Total",
               "",
             ]}
@@ -293,9 +301,10 @@ export function TradeForm({
               <>
                 {pName(l.productId)}
                 <small>
-                  {s.products.find((p) => p.id === l.productId)?.sku} · {l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece"}
+                  {s.products.find((p) => p.id === l.productId)?.sku}
                 </small>
               </>,
+              s.products.find((p) => p.id === l.productId)?.color || "—",
               <input
                 aria-label={`Quantity for ${pName(l.productId)}`}
                 type="number"
@@ -306,11 +315,13 @@ export function TradeForm({
                 onChange={(e) =>
                   setLines(
                     lines.map((x, n) =>
-                      n === i ? { ...x, qty: Number(e.target.value) } : x,
+                      n === i ? { ...x, qty: Number(e.target.value), discount: Math.min(x.discount || 0, Number(e.target.value) * x.price) } : x,
                     ),
                   )
                 }
               />,
+              <GlassSelect aria-label={`UOM for ${pName(l.productId)}`} value={l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece"} onValueChange={(value) => setLines(lines.map((x, n) => n === i ? { ...x, unit: value } : x))}>{orderedUnits(s.units).map(unit => <option key={unit}>{unit}</option>)}</GlassSelect>,
+              <input aria-label={`Number of rolls for ${pName(l.productId)}`} type="number" min="0" step="1" placeholder="Rolls" value={l.packageCount ?? ""} onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))} />,
               <input
                 aria-label={`Price for ${pName(l.productId)}`}
                 type="number"
@@ -325,6 +336,7 @@ export function TradeForm({
                         ? {
                             ...x,
                             price: Number(e.target.value),
+                            discount: Math.min(x.discount || 0, x.qty * Number(e.target.value)),
                             cost:
                               modal === "Purchase"
                                 ? Number(e.target.value)
@@ -342,17 +354,8 @@ export function TradeForm({
                 max={l.qty * l.price}
                 step="0.01"
                 value={l.discount || 0}
-                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Number(e.target.value) } : x))}
+                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Math.min(Number(e.target.value), x.qty * x.price) } : x))}
               />,
-              modal === "Purchase" ? <input
-                aria-label={`Number of packages for ${pName(l.productId)}`}
-                type="number"
-                min="0"
-                step="1"
-                placeholder="Packages"
-                value={l.packageCount ?? ""}
-                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))}
-              /> : null,
               money(l.qty * l.price - (l.discount || 0)),
               <button
                 type="button"

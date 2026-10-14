@@ -3,6 +3,7 @@ import {
   CircleDollarSign,
   ClipboardList,
   CreditCard,
+  CalendarCheck,
   FileText,
   LayoutDashboard,
   Package,
@@ -26,6 +27,7 @@ export type Module =
   | "Customers"
   | "Returns & Damage"
   | "Reports"
+  | "Closing"
   | "Settings"
   | "Notifications";
 export const nav: {
@@ -44,6 +46,7 @@ export const nav: {
   { name: "Customers", icon: Users },
   { name: "Returns & Damage", icon: Undo2 },
   { name: "Reports", icon: CircleDollarSign },
+  { name: "Closing", icon: CalendarCheck },
 ];
 export const descriptions: Record<Module, string> = {
   Settings: "Manage your store and team.",
@@ -60,4 +63,5 @@ export const descriptions: Record<Module, string> = {
   Customers: "Customer details, billing history, and balances in one place.",
   "Returns & Damage": "Record returns and damage with a clear stock trail.",
   Reports: "Turn your daily records into a clearer business picture.",
+  Closing: "Reconcile the cash drawer and close each business day safely.",
 };

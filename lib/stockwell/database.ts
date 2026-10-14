@@ -22,7 +22,17 @@ function connectionString(): string | undefined {
     const env = getCloudflareContext().env as unknown as {
       HYPERDRIVE?: { connectionString: string };
     };
-    if (env.HYPERDRIVE) return env.HYPERDRIVE.connectionString;
+    if (env.HYPERDRIVE?.connectionString) {
+      // Wrangler's local Hyperdrive shim may expose the placeholder from
+      // wrangler.jsonc (HOST). In Next dev, use the real local .env URL;
+      // deployed Workers still use the bound Hyperdrive connection.
+      try {
+        const host = new URL(env.HYPERDRIVE.connectionString).hostname.toLowerCase();
+        if (!['host', 'user', 'password', 'dbname'].includes(host)) return env.HYPERDRIVE.connectionString;
+      } catch {
+        // Fall through to DATABASE_URL when the local binding is a template.
+      }
+    }
   } catch {
     // not running under the Cloudflare runtime (local dev)
   }
@@ -102,4 +112,4 @@ export async function transaction<T>(fn: (client: PoolClient) => Promise<T>) {
   } finally {
     client.release();
   }
-} 
+}

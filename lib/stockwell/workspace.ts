@@ -16,6 +16,7 @@ export const modules = [
   "Customers",
   "Returns & Damage",
   "Reports",
+  "Closing",
 ] as const;
 export type Member = {
   id: string;
@@ -26,6 +27,7 @@ export type Member = {
 };
 export function canAccessModule(member: Member, module: string) {
   if (module === "Settings" || module === "Notifications") return member.role === "owner";
+  if (module === "Closing") return member.role === "owner";
   return modules.includes(module as (typeof modules)[number]) &&
     (member.role === "owner" || member.modules.includes(module));
 }
@@ -80,7 +82,7 @@ export const collectionModules: Record<string, string[]> = {
   corrections: ["Billing", "Purchases"],
   walkInLinks: ["Billing"],
   chequeEvents: ["Payments"],
-  dailyCloses: ["Reports"],
+  dailyCloses: ["Reports", "Closing"],
   financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],
@@ -89,6 +91,7 @@ export const collectionModules: Record<string, string[]> = {
   expenses: ["Expenses"],
   returns: ["Returns & Damage"],
   partners: ["Accounts Heads"],
+  partnerNames: ["Accounts Heads", "Payments"],
   crossCheques: ["Payments"],
 };
 export function changesBetween(before: Store, after: Store) {

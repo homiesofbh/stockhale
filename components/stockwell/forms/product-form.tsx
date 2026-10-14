@@ -3,6 +3,8 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
   saveProduct,
+  orderedUnits,
+  standardUnits,
   uid,
   type Product,
   type Store,
@@ -27,7 +29,7 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
-  const defaultUnits = s.units || ["piece", "kg", "g", "liter", "ml", "box", "pack", "dozen", "meter", "yard"];
+  const defaultUnits = orderedUnits(s.units || standardUnits);
   const [unit, setUnit] = useState(editProduct?.unit || "piece");
   const [customUnit, setCustomUnit] = useState("");
   const isCustomUnit = unit === "__custom__";
