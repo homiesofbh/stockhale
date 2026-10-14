@@ -68,6 +68,59 @@
   .dropdown { background: #f5f2f9; }
 }
 .mobileNavigation { display: none; }
+.syncReviewModal { overflow: hidden; }
+.syncReview { display: flex; flex-direction: column; gap: 16px; min-width: 0; min-height: 0; }
+.syncReviewModal[open] { display: flex; flex-direction: column; }
+.syncReviewModal :global(.modal-head) { flex-shrink: 0; margin-bottom: 20px; }
+.syncReviewBody { display: grid; gap: 16px; overflow-y: auto; min-height: 0; padding-right: 4px; }
+.syncReviewAlert {
+  display: flex;
+  gap: 12px;
+  padding: 15px;
+  color: #713846;
+  background: #fff0f1;
+  border: 1px solid #e8bec6;
+  border-radius: 14px;
+}
+.syncReviewAlert svg { flex-shrink: 0; margin-top: 2px; }
+.syncReviewAlert strong { display: block; font-size: 13px; }
+.syncReviewAlert p { margin: 5px 0 0; line-height: 1.5; overflow-wrap: anywhere; }
+.syncReviewIntro { margin: 0; color: #655d70; line-height: 1.6; }
+.syncReviewDetails { display: grid; gap: 8px; padding: 16px; background: #ffffff70; border-radius: 12px; color: #51485c; line-height: 1.6; overflow-wrap: anywhere; }
+.syncReviewDetails p { margin: 0; }
+.syncReviewDetails button { justify-self: start; white-space: normal; }
+.syncReviewDetails summary, .syncReviewOwnerTools summary { cursor: pointer; font-weight: 600; padding: 8px 0; }
+.syncReviewDetails details p { margin: 8px 0; }
+.syncReviewOwnerTools { flex-shrink: 0; border-top: 1px solid #d6cddd; color: #65556c; }
+.syncReviewOwnerTools .syncReviewDangerZone { border-top: 0; padding-top: 8px; }
+.syncReviewSuccess { color: #34594c; background: #edf6f0; border-color: #c2d9c9; }
+.syncReviewStats { display: flex; gap: 10px; margin: 0; }
+.syncReviewStats span { flex: 1; padding: 12px; background: #f5f1f8; border: 1px solid #e3dce9; border-radius: 12px; color: #746a7d; font-size: 12px; }
+.syncReviewStats b { display: block; color: #393240; font-size: 20px; margin-bottom: 3px; }
+.syncReviewList { max-height: 270px; overflow: auto; border: 1px solid #e3dce9; border-radius: 12px; }
+.syncReviewItem { display: flex; gap: 12px; align-items: center; padding: 11px 13px; border-bottom: 1px solid #eee9f1; }
+.syncReviewItem:last-child { border-bottom: 0; }
+.syncReviewItem > span { width: 28px; flex-shrink: 0; color: #75677f; font-size: 11px; font-variant-numeric: tabular-nums; }
+.syncReviewItem > div { min-width: 0; overflow-wrap: anywhere; }
+.syncReviewItem strong, .syncReviewItem small { display: block; }
+.syncReviewItem small, .syncReviewList > small { color: #71657a; margin-top: 3px; }
+.syncReviewList > small { display: block; padding: 12px; }
+.syncReviewActions { display: flex; flex-wrap: wrap; flex-shrink: 0; gap: 10px; padding-top: 16px; border-top: 1px solid #d6cddd; }
+.syncReviewActions button { min-height: 44px; border-radius: 12px; padding: 11px 16px; }
+.syncReviewActions button:last-child { margin-left: auto; }
+.syncReviewActions svg, .syncReviewDiscard svg { flex-shrink: 0; }
+.syncReviewDangerZone { display: flex; flex-shrink: 0; align-items: center; justify-content: space-between; gap: 16px; padding-top: 16px; border-top: 1px solid #d6cddd; }
+.syncReviewDangerZone p { margin: 0; color: #65556c; font-size: 13px; font-weight: 600; }
+.syncReviewDangerZone small { margin-top: 5px; font-weight: 400; line-height: 1.5; }
+.syncReviewDiscard { display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; gap: 8px; min-height: 44px; padding: 10px 14px; border: 1px solid #d8aeb9; border-radius: 12px; background: #fff7f8; color: #853b4d; font-size: 12px; font-weight: 600; }
+.syncReviewDiscard:hover:not(:disabled) { background: #fbe7ec; }
+@media (max-width: 600px) {
+  .syncReview { min-width: 0; }
+  .syncReviewActions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .syncReviewActions button { white-space: normal; }
+  .syncReviewActions button:last-child { grid-row: 1; margin-left: 0; }
+  .syncReviewDangerZone { align-items: stretch; flex-direction: column; }
+}
 @media (max-width: 600px) {
   .mobileNavigation { display: grid; border-bottom: 1px solid #d6cfdf; padding-bottom: 8px; margin-bottom: 8px; }
   .profileMenu > summary > span:first-child { display: none; }

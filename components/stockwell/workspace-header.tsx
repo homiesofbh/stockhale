@@ -3,8 +3,11 @@ import styles from "./workspace-header.module.css";
 import { nav, type Module } from "@/components/stockwell/navigation";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import type { Workspace } from "@/lib/stockwell/workspace";
-import { Bell, ChevronDown, LogOut, RefreshCw, Settings } from "lucide-react";
+import { recordCollectionLabels } from "@/lib/stockwell/workspace";
+import { Bell, ChevronDown, Download, LogOut, RefreshCw, Settings, ShieldAlert, Trash2 } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useEffect, useState } from "react";
+import { Modal } from "@/components/stockwell/ui";
 type Props = {
   go: (m: Module) => void;
   canAccess: (name: string) => boolean;
@@ -29,6 +32,41 @@ export function WorkspaceHeader({
   setModule,
   setNotice,
 }: Props) {
+  const [reviewOpen, setReviewOpen] = useState(false);
+  const [reviewError, setReviewError] = useState("");
+  const [reviewLoading, setReviewLoading] = useState(false);
+  const [reviewActing, setReviewActing] = useState(false);
+  const reviewBusy = reviewLoading || reviewActing || workspace.syncing;
+  const hasConflict = workspace.review?.conflict || workspace.syncStatus.startsWith("Conflict");
+  const needsHelp = hasConflict && workspace.review?.canRecover === false;
+  const syncLabel = workspace.syncing ? "Saving changes…"
+    : !workspace.cache?.queue.length && !workspace.syncError ? "All changes saved"
+    : hasConflict ? "Saved on this device · needs review"
+    : workspace.syncStatus.startsWith("Offline") ? "Offline · changes saved on this device"
+    : workspace.syncStatus.startsWith("Server unavailable") ? "Waiting for connection · changes saved on this device"
+    : workspace.syncStatus.startsWith("Session expired") ? "Sign in again to save online"
+    : workspace.syncError ? "Saved on this device · needs review" : "Saving changes…";
+  async function runReviewAction(action: () => Promise<unknown>) {
+    setReviewActing(true);
+    setReviewError("");
+    try { await action(); await inspect(); }
+    catch (e) { setReviewError(e instanceof Error ? e.message : "Could not complete this action."); }
+    finally { setReviewActing(false); }
+  }
+  async function inspect() {
+    setReviewError("");
+    setReviewLoading(true);
+    try { await workspace.inspectPending(); }
+    catch (e) { setReviewError(e instanceof Error ? e.message : "Could not check server records."); }
+    finally { setReviewLoading(false); }
+  }
+  useEffect(() => {
+    if (reviewOpen) void inspect();
+  }, [reviewOpen]);
+  function openReview() {
+    if (profileMenu.current) profileMenu.current.open = false;
+    setReviewOpen(true);
+  }
   const readIndex = account.audit.findIndex((event) => event.id === account.readEvent);
   const unreadCount = account.member.role === "owner"
     ? readIndex < 0 ? account.audit.length : readIndex
@@ -109,8 +147,8 @@ export function WorkspaceHeader({
                 </button>
               ))}
           </nav>
-          <button onClick={() => void workspace.sync()}>
-            <RefreshCw size={16} /> {workspace.syncStatus}
+          <button disabled={workspace.syncing} onClick={() => workspace.syncError ? openReview() : void workspace.sync()}>
+            <RefreshCw size={16} /> {syncLabel}
             {workspace.cache?.queue.length
               ? ` (${workspace.cache.queue.length})`
               : ""}
@@ -150,24 +188,43 @@ export function WorkspaceHeader({
           </button>
           {!!workspace.cache?.queue.length && (
             <>
-              <button onClick={workspace.exportPending}>
-                Export pending changes
+              <button onClick={openReview}>
+                <ShieldAlert size={16} /> View device changes
               </button>
-              {workspace.syncStatus.startsWith("Conflict") && (
-                <button
-                  onClick={() =>
-                    void workspace
-                      .useServer()
-                      .catch((e) => setNotice(e.message))
-                  }
-                >
-                  Load server records
-                </button>
-              )}
             </>
           )}
         </div>
       </details>
+      {reviewOpen && workspace.cache && <Modal className={styles.syncReviewModal} title="Your saved changes" eyebrow="STOCKHALE" close={() => { if (!reviewActing) setReviewOpen(false); }}>
+        <div className={styles.syncReview}>
+          <div className={styles.syncReviewBody} tabIndex={0} role="region" aria-label="Sync review details">
+            <div className={`${styles.syncReviewAlert} ${!workspace.cache.queue.length ? styles.syncReviewSuccess : ""}`} role="status">
+              <ShieldAlert size={20} />
+              <div><strong>{workspace.cache.queue.length ? "Your work is safe on this device." : "All changes are saved online."}</strong><p>{workspace.cache.queue.length ? needsHelp ? account.member.role === "owner" ? "A saved change needs your review. Save a copy, then check the details below." : "A saved change needs review. Ask the owner to check it before saving online." : "We save your changes online automatically. If saving is interrupted, you can try again below." : "You can close this window and continue working."}</p></div>
+            </div>
+            {reviewLoading && <p role="status">Checking your saved changes…</p>}
+            {reviewError && <p className="form-error" role="alert">{reviewError}</p>}
+            {workspace.review && <div className={styles.syncReviewDetails}>
+              <strong>Waiting to save online: {workspace.cache.queue[0]?.action}</strong>
+              <p>Saved under: {workspace.cache.queue[0]?.module}</p>
+              {!!workspace.review.collections.length && <p>Records changed: {workspace.review.collections.map(key => recordCollectionLabels[key] || key).join(", ")}</p>}
+              <details><summary>Details for the owner</summary><p>{workspace.review.message}</p>
+              {!workspace.review.candidates.includes(workspace.cache.queue[0]?.module || "") && workspace.review.candidates.map(module => <button key={module} className="secondary" disabled={reviewBusy} onClick={() => void runReviewAction(() => workspace.resolvePending(module))}>Correct module to {module} and sync</button>)}
+              </details>
+            </div>}
+            <div className={styles.syncReviewStats}><span><b>{workspace.cache.queue.length}</b> changes waiting to save online</span><span><b>{new Set(workspace.cache.queue.map(change => change.module)).size}</b> sections involved</span></div>
+            <div className={styles.syncReviewList} aria-label="Pending changes">
+              {workspace.cache.queue.slice(0, 20).map((change, index) => <div key={change.id} className={styles.syncReviewItem}><span>#{index + 1}</span><div><strong>{change.action || "Record change"}</strong><small>{change.module} · {new Date(change.occurredAt).toLocaleString("en-PK")}</small></div></div>)}
+              {workspace.cache.queue.length > 20 && <small>Showing the first 20 changes. Save a copy to keep a copy of all changes.</small>}
+            </div>
+          </div>
+          <div className={styles.syncReviewActions}>
+            <button className="secondary" disabled={reviewActing || !workspace.cache.queue.length} onClick={workspace.exportPending}><Download size={16} /> Save a copy</button>
+            <button className="primary" disabled={reviewBusy} onClick={() => { if (workspace.cache?.queue.length) void runReviewAction(workspace.sync); else setReviewOpen(false); }}><RefreshCw size={16} /> {workspace.syncing || reviewActing ? "Saving…" : reviewLoading ? "Checking…" : workspace.cache.queue.length ? "Try again" : "Done"}</button>
+          </div>
+          {hasConflict && account.member.role === "owner" && <details className={styles.syncReviewOwnerTools}><summary>Owner recovery options</summary><div className={styles.syncReviewDangerZone}><p>Replace this device’s changes?<small>This deletes the changes waiting to save online. Save a copy first.</small></p><button className={styles.syncReviewDiscard} disabled={reviewBusy} onClick={() => void runReviewAction(workspace.useServer)}><Trash2 size={16} /> Delete device changes</button></div></details>}
+        </div>
+      </Modal>}
     </header>
   );
 }

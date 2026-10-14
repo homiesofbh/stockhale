@@ -159,7 +159,20 @@ export function createReportData(
     const statement = report === "Cash-in-hand report" ? cashStatement(s, from, to || today()) : cashFlow(s, from, to || today());
     return { columns: ["Measure", "Amount (PKR)"], rows: [["Opening balance", statement.opening], ["Opening adjustments", statement.openingAdjustment], ["Receipts", statement.receipts], ["Payments", statement.payments], ["Net movement", round(statement.receipts - statement.payments)], ["Closing balance", statement.closing]] };
   }
-  if (report === "Bank-balance report") return { columns: ["Account", "Type", "Opening", "Opening adjustments", "Receipts", "Payments", "Closing"], rows: (s.financialAccounts || []).filter(a => matches(a.name, a.type)).map(a => { const b = bankStatement(s, a, from, to || today()); return [a.name, a.type, b.opening, b.openingAdjustment, b.receipts, b.payments, b.closing]; }) };
+  if (report === "Bank-balance report") return {
+    columns: ["Account", "Type", "Opening", "Opening adjustments", "Receipts", "Sales receipts", "Payments", "Closing"],
+    rows: (s.financialAccounts || []).filter(a => matches(a.name, a.type)).map(a => {
+      const through = to || today();
+      const b = bankStatement(s, a, from, through);
+      const ledger = chartAccounts(s).find(account => account.id === a.ledgerAccountId);
+      const salesReceipts = round(financialRows(s)
+        .filter(row => row.financialAccountId === a.id && row.bank > 0)
+        .filter(row => (!ledger?.openingDate || row.date >= ledger.openingDate) && periodMatch(row.date, from, through))
+        .filter(row => row.type === "Sale" || row.type === "Customer payment")
+        .reduce((sum, row) => sum + row.bank, 0));
+      return [a.name, a.type, b.opening, b.openingAdjustment, b.receipts, salesReceipts, b.payments, b.closing];
+    }),
+  };
   if (report === "Inventory report")
     return {
       columns: [

@@ -120,6 +120,8 @@ export function ReportsView({
             <p>
               {report === "Inventory report"
                 ? "Current stock snapshot. Date filters do not change this report."
+                : report === "Bank-balance report"
+                  ? "Receipts includes all money added to the account. Sales receipts shows only money received from sales and customer payments. Payments shows money leaving the account."
                 : report.includes("ledger")
                   ? "Running balance includes transactions before the selected start date."
                   : ["Billing report", "Sales report", "Purchase report", "Receivables report", "Payables report"].includes(report)
