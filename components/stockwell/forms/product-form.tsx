@@ -1,5 +1,6 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
+import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { Field } from "@/components/stockwell/ui";
 import {
   saveProduct,
@@ -32,6 +33,7 @@ export function ProductForm({
   const defaultUnits = orderedUnits(s.units || standardUnits);
   const [unit, setUnit] = useState(editProduct?.unit || "piece");
   const [customUnit, setCustomUnit] = useState("");
+  const [barcode, setBarcode] = useState(editProduct?.barcode || "");
   const isCustomUnit = unit === "__custom__";
   return (
     <form
@@ -66,6 +68,10 @@ export function ProductForm({
         })
       }
     >
+      <div className="field">
+        <span>Barcode (optional)</span>
+        <BarcodeInput name="barcode" value={barcode} onChange={setBarcode} onScan={setBarcode} label="Product barcode" action="Use barcode" placeholder="Scan barcode or enter it, then press Enter" />
+      </div>
       <div className="form-grid">
         <div className="form-wide">
         <Field label="Product name">
@@ -147,10 +153,6 @@ export function ProductForm({
           </Field>
         )}
       </div>
-        <div className="field">
-          <span>Barcode (optional)</span>
-          <input name="barcode" defaultValue={editProduct?.barcode || ""} placeholder="Leave blank if you do not use barcodes" />
-        </div>
       <p className="form-hint">
         Stock changes after creation are recorded through purchases, billing,
         returns, or stock adjustments.

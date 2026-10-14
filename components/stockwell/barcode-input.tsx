@@ -6,7 +6,7 @@ import { scannerKey } from "@/lib/stockwell/scanner";
 type Props = {
   value: string;
   onChange: (value: string) => void;
-  onScan: (code: string) => void;
+  onScan: (code: string) => string | false | void;
   inputRef?: RefObject<HTMLInputElement | null>;
   name?: string;
   label?: string;
@@ -25,9 +25,24 @@ export function BarcodeInput({
   const [scannerMode, setScannerMode] = useState(false);
   const buffer = useRef("");
   function finishScan(code: string) {
-    onScan(code);
-    // Select the completed code so the next hardware scan replaces it.
-    requestAnimationFrame(() => { ref.current?.focus(); ref.current?.select(); });
+    if (!code.trim()) return;
+    const productId = onScan(code.trim());
+    buffer.current = "";
+    setScannerMode(false);
+    requestAnimationFrame(() => {
+      const input = ref.current;
+      if (!input) return;
+      if (productId === false) { input.focus(); input.select(); return; }
+      const form = input.form;
+      const controls = Array.from(form?.querySelectorAll<HTMLElement>(
+        'input:not([type="hidden"]):not(:disabled), select:not(:disabled), textarea:not(:disabled), button:not(:disabled)',
+      ) || []).filter((control) => control.getClientRects().length > 0);
+      const target = typeof productId === "string"
+        ? controls.find((control) => control.dataset.barcodeQuantity === productId)
+        : controls.slice(controls.indexOf(input) + 1).find((control) => !input.closest(".barcode-control")?.contains(control));
+      target?.focus();
+      if (target instanceof HTMLInputElement) target.select();
+    });
   }
   const callbacks = useRef({ onChange, onScan: finishScan });
   callbacks.current = { onChange, onScan: finishScan };
@@ -89,7 +104,7 @@ export function BarcodeInput({
       </button>
       <p className="form-hint" role="status">
         {scannerMode
-          ? "Scanner mode on: scans go to this field from anywhere in the form. Turn it off or press Escape to edit other fields."
+          ? "Scanner mode on: the next scan goes to this field, then focus moves to the next field. Press Escape to cancel."
           : "Scan into this field, or enable scanner mode to scan from anywhere in the form. Configure your scanner to send Enter or Tab after each barcode."}
       </p>
     </div>

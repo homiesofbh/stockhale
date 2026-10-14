@@ -7,7 +7,7 @@ import { createHash, randomBytes, randomUUID } from "node:crypto";
 import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
 import { emptyStore, normalizeStore } from "./model";
-import { modules, verifyChange, type Member } from "./workspace";
+import { modules, verifyChange, prepareSyncChange, type Member } from "./workspace";
 export { db } from "./database";
 type Row = Record<string, any>;
 const row = async (sql: string, ...args: unknown[]) =>
@@ -252,7 +252,7 @@ export async function mutate(user: Row, body: Row) {
       const m = await member(w, user);
       if (!Array.isArray(body.changes) || body.changes.length > 100)
         throw new Error("Invalid sync batch.");
-      let store = JSON.parse(w.store),
+      let store = normalizeStore(JSON.parse(w.store)),
         revision = w.revision;
       const accepted: string[] = [];
       for (const c of body.changes) {
@@ -289,9 +289,9 @@ export async function mutate(user: Row, body: Row) {
         required(c.action, 300);
         if (!Number.isFinite(Date.parse(c.occurredAt)))
           throw new Error("Invalid event time.");
-        const records = verifyChange(store, c.store, c.module, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
+        const { store: nextStore, records } = prepareSyncChange(store, c, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
         await event(w, user, c.module, c.action, records, c.id, c.occurredAt);
-        store = c.store;
+        store = nextStore;
         revision++;
         accepted.push(c.id);
       }

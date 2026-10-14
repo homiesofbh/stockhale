@@ -28,24 +28,6 @@ function failureStatus(status: number | undefined, message: string) {
   if (status === 400) return "Review needed · click to resolve";
   return navigator.onLine ? "Server unavailable · retrying automatically" : "Offline · changes saved on this device";
 }
-async function liveLocation() {
-  if (!window.isSecureContext || !navigator.geolocation) return "Unavailable";
-  try {
-    const position = await new Promise<GeolocationPosition>((resolve, reject) =>
-      navigator.geolocation.getCurrentPosition(resolve, reject, {
-        enableHighAccuracy: true,
-        maximumAge: 0,
-        timeout: 10_000,
-      }),
-    );
-    const { latitude, longitude, accuracy } = position.coords;
-    // Keep enough precision to identify the visit location without storing an
-    // unnecessarily exact GPS trace.
-    return `${latitude.toFixed(4)}, ${longitude.toFixed(4)} (±${Math.round(accuracy)} m)`;
-  } catch {
-    return "Unavailable";
-  }
-}
 export function useWorkspace() {
   const [cache, setCache] = useState<Cache | null>(null),
     [ready, setReady] = useState(false),
@@ -55,13 +37,6 @@ export function useWorkspace() {
   const [review, setReview] = useState<{ changeId: string; collections: string[]; candidates: string[]; message: string; conflict?: boolean; canRecover?: boolean } | null>(null);
   const current = useRef<Cache | null>(null), cacheLoadBlocked = useRef(false),
     busy = useRef(false), actionBusy = useRef(false), syncRequested = useRef(false);
-  async function withCacheLock<T>(fn: () => T | Promise<T>): Promise<T> {
-    // Web Locks serialize localStorage read/modify/write across tabs in this
-    // browser profile. Other browsers/devices are serialized by the DB lock.
-    return navigator.locks?.request
-      ? navigator.locks.request("stockwell-workspace-cache", fn)
-      : fn();
-  }
   function save(value: Cache, preserveExternal = false) {
     const key = cacheKey(value.workspace.id);
     if (!preserveExternal && current.current) {
@@ -270,7 +245,7 @@ export function useWorkspace() {
       document.removeEventListener("visibilitychange", visible);
     };
   }, []);
-  async function commit(store: Store, module: string, action: string) {
+  function commit(store: Store, module: string, action: string) {
     if (actionBusy.current) throw new Error("Wait for the current workspace action to finish before saving records.");
     const c = current.current;
     if (!c) throw new Error("Sign in before saving records.");
@@ -281,20 +256,16 @@ export function useWorkspace() {
       throw new Error("You do not have permission for this module.");
     const occurredAt = store.expenses.find(e => !c.workspace.store.expenses.some(old => old.id === e.id))?.createdAt || new Date().toISOString();
     verifyChange(c.workspace.store, store, module, { actor: c.workspace.member, occurredAt });
-    const location = await liveLocation();
-    await withCacheLock(() => {
-      // Read the latest shared state inside the lock. This protects rapid
-      // edits made in two tabs from racing between localStorage read and write.
-      const latest = current.current || c;
-      const next = appendTabChange(latest, store, module, action, occurredAt, location);
-      save(next, true);
-    });
+    // Forms publish success only after the local write succeeds. Preserve this
+    // synchronous contract so storage/validation errors reach their catch blocks.
+    const next = appendTabChange(c, store, module, action, occurredAt, "Unavailable");
+    save({ ...next, baseStore: next.baseStore || c.workspace.store }, true);
     setReview(null);
     setSyncStatus("Pending sync");
     // Online: write through to the server now and wait for it. Offline: stay
     // queued; the "online" listener drains the queue on reconnect.
     // ponytail: queue is a write-ahead buffer so a dead tab/flaky network never loses data.
-    if (navigator.onLine) await sync();
+    if (navigator.onLine) void sync();
   }
   async function action(body: unknown) {
     if (current.current?.queue.length)
@@ -304,16 +275,7 @@ export function useWorkspace() {
     if (busy.current || actionBusy.current) throw new Error("Wait for the current sync or workspace action to finish.");
     actionBusy.current = true;
     try {
-      const actionName = body && typeof body === "object" && !Array.isArray(body)
-        ? (body as { action?: unknown }).action
-        : undefined;
-      const location = ["read", "backup", "backup-recovery", "retry-email"].includes(actionName as string)
-        ? "Unavailable"
-        : await liveLocation();
-      const request = body && typeof body === "object" && !Array.isArray(body)
-        ? { ...body as Record<string, unknown>, location }
-        : body;
-      const w = await workspaceRequest(request);
+      const w = await workspaceRequest(body);
       save({ workspace: w, queue: [], revision: w.revision });
       return w;
     } finally {
@@ -402,7 +364,7 @@ export function useWorkspace() {
     );
     const a = document.createElement("a");
     a.href = url;
-    a.download = "stockwell-device-changes.json";
+    a.download = "stockhale-pending-changes.json";
     a.click();
     setTimeout(() => URL.revokeObjectURL(url), 1000);
   }

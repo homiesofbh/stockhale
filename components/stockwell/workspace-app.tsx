@@ -279,15 +279,16 @@ export function WorkspaceApp() {
   }
   function scanProduct(code = scan) {
     try {
-      addLine(findProductByCode(s.products, code).id);
+      const productId = findProductByCode(s.products, code).id;
+      addLine(productId);
+      setScan("");
+      return productId;
     } catch (error) {
       setError(error instanceof Error ? error.message : "Could not scan product.");
       scanInput.current?.focus();
       scanInput.current?.select();
-      return;
+      return false;
     }
-    setScan("");
-    scanInput.current?.focus();
   }
   const billTotal = total({ lines, discount, tax });
   const action =

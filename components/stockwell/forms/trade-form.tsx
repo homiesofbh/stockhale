@@ -44,7 +44,7 @@ type Props = {
   scanInput: RefObject<HTMLInputElement | null>;
   scan: string;
   setScan: Dispatch<SetStateAction<string>>;
-  scanProduct: (code?: string) => void;
+  scanProduct: (code?: string) => string | false | void;
   addLine: (id: string) => void;
   lines: Line[];
   pName: (id: string) => string;
@@ -307,6 +307,7 @@ export function TradeForm({
               s.products.find((p) => p.id === l.productId)?.color || "—",
               <input
                 aria-label={`Quantity for ${pName(l.productId)}`}
+                data-barcode-quantity={l.productId}
                 type="number"
                 min="0.001"
                 step="0.001"

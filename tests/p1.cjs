@@ -18,6 +18,22 @@ function fixture() {
 }
 const bill = patch => ({ id: 'bill', number: '', date: before, contactId: 'customer', lines: [{ productId: 'p', qty: 2, price: 10, cost: 5 }], discount: 0, tax: 0, paid: 0, method: 'Cash', head: 'Sales', ...patch });
 const opts = (report, to = '', from = '') => ({ report, to, from, query: '', status: 'All', paymentMethod: 'All', reportContact: '' });
+test('sync recovery preserves independent edits and rejects overlapping edits', () => {
+ const base = fixture();
+ const local = { ...base, customers: [...base.customers, { id: 'local', name: 'Local', phone: '', address: '', email: '' }] };
+ const remote = { ...base, customers: [...base.customers, { id: 'remote', name: 'Remote', phone: '', address: '', email: '' }] };
+ const member = { ...owner, modules: [], name: 'Owner', email: '' };
+ const server = { id: 'workspace', revision: 2, store: remote, member };
+ const change = { id: 'change', actorId: owner.id, module: 'Customers', action: 'Add customer', occurredAt: new Date().toISOString(), store: local };
+ const cache = { workspace: { ...server, store: local }, revision: 1, baseStore: base, queue: [change] };
+ const recovered = w.recoverPendingQueue(cache, server);
+ assert.deepEqual(recovered.workspace.store.customers.map(c => c.id), ['customer', 'remote', 'local']);
+ assert.equal(recovered.queue.length, 1);
+ const editedLocal = { ...base, customers: base.customers.map(c => ({ ...c, name: 'Local edit' })) };
+ const editedRemote = { ...base, customers: base.customers.map(c => ({ ...c, name: 'Remote edit' })) };
+ assert.throws(() => w.recoverPendingQueue({ ...cache, queue: [{ ...change, store: editedLocal }] }, { ...server, store: editedRemote }), /Both this device/);
+ assert.equal(cache.queue.length, 1);
+});
 function posted() { return m.recordTrade(fixture(), 'Sale', bill()); }
 function linked(s) {
  s = a.saveAccount(s, { id: 'ledger', name: 'HBL ledger', code: '1000', parentId: '', type: 'Asset', nature: 'Debit', openingBalance: 0, openingDate: before, description: '' });

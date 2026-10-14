@@ -64,7 +64,9 @@ export function ReturnForm({
       if (!eligible.some((p) => p.id === match.id))
         throw new Error("Select an original transaction containing this product first.");
       if (returnLines.some((line) => line.productId === match.id)) {
-        throw new Error("This product is already added to the return.");
+        setScan("");
+        setScanError("");
+        return match.id;
       }
       setReturnLines((lines) => {
         const empty = lines.find((line) => !line.productId);
@@ -74,8 +76,10 @@ export function ReturnForm({
       });
       setScan("");
       setScanError("");
+      return match.id;
     } catch (error) {
       setScanError(error instanceof Error ? error.message : "Could not scan product.");
+      return false;
     }
   }
 
@@ -233,7 +237,7 @@ export function ReturnForm({
                   </GlassSelect>
                 </Field>
                 <Field label={`Quantity (${lineUom})`}>
-                  <input type="number" min="0.001" max={lineRemainingQty} step="0.001" required value={line.qty} onChange={(e) => setReturnLines((lines) => lines.map((item) => item.id === line.id ? { ...item, qty: e.target.value } : item))} />
+                  <input data-barcode-quantity={line.productId} type="number" min="0.001" max={lineRemainingQty} step="0.001" required value={line.qty} onChange={(e) => setReturnLines((lines) => lines.map((item) => item.id === line.id ? { ...item, qty: e.target.value } : item))} />
                 </Field>
                 <div className="return-detail">
                   {lineProduct && selectedOriginal ? <>
