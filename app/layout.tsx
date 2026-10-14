@@ -4,6 +4,10 @@ import "./globals.css";
 export const metadata: Metadata = {
   metadataBase: new URL("https://stockhale.app"),
   applicationName: "StockHale",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    apple: [{ url: "/apple-icon.png", type: "image/png" }],
+  },
   openGraph: {
     title: "StockHale | Retail Inventory & Operations",
     description: "Retail inventory, purchasing, billing, sales, accounts, and reporting.",
