@@ -42,8 +42,10 @@ export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
   if (!cs)
     throw Object.assign(new Error("Database is not configured."), { status: 503 });
   const pool = new Pool({ connectionString: cs, max: 2, connectionTimeoutMillis: 8000 });
-  pool.on("error", (err: any) =>
-    console.error("DB pool error:", err?.code, err?.message));
+  pool.on("error", (err: any) => {
+    if (err?.message?.includes("socket has been closed")) return;
+    console.error("DB pool error:", err?.code, err?.message);
+  });
   try {
     return await scope.run({ pool }, fn);
   } catch (err: any) {
