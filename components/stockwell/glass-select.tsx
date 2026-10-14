@@ -21,6 +21,8 @@ type Props = {
   required?: boolean;
   disabled?: boolean;
   autoFocus?: boolean;
+  searchable?: boolean;
+  searchPlaceholder?: string;
   className?: string;
   "aria-label"?: string;
 };
@@ -46,12 +48,15 @@ export function GlassSelect({
   required,
   disabled,
   autoFocus,
+  searchable = false,
+  searchPlaceholder = "Search…",
   className,
   "aria-label": label,
 }: Props) {
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
     null,
   );
+  const [search, setSearch] = useState("");
   const triggerRef = useCallback((node: HTMLButtonElement | null) => {
     if (node) setPortalContainer(node.closest("dialog"));
   }, []);
@@ -64,6 +69,9 @@ export function GlassSelect({
       disabled: option.props.disabled,
     }));
   const placeholder = options.find((option) => option.value === "")?.label;
+  const visibleOptions = searchable && search.trim()
+    ? options.filter((option) => option.text.toLowerCase().includes(search.trim().toLowerCase()))
+    : options;
 
   return (
     <Select.Root<string>
@@ -74,7 +82,13 @@ export function GlassSelect({
       value={value}
       defaultValue={defaultValue ?? options[0]?.value ?? ""}
       items={options}
-      onValueChange={(next) => onValueChange?.(next ?? "")}
+      onValueChange={(next) => {
+        setSearch("");
+        onValueChange?.(next ?? "");
+      }}
+      onOpenChange={(open) => {
+        if (!open) setSearch("");
+      }}
       modal={false}
     >
       <Select.Trigger
@@ -99,8 +113,20 @@ export function GlassSelect({
           positionMethod="fixed"
         >
           <Select.Popup className={styles.popup}>
+            {searchable && (
+              <input
+                className={styles.search}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+                onKeyDown={(event) => event.stopPropagation()}
+                onPointerDown={(event) => event.stopPropagation()}
+                placeholder={searchPlaceholder}
+                aria-label={searchPlaceholder}
+                autoFocus
+              />
+            )}
             <Select.List className={styles.list}>
-              {options.map((option) => (
+              {visibleOptions.map((option) => (
                 <Select.Item
                   key={option.value}
                   value={option.value}
@@ -115,6 +141,9 @@ export function GlassSelect({
                 </Select.Item>
               ))}
             </Select.List>
+            {searchable && visibleOptions.length === 0 && (
+              <div className={styles.noResults}>No matching transactions</div>
+            )}
           </Select.Popup>
         </Select.Positioner>
       </Select.Portal>

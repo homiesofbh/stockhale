@@ -2,12 +2,12 @@
 
 import { useState } from "react";
 import {
-  cashFlow,
   cashStatement,
   closeDay,
   reopenDay,
   type Actor,
 } from "@/lib/stockwell/operations";
+import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { money, profit, round, today, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, Table } from "../ui";
 import { ReasonDialog } from "../reason-dialog";
@@ -28,11 +28,15 @@ export function DailyClosingView({
   const [unknownReason, setUnknownReason] = useState(false);
 
   const cash = cashStatement(s, date, date);
-  const flow = cashFlow(s, date, date);
   const activeClose = s.dailyCloses?.find(
     (c) => c.date === date && c.status === "closed"
   );
   const expected = cashStatement(s, "", date).closing;
+  const bankBalances = (s.financialAccounts || []).map((account) => ({
+    account,
+    day: bankStatement(s, account, date, date),
+    closing: bankStatement(s, account, "", date).closing,
+  }));
   const recordedProfit = profit(s, date, date);
   const variance =
     counted !== "" && Number.isFinite(Number(counted))
@@ -68,26 +72,46 @@ export function DailyClosingView({
         </Field>
       </div>
 
-      <Table
-        headers={[
-          "Opening cash",
-          "Cash receipts",
-          "Cash payments",
-          "Expected cash",
-          "External cash / bank receipts",
-          "External cash / bank payments",
-        ]}
-        rows={[
-          [
-            money(cash.opening + cash.openingAdjustment),
-            money(cash.receipts),
-            money(cash.payments),
-            money(cash.closing),
-            money(flow.receipts),
-            money(flow.payments),
-          ],
-        ]}
-      />
+      <div className="closing-ledger-grid">
+        <div>
+          <div className="closing-ledger-heading">
+            <div>
+              <h3>Cash in hand · drawer</h3>
+              <p>Only physical cash belongs in the counted cash field below.</p>
+            </div>
+            <Badge tone="green">Drawer reconciliation</Badge>
+          </div>
+          <Table
+            headers={["Opening cash", "Cash received", "Cash paid out", "Expected cash in hand"]}
+            rows={[[
+              money(cash.opening + cash.openingAdjustment),
+              money(cash.receipts),
+              money(cash.payments),
+              money(cash.closing),
+            ]]}
+          />
+        </div>
+
+        <div>
+          <div className="closing-ledger-heading">
+            <div>
+              <h3>Cash in bank · wallets</h3>
+              <p>Bank receipts/payments are movements; the balance is what remains in each account.</p>
+            </div>
+            <Badge>Bank balances</Badge>
+          </div>
+          <Table
+            headers={["Bank / wallet", "Received today", "Paid today", "Balance through date"]}
+            rows={bankBalances.map(({ account, day, closing }) => [
+              account.name,
+              money(day.receipts),
+              money(day.payments),
+              money(closing),
+            ])}
+            empty="No bank or wallet accounts configured"
+          />
+        </div>
+      </div>
 
       <Table
         headers={[
@@ -109,9 +133,10 @@ export function DailyClosingView({
       />
 
       <p className="form-hint" style={{ marginLeft: 16 }}>
-        Expected cash = opening cash + cash receipts − cash payments. Sales
-        paid by bank or on credit do not add to drawer cash. Profit is
-        calculated from recorded sales, costs and expenses.
+        Expected cash in hand = opening cash + cash received − cash paid out.
+        Bank and wallet balances are shown separately above. A sale paid by
+        bank or on credit does not add to the drawer; a reversed bill removes
+        the original amount from the same account it was paid into.
       </p>
 
       {actor.role === "owner" && !activeClose && (
@@ -145,7 +170,7 @@ export function DailyClosingView({
           }}
         >
           <div className="form-grid">
-            <Field label="Counted cash (PKR)">
+            <Field label="Counted cash in drawer (cash in hand, PKR)">
               <input
                 name="counted"
                 type="number"
@@ -165,7 +190,7 @@ export function DailyClosingView({
                 required={
                   variance !== null && variance !== 0 && !unknownReason
                 }
-                placeholder={`Expected cash is ${money(expected)}. Explain any shortage, overage, forgotten expense, or unrecorded receipt.`}
+                placeholder={`Expected cash in hand is ${money(expected)}. Explain any shortage, overage, forgotten expense, or unrecorded receipt.`}
               />
             </Field>
           </div>

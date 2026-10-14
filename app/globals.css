@@ -3229,6 +3229,32 @@ body::-webkit-scrollbar,
 
 .daily-close-card { margin-top: 24px; }
 
+.closing-ledger-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18px;
+  padding: 20px 28px 4px;
+}
+.closing-ledger-grid > div {
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #b9a6c44d;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, .34);
+}
+.closing-ledger-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 18px 18px 12px;
+}
+.closing-ledger-heading h3 { margin: 0; color: #44394d; font-size: 13px; letter-spacing: .1px; }
+.closing-ledger-heading p { max-width: 360px; margin: 5px 0 0; color: #786d82; font-size: 11px; line-height: 1.45; }
+.closing-ledger-grid .table-scroll { margin: 0; }
+.closing-ledger-grid table { min-width: 520px; }
+@media (max-width: 980px) { .closing-ledger-grid { grid-template-columns: 1fr; } }
+
 @media print {
   .report-toolbar, .workspace-header, nav, button, .daily-close-form { display: none !important; }
   .card { box-shadow: none !important; border: 1px solid #bbb; break-inside: avoid; }
@@ -3323,7 +3349,7 @@ body::-webkit-scrollbar,
 .product-picker-search { display: grid; gap: 12px; }
 .returns-view .toolbar { display: block; padding: 18px 0 0 20px; }
 .returns-view .toolbar input { display: block; width: min(100%, 420px); min-width: 320px; }
-.product-search-results { display: grid; gap: 6px; max-height: 220px; overflow-y: auto; margin-top: 8px; padding: 6px; border: 1px solid rgba(151,132,171,.24); border-radius: 14px; background: rgba(255,255,255,.24); }
+.product-search-results { display: grid; gap: 6px; margin: 8px clamp(8px, 1.4vw, 24px) 0; padding: 6px 6px 24px; border: 1px solid rgba(151,132,171,.24); border-radius: 14px; background: rgba(255,255,255,.24); }
 .product-search-result { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; border: 0; border-radius: 10px; background: transparent; color: inherit; text-align: left; }
 .product-search-result:hover { background: rgba(255,255,255,.38); }
 .product-search-result span { display: grid; gap: 3px; }

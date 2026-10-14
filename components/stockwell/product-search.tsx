@@ -16,6 +16,10 @@ type Props = {
 
 export function ProductSearch({ store, query, onChange, canSearch, canSearchCustomers = canSearch, canSearchSuppliers = canSearch }: Props) {
   if (!canSearch && !canSearchCustomers && !canSearchSuppliers) return null;
+  const normalizedQuery = query.trim().toLowerCase();
+  const matchingProducts = canSearch ? searchProducts(store.products, query) : [];
+  const matchingContacts = [...(canSearchCustomers ? store.customers.map((contact) => [contact, "Customer"] as const) : []), ...(canSearchSuppliers ? store.suppliers.map((contact) => [contact, "Supplier"] as const) : [])]
+    .filter(([contact]) => [contact.name, contact.company, contact.phone, contact.mobile, contact.email].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery));
   return (
     <>
       <form
@@ -39,17 +43,15 @@ export function ProductSearch({ store, query, onChange, canSearch, canSearchCust
         </button>
       </form>
       {query.trim() && (
-        <section
-          className="product-search-results"
-          aria-label="Product search results"
-        >
-          <div className="page-heading">
+        <section className="product-search-results" aria-label="Search results">
+          {canSearch && matchingProducts.length > 0 ? (
             <div>
-              <h1>Product results</h1>
-              <p>Matching names, SKU, barcode, and category.</p>
-            </div>
-          </div>
-          {canSearch ? (
+              <div className="page-heading">
+                <div className="ml-4">
+                  <h1>Product results</h1>
+                  <p>Matching names, SKU, barcode, and category.</p>
+                </div>
+              </div>
             <Table
               headers={[
                 "Product",
@@ -59,7 +61,7 @@ export function ProductSearch({ store, query, onChange, canSearch, canSearchCust
                 "Selling price",
               ]}
               empty="No matching products"
-              rows={searchProducts(store.products, query).map((product) => [
+              rows={matchingProducts.map((product) => [
                 product.name,
                 <>
                   {product.sku}
@@ -70,18 +72,18 @@ export function ProductSearch({ store, query, onChange, canSearch, canSearchCust
                 money(product.price),
               ])}
             />
+            </div>
           ) : null}
-          {(canSearchCustomers || canSearchSuppliers) && <>
-            <div className="page-heading global-search-subheading"><div><h2>Contacts</h2><p>Matching customers and suppliers.</p></div></div>
+          {matchingContacts.length > 0 && <>
+            <div className="page-heading global-search-subheading"><div className="ml-4"><h2>Contacts</h2><p>Matching customers and suppliers.</p></div></div>
             <Table
               headers={["Name", "Type", "Company", "Phone", "Email"]}
               empty="No matching customers or suppliers"
-              rows={[...(canSearchCustomers ? store.customers.map((contact) => [contact, "Customer"] as const) : []), ...(canSearchSuppliers ? store.suppliers.map((contact) => [contact, "Supplier"] as const) : [])]
-                .filter(([contact]) => [contact.name, contact.company, contact.phone, contact.mobile, contact.email].filter(Boolean).join(" ").toLowerCase().includes(query.trim().toLowerCase()))
+              rows={matchingContacts
                 .map(([contact, type]) => [contact.name || contact.company, type, contact.company || "—", contact.phone || contact.mobile || "—", contact.email || "—"])}
             />
           </>}
-          {!canSearch && !canSearchCustomers && !canSearchSuppliers && <Empty title="No search access" />}
+          {!matchingProducts.length && !matchingContacts.length && <Empty title="No matching records" />}
         </section>
       )}
     </>

@@ -5,7 +5,7 @@ import type { Actor } from "@/lib/stockwell/operations";
 import { BankVouchersView } from "./bank-vouchers-view";
 import { Badge, Field, Stat, Table } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { clearCheque, money, round, today, uid, type Store } from "@/lib/stockwell/model";
+import { clearCheque, financialRows, money, round, today, uid, type Store } from "@/lib/stockwell/model";
 type Props = {
   actor: Actor;
   receivables: number;
@@ -36,6 +36,21 @@ export function PaymentsView({
   const [partnerError, setPartnerError] = useState("");
   const partnerNames = Array.from(new Set([...(s.partnerNames || []), ...(s.partners || []).map(entry => entry.partner)].filter(Boolean))).sort();
   const partnerAccounts = (s.financialAccounts || []).filter(account => account.active !== false);
+  const trades = [...s.invoices, ...s.purchases];
+  const bankHistory = financialRows(s)
+    .filter((row) => row.financialAccountId && row.bank !== 0)
+    .filter((row) => inRange(row.date) && matches(row.date, row.reference, row.type, row.head, row.method, row.contactId, row.bank))
+    .map((row) => {
+      const account = (s.financialAccounts || []).find((candidate) => candidate.id === row.financialAccountId);
+      const trade = trades.find((candidate) => candidate.number === row.reference);
+      const contact = trade
+        ? cName(trade.contactId, trade.number.startsWith("PUR"))
+        : row.contactId
+          ? cName(row.contactId, row.type.toLowerCase().includes("supplier"))
+          : "—";
+      return { row, account, trade, contact };
+    })
+    .sort((a, b) => b.row.date.localeCompare(a.row.date));
   return (
     <>
       <div className="stats-grid three">
@@ -58,6 +73,33 @@ export function PaymentsView({
       </div>
       <ChequeRegister s={s} actor={actor} matches={matches} commit={commit} />
       <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} />
+      <section className="card mt-8">
+        <div className="section-head">
+          <div>
+            <h2>Bank / wallet account history</h2>
+            <p>Every bill receipt, supplier payment, expense, cheque settlement, and bank voucher posted to a named account.</p>
+          </div>
+          <Badge>{bankHistory.length} entries</Badge>
+        </div>
+        <Table
+          headers={["Date", "Bank / wallet", "Movement", "Bill / voucher", "Contact", "Amount", "Account head"]}
+          empty="No bank-linked history in this period"
+          rows={bankHistory.map(({ row, account, trade, contact }) => [
+            row.date,
+            account?.name || "Unknown account",
+            <Badge tone={row.bank > 0 ? "green" : "amber"}>
+              {row.bank > 0 ? "Received" : "Paid"}
+            </Badge>,
+            <div className="journal-register-reference">
+              <span>{row.reference || "—"}</span>
+              <small>{trade ? (trade.number.startsWith("PUR") ? "Purchase" : "Sale") : row.type}</small>
+            </div>,
+            contact,
+            money(Math.abs(row.bank)),
+            row.head || "—",
+          ])}
+        />
+      </section>
       <section className="card mt-8"><div className="section-head"><div><h2>Partner capital movements</h2><p>Record money introduced by a partner or taken from the business.</p></div></div>
         <form className="partner-entry-form" onSubmit={event => { event.preventDefault(); const form = new FormData(event.currentTarget); const name = partner.trim(); const amount = Number(form.get("partnerAmount")); if (!name) { setPartnerError("Enter the partner name."); return; } if (!Number.isFinite(amount) || amount <= 0) { setPartnerError("Enter an amount greater than zero."); return; } const account = partnerAccounts.find(candidate => candidate.name === partnerMethod); const existing = partnerNames.find(value => value.toLowerCase() === name.toLowerCase()); commit({ ...s, partnerNames: existing ? s.partnerNames || [] : [...(s.partnerNames || []), name], partners: [...(s.partners || []), { id: uid(), date: String(form.get("partnerDate") || today()), partner: existing || name, kind: partnerKind, amount: round(amount), method: partnerMethod, financialAccountId: account?.id, notes: String(form.get("partnerNotes") || "").trim() }] }, `Partner ${partnerKind.toLowerCase()} recorded.`); setPartner(""); setPartnerError(""); event.currentTarget.reset(); setPartnerMethod("Cash"); setPartnerKind("Withdrawal"); }}>
           <div className="form-grid"><Field label="Partner"><div><input list="partner-names" value={partner} onChange={event => { setPartner(event.target.value); setPartnerError(""); }} placeholder="Partner name" required /><datalist id="partner-names">{partnerNames.map(name => <option key={name} value={name} />)}</datalist></div></Field><Field label="Movement"><GlassSelect value={partnerKind} onValueChange={value => setPartnerKind(value as typeof partnerKind)}><option>Contribution</option><option>Withdrawal</option></GlassSelect></Field><Field label="Cash / bank account"><GlassSelect value={partnerMethod} onValueChange={setPartnerMethod}><option>Cash</option>{partnerAccounts.map(account => <option key={account.id}>{account.name}</option>)}</GlassSelect></Field><Field label="Amount (PKR)"><input name="partnerAmount" type="number" min="0.01" step="0.01" required /></Field><Field label="Date"><input name="partnerDate" type="date" defaultValue={today()} required /></Field><Field label="Notes"><input name="partnerNotes" maxLength={500} /></Field></div>

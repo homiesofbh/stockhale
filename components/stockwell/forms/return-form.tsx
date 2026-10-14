@@ -163,6 +163,8 @@ export function ReturnForm({
           <Field label="Original transaction">
             <GlassSelect
               required
+              searchable
+              searchPlaceholder="Search invoice or date…"
               value={selectedTrade}
               onValueChange={(e) => {
                 setSelectedTrade(e);
@@ -213,7 +215,7 @@ export function ReturnForm({
             const lineReturnedQty = selectedTrade && line.productId
               ? s.returns.filter((entry) => entry.tradeId === selectedTrade && entry.productId === line.productId).reduce((sum, entry) => sum + entry.qty, 0)
               : 0;
-            const lineRemainingQty = selectedOriginal && line.productId ? Math.max(0, originalQty - lineReturnedQty) : undefined;
+            const lineRemainingQty = selectedOriginal && line.productId ? roundQty(Math.max(0, originalQty - lineReturnedQty)) : undefined;
             const lineUom = lineProduct?.unit || "piece";
             const linePrice = originalLines.reduce((sum, item) => sum + item.qty * item.price, 0) / (originalQty || 1);
             return (
