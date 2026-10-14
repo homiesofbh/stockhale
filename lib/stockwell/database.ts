@@ -42,11 +42,15 @@ export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
   if (!cs)
     throw Object.assign(new Error("Database is not configured."), { status: 503 });
   const pool = new Pool({ connectionString: cs, max: 2, connectionTimeoutMillis: 8000 });
-  pool.on("error", () => console.error("A database connection failed."));
+  pool.on("error", (err: any) =>
+    console.error("DB pool error:", err?.code, err?.message));
   try {
     return await scope.run({ pool }, fn);
+  } catch (err: any) {
+    console.error("withDatabase error:", err?.code, err?.message, err?.cause?.message);
+    throw err;
   } finally {
-    defer(pool.end().catch(() => {}));
+    defer(pool.end().catch(() => { }));
   }
 }
 
@@ -91,9 +95,9 @@ export async function transaction<T>(fn: (client: PoolClient) => Promise<T>) {
     await client.query("COMMIT");
     return result;
   } catch (error) {
-    await client.query("ROLLBACK");
+    await client.query("ROLLBACK").catch(() => { });
     throw error;
   } finally {
     client.release();
   }
-}
+} 
