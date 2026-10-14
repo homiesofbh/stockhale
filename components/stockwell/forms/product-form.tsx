@@ -34,11 +34,18 @@ export function ProductForm({
   const [unit, setUnit] = useState(editProduct?.unit || "piece");
   const [customUnit, setCustomUnit] = useState("");
   const [barcode, setBarcode] = useState(editProduct?.barcode || "");
+  const [category, setCategory] = useState(editProduct?.category || s.categories[0] || "");
+  const [newCategories, setNewCategories] = useState<string[]>([]);
+  const [addingCategory, setAddingCategory] = useState(false);
+  const [categoryName, setCategoryName] = useState("");
+  const [categoryError, setCategoryError] = useState("");
+  const categories = [...s.categories, ...newCategories.filter(name => !s.categories.some(existing => existing.toLowerCase() === name.toLowerCase()))];
   const isCustomUnit = unit === "__custom__";
   return (
     <form
       onSubmit={(e) =>
         submit(e, (f) => {
+          if (addingCategory) throw new Error("Add or cancel the new category before saving the product.");
           const p: Product = {
             id: editProduct?.id || uid(),
             name: text(f, "name"),
@@ -58,7 +65,7 @@ export function ProductForm({
             active: !editProduct || f.has("active"),
             variantOf: text(f, "variantOf") || undefined,
           };
-          const next = saveProduct(s, p, num(f, "opening"));
+          const next = saveProduct({ ...s, categories }, p, num(f, "opening"));
           const units = next.units || defaultUnits;
           const matchingUnit = units.find(existing => existing.trim().toLowerCase() === p.unit);
           commit(
@@ -70,7 +77,7 @@ export function ProductForm({
     >
       <div className="field">
         <span>Barcode (optional)</span>
-        <BarcodeInput name="barcode" value={barcode} onChange={setBarcode} onScan={setBarcode} label="Product barcode" action="Use barcode" placeholder="Scan barcode or enter it, then press Enter" />
+        <BarcodeInput name="barcode" value={barcode} onChange={setBarcode} onScan={setBarcode} label="Product barcode" />
       </div>
       <div className="form-grid">
         <div className="form-wide">
@@ -83,11 +90,29 @@ export function ProductForm({
         </Field>
         </div>
         <Field label="Category">
-          <GlassSelect name="category" defaultValue={editProduct?.category}>
-            {s.categories.map((c) => (
+          <div>
+          <GlassSelect aria-label="Category" name="category" value={category} onValueChange={setCategory}>
+            {categories.map((c) => (
               <option key={c}>{c}</option>
             ))}
           </GlassSelect>
+          {!addingCategory && <button type="button" className="link" onClick={() => { setAddingCategory(true); setCategoryError(""); }}>+ Add category</button>}
+          {addingCategory && <div>
+            <input aria-label="New category name" value={categoryName} onChange={event => setCategoryName(event.target.value)} placeholder="Category name" maxLength={100} onKeyDown={event => {
+              if (event.key === "Enter") { event.preventDefault(); event.currentTarget.parentElement?.querySelector<HTMLButtonElement>("button")?.click(); }
+            }} />
+            <button type="button" className="secondary-button" onClick={() => {
+              const name = categoryName.trim();
+              if (!name) { setCategoryError("Enter a category name."); return; }
+              const existing = categories.find(value => value.toLowerCase() === name.toLowerCase());
+              if (!existing) setNewCategories(values => [...values, name]);
+              setCategory(existing || name);
+              setAddingCategory(false); setCategoryName(""); setCategoryError("");
+            }}>Add category</button>
+            <button type="button" className="link" onClick={() => { setAddingCategory(false); setCategoryName(""); setCategoryError(""); }}>Cancel</button>
+            {categoryError && <p className="form-error" role="alert">{categoryError}</p>}
+          </div>}
+          </div>
         </Field>
         <Field label="SKU / Item code">
           <input name="sku" required defaultValue={editProduct?.sku} />

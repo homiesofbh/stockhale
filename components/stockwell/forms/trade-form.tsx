@@ -1,7 +1,8 @@
 "use client";
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { Field, Table } from "@/components/stockwell/ui";
+import { Field, Modal, Table } from "@/components/stockwell/ui";
+import { ProductForm } from "./product-form";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   money,
@@ -60,6 +61,8 @@ type Props = {
   canAddCustomer: boolean;
   addCustomer: (customer: Contact) => void;
   canChangeHead: boolean;
+  canAddProduct: boolean;
+  addProduct: (next: Store, productId: string) => void;
 };
 export function TradeForm({
   submit,
@@ -89,10 +92,14 @@ export function TradeForm({
   canAddCustomer,
   addCustomer,
   canChangeHead,
+  canAddProduct,
+  addProduct,
 }: Props) {
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
   const [productQuery, setProductQuery] = useState("");
+  const [addingProduct, setAddingProduct] = useState(false);
+  const [productError, setProductError] = useState("");
   const [method, setMethod] = useState("Cash");
   const [paidAmount, setPaidAmount] = useState(billTotal);
   const [addingSupplier, setAddingSupplier] = useState(false);
@@ -146,6 +153,7 @@ export function TradeForm({
     }
   }
   return (
+    <>
     <form
       onSubmit={(e) =>
         submit(e, async (f) => {
@@ -271,6 +279,7 @@ export function TradeForm({
         </fieldset>
       )}
       <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
+      {modal === "Purchase" && canAddProduct && <button type="button" className="secondary-button" onClick={() => { setProductError(""); setAddingProduct(true); }}>+ Add product</button>}
       <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(s, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}</div>}</div></Field>
       <Field label="Or choose a product">
         <GlassSelect value="" onValueChange={(e) => { addLine(e); setProductQuery(""); }}>
@@ -479,5 +488,22 @@ export function TradeForm({
         </button>
       </div>
     </form>
+    {addingProduct && <Modal title="Add product to purchase" close={() => setAddingProduct(false)}>
+      {productError && <p role="alert" className="form-error">{productError}</p>}
+      <ProductForm s={s} editProduct={null} text={text} num={num}
+        setModal={() => setAddingProduct(false)}
+        submit={async (event, fn) => {
+          event.preventDefault(); setProductError("");
+          try { await fn(new FormData(event.currentTarget)); }
+          catch (error) { setProductError(error instanceof Error ? error.message : "Could not save product."); }
+        }}
+        commit={(next) => {
+          const product = next.products.find(item => !s.products.some(existing => existing.id === item.id));
+          if (!product) throw new Error("Could not identify the new product.");
+          addProduct(next, product.id);
+          setAddingProduct(false);
+        }} />
+    </Modal>}
+    </>
   );
 }

@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { scannerKey } = require(path.join(process.env.STOCKWELL_TEST_DIR, "scanner.js"));
+const { scannerKey, isScannerBurst } = require(path.join(process.env.STOCKWELL_TEST_DIR, "scanner.js"));
 const { findProductByCode, saveProduct, emptyStore, recordTrade, recordReturn, stock } = require(process.env.STOCKWELL_MODEL);
 function scans(keys) {
   let buffer = "";
@@ -14,6 +14,15 @@ function scans(keys) {
   }
   return codes;
 }
+test("automatic detection requires a sustained rapid scan outside the barcode field", () => {
+  assert.equal(isScannerBurst("123", 12, false), false);
+  assert.equal(isScannerBurst("001234", 30, false), true);
+  assert.equal(isScannerBurst("ABC-123", 42, false), true);
+  assert.equal(isScannerBurst("001234", 300, false), false);
+  assert.equal(isScannerBurst("ABC", 120, true), false);
+  assert.equal(isScannerBurst("ABC", 12, true), true);
+  assert.equal(isScannerBurst("001234", -1, false), false);
+});
 test("Enter and Tab terminate repeated scans without dropping leading zeroes", () => {
   assert.deepEqual(scans([..."001234", "Enter", ..."001234", "Tab", "Enter"]), ["001234", "001234"]);
   assert.deepEqual(scans(["Shift", ..."ABC-123", "ArrowDown", "Enter"]), ["ABC-123"]);

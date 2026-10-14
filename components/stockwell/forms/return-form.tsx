@@ -141,7 +141,7 @@ export function ReturnForm({
       }
     >
       <BarcodeInput value={scan} onChange={setScan} onScan={scanProduct}
-        label="Return barcode scanner input" action="Select item" />
+        label="Return barcode scanner input" />
       {scanError && <p role="alert" className="form-error">{scanError}</p>}
       <div className="form-grid">
         <Field label="Type">

@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, type RefObject } from "react";
+import { isScannerBurst } from "@/lib/stockwell/scanner";
 
 type Props = {
   value: string;
@@ -9,14 +10,12 @@ type Props = {
   inputRef?: RefObject<HTMLInputElement | null>;
   name?: string;
   label?: string;
-  action?: string;
-  placeholder?: string;
 };
 
 /** Keyboard-wedge scanners send text followed by Enter or Tab, without a network connection. */
 export function BarcodeInput({
   value, onChange, onScan, inputRef, name,
-  label = "Barcode", placeholder = "Barcode / SKU",
+  label = "Barcode",
 }: Props) {
   const localRef = useRef<HTMLInputElement>(null);
   const ref = inputRef || localRef;
@@ -45,10 +44,12 @@ export function BarcodeInput({
 
   useEffect(() => {
     let last = 0;
+    let started = 0;
+    let source: EventTarget | null = null;
     let scanning = false;
     let original: { input: HTMLInputElement | HTMLTextAreaElement; value: string; start: number | null; end: number | null } | null = null;
     let timer: ReturnType<typeof setTimeout>;
-    const reset = () => { buffer.current = ""; scanning = false; original = null; clearTimeout(timer); };
+    const reset = () => { buffer.current = ""; scanning = false; original = null; source = null; clearTimeout(timer); };
     const complete = () => {
       const code = buffer.current;
       reset();
@@ -56,8 +57,8 @@ export function BarcodeInput({
       callbacks.current.onScan(code);
     };
     const listener = (event: KeyboardEvent) => {
-      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.repeat) return;
-      if (!ref.current?.form?.contains(event.target as Node)) return;
+      if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.repeat) { reset(); return; }
+      if (!ref.current?.form?.contains(event.target as Node)) { reset(); return; }
       if (event.key === "Enter" || event.key === "Tab") {
         if (!scanning) { reset(); return; }
         event.preventDefault();
@@ -67,15 +68,17 @@ export function BarcodeInput({
       }
       if (event.key.length !== 1) { if (event.key !== "Shift") reset(); return; }
       const now = performance.now();
-      if (!buffer.current || now - last > 35) {
+      if (!buffer.current || now - last > 35 || source !== event.target) {
         reset();
+        started = now;
+        source = event.target;
         const target = event.target;
         if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
           original = { input: target, value: target.value, start: target.selectionStart, end: target.selectionEnd };
       }
       last = now;
       buffer.current += event.key;
-      if (buffer.current.length >= 3) {
+      if (scanning || isScannerBurst(buffer.current, now - started, event.target === ref.current)) {
         event.preventDefault();
         event.stopImmediatePropagation();
         if (!scanning && original) {
@@ -91,8 +94,14 @@ export function BarcodeInput({
       clearTimeout(timer);
       timer = setTimeout(() => { if (scanning) complete(); else reset(); }, 100);
     };
+    const onPointer = () => reset();
     window.addEventListener("keydown", listener, true);
-    return () => { reset(); window.removeEventListener("keydown", listener, true); };
+    window.addEventListener("pointerdown", onPointer, true);
+    return () => {
+      reset();
+      window.removeEventListener("keydown", listener, true);
+      window.removeEventListener("pointerdown", onPointer, true);
+    };
   }, []);
 
   return (

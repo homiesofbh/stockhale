@@ -830,6 +830,16 @@ export function WorkspaceApp() {
               billTotal={billTotal}
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
+              canAddProduct={canAccess("Inventory")}
+              addProduct={(next, productId) => {
+                if (storageError) throw new Error(storageError);
+                workspace.commit(next, "Inventory", "Product added from purchase form.");
+                const product = next.products.find(item => item.id === productId)!;
+                setS(next);
+                setLines(current => [...current, { productId, unit: product.unit || "piece", qty: 1, price: product.cost, cost: product.cost }]);
+                setNotice("Product saved and added to purchase.");
+                setError("");
+              }}
               canAddCustomer={canAccess("Customers")}
               canChangeHead={account.member.role === "owner"}
               addSupplier={(supplier) => {
