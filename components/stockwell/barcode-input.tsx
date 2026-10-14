@@ -1,7 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type RefObject } from "react";
-import { scannerKey } from "@/lib/stockwell/scanner";
+import { useEffect, useRef, type RefObject } from "react";
 
 type Props = {
   value: string;
@@ -17,18 +16,15 @@ type Props = {
 /** Keyboard-wedge scanners send text followed by Enter or Tab, without a network connection. */
 export function BarcodeInput({
   value, onChange, onScan, inputRef, name,
-  label = "Barcode scanner input", action = "Add item",
-  placeholder = "Scan barcode or enter SKU, then press Enter",
+  label = "Barcode", placeholder = "Barcode / SKU",
 }: Props) {
   const localRef = useRef<HTMLInputElement>(null);
   const ref = inputRef || localRef;
-  const [scannerMode, setScannerMode] = useState(false);
   const buffer = useRef("");
   function finishScan(code: string) {
     if (!code.trim()) return;
     const productId = onScan(code.trim());
     buffer.current = "";
-    setScannerMode(false);
     requestAnimationFrame(() => {
       const input = ref.current;
       if (!input) return;
@@ -48,38 +44,63 @@ export function BarcodeInput({
   callbacks.current = { onChange, onScan: finishScan };
 
   useEffect(() => {
-    if (!scannerMode) return;
-    // Explicit mode avoids mistaking fast human typing for a scanner, and
-    // prevents scanner characters from entering price, name or quantity fields.
+    let last = 0;
+    let scanning = false;
+    let original: { input: HTMLInputElement | HTMLTextAreaElement; value: string; start: number | null; end: number | null } | null = null;
+    let timer: ReturnType<typeof setTimeout>;
+    const reset = () => { buffer.current = ""; scanning = false; original = null; clearTimeout(timer); };
+    const complete = () => {
+      const code = buffer.current;
+      reset();
+      callbacks.current.onChange(code);
+      callbacks.current.onScan(code);
+    };
     const listener = (event: KeyboardEvent) => {
       if (event.ctrlKey || event.metaKey || event.altKey || event.isComposing || event.repeat) return;
-      if (event.key === "Escape") {
+      if (!ref.current?.form?.contains(event.target as Node)) return;
+      if (event.key === "Enter" || event.key === "Tab") {
+        if (!scanning) { reset(); return; }
         event.preventDefault();
-        event.stopPropagation();
-        setScannerMode(false);
+        event.stopImmediatePropagation();
+        complete();
         return;
       }
-      const result = scannerKey(buffer.current, event.key);
-      if (!result) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      buffer.current = result.buffer;
-      if (result.code !== undefined) {
-        if (result.code) callbacks.current.onScan(result.code);
-      } else {
-        callbacks.current.onChange(result.buffer);
+      if (event.key.length !== 1) { if (event.key !== "Shift") reset(); return; }
+      const now = performance.now();
+      if (!buffer.current || now - last > 35) {
+        reset();
+        const target = event.target;
+        if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement)
+          original = { input: target, value: target.value, start: target.selectionStart, end: target.selectionEnd };
       }
+      last = now;
+      buffer.current += event.key;
+      if (buffer.current.length >= 3) {
+        event.preventDefault();
+        event.stopImmediatePropagation();
+        if (!scanning && original) {
+          // Restore the characters received before the rapid burst was recognized.
+          const prototype = original.input instanceof HTMLTextAreaElement ? HTMLTextAreaElement.prototype : HTMLInputElement.prototype;
+          Object.getOwnPropertyDescriptor(prototype, "value")?.set?.call(original.input, original.value);
+          original.input.dispatchEvent(new Event("input", { bubbles: true }));
+          if (original.start !== null) original.input.setSelectionRange(original.start, original.end);
+        }
+        scanning = true;
+        callbacks.current.onChange(buffer.current);
+      }
+      clearTimeout(timer);
+      timer = setTimeout(() => { if (scanning) complete(); else reset(); }, 100);
     };
     window.addEventListener("keydown", listener, true);
-    return () => window.removeEventListener("keydown", listener, true);
-  }, [scannerMode]);
+    return () => { reset(); window.removeEventListener("keydown", listener, true); };
+  }, []);
 
   return (
     <div className="barcode-control">
       <div className="scan-row">
         <input
           ref={ref} name={name} value={value} aria-label={label}
-          autoFocus autoComplete="off" spellCheck={false} placeholder={placeholder}
+          autoFocus autoComplete="off" spellCheck={false} placeholder="Barcode / SKU"
           onFocus={(event) => event.currentTarget.select()}
           onChange={(event) => onChange(event.target.value)}
           onKeyDown={(event) => {
@@ -90,23 +111,7 @@ export function BarcodeInput({
             }
           }}
         />
-        <button type="button" className="secondary-button" onClick={() => finishScan(value)}>{action}</button>
       </div>
-      <button
-        type="button" className="secondary-button scanner-mode-button" aria-pressed={scannerMode}
-        onClick={() => {
-          buffer.current = "";
-          setScannerMode(!scannerMode);
-          ref.current?.focus();
-        }}
-      >
-        {scannerMode ? "Turn off scanner mode" : "Use barcode scanner"}
-      </button>
-      <p className="form-hint" role="status">
-        {scannerMode
-          ? "Scanner mode on: the next scan goes to this field, then focus moves to the next field. Press Escape to cancel."
-          : "Scan into this field, or enable scanner mode to scan from anywhere in the form. Configure your scanner to send Enter or Tab after each barcode."}
-      </p>
     </div>
   );
 }
