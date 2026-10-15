@@ -9,11 +9,12 @@ type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   num: (f: FormData, key: string) => number;
   commit: (next: Store, message: string) => void;
+  commitInline?: (next: Store, message: string) => void;
   s: Store;
   actor: Actor;
   text: (f: FormData, key: string) => string;
 };
-export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
+export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor }: Props) {
   const [category, setCategory] = useState(s.expenseCategories[0] || "");
   const [newCategories, setNewCategories] = useState<string[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
@@ -24,7 +25,12 @@ export function ExpenseForm({ submit, num, commit, s, text, actor }: Props) {
     const name = categoryName.trim();
     if (!name) { setCategoryError("Enter a category name."); return; }
     const existing = categories.find(value => value.toLowerCase() === name.toLowerCase());
-    if (!existing) setNewCategories(values => [...values, name]);
+    if (!existing) {
+      try {
+        if (commitInline) commitInline({ ...s, expenseCategories: [...s.expenseCategories, name] }, "Expense category added.");
+        else setNewCategories(values => [...values, name]);
+      } catch (error) { setCategoryError(error instanceof Error ? error.message : "Could not add category."); return; }
+    }
     setCategory(existing || name);
     setAddingCategory(false);
     setCategoryName("");

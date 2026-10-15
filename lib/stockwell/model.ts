@@ -554,7 +554,7 @@ export function recordPayment(s: Store, p: Payment): Store {
   requireOpenDate(s, p.date);
   if (p.advance) {
     assert(!p.tradeId && !!p.contactId, "Select a customer or supplier for the advance payment.");
-    assert(Number.isFinite(p.amount) && Math.abs(p.amount) >= 0.01 && round(p.amount) === p.amount, "Advance payment must be greater than zero.");
+    assert(Number.isFinite(p.amount) && p.amount >= 0.01 && round(p.amount) === p.amount, "Advance payment must be greater than zero.");
     assert(s.heads.includes(p.head), "Select a valid account head.");
     assert(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some(a => a.name === p.method && a.active !== false), "Select a valid payment method.");
     if (p.method === "Cheque") {

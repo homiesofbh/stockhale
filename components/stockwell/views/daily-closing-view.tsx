@@ -9,7 +9,7 @@ import {
 } from "@/lib/stockwell/operations";
 import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { money, profit, round, today, type Store } from "@/lib/stockwell/model";
-import { Badge, Field, Table } from "../ui";
+import { Badge, Field, InfoTip, Table } from "../ui";
 import { ReasonDialog } from "../reason-dialog";
 
 export function DailyClosingView({
@@ -21,6 +21,15 @@ export function DailyClosingView({
   actor: Actor;
   commit: (s: Store, message: string) => void;
 }) {
+  const formatClosingDate = (date: string) => {
+    const [year, month, day] = date.split("-").map(Number);
+    return new Intl.DateTimeFormat("en-PK", {
+      day: "2-digit",
+      month: "short",
+      year: "numeric",
+      timeZone: "Asia/Karachi",
+    }).format(new Date(Date.UTC(year, month - 1, day, 12)));
+  };
   const [date, setDate] = useState(today());
   const [error, setError] = useState("");
   const [reopening, setReopening] = useState("");
@@ -76,7 +85,15 @@ export function DailyClosingView({
         <div>
           <div className="closing-ledger-heading">
             <div>
-              <h3>Cash in hand · drawer</h3>
+              <div className="closing-title-row">
+                <h3>Cash in hand · drawer</h3>
+                <InfoTip label="How drawer cash is calculated">
+                  <span>Expected cash = opening cash + cash received − cash paid out.</span>
+                  <span>Cash received includes the cash-paid part of sales, customer payments received in cash, partner contributions in cash, and posted cash debits. Cash paid out includes cash-paid purchases, supplier payments, expenses, partner drawings, and posted cash credits.</span>
+                  <span>A debit to the Cash asset account increases the drawer. A credit decreases it. Bank, wallet, cheque, and credit sales do not count as physical drawer cash. A supplier refund recorded as a negative supplier payment increases cash.</span>
+                  <span>For this date: {money(cash.opening + cash.openingAdjustment)} + {money(cash.receipts)} − {money(cash.payments)} = {money(cash.closing)}.</span>
+                </InfoTip>
+              </div>
               <p>Only physical cash belongs in the counted cash field below.</p>
             </div>
             <Badge tone="green">Drawer reconciliation</Badge>
@@ -95,7 +112,14 @@ export function DailyClosingView({
         <div>
           <div className="closing-ledger-heading">
             <div>
-              <h3>Cash in bank · wallets</h3>
+              <div className="closing-title-row">
+                <h3>Cash in bank · wallets</h3>
+                <InfoTip label="How bank and wallet balances are calculated">
+                  <span>Each account is shown separately: opening balance + money received − money paid = balance through the selected date.</span>
+                  <span>Receipts increase that bank or wallet; payments decrease it. Transfers move money between accounts and do not change the cash drawer. A cheque affects a bank only when it is cleared.</span>
+                  <span>These balances are separate from physical cash in the drawer.</span>
+                </InfoTip>
+              </div>
               <p>Bank receipts/payments are movements; the balance is what remains in each account.</p>
             </div>
             <Badge>Bank balances</Badge>
@@ -113,6 +137,15 @@ export function DailyClosingView({
         </div>
       </div>
 
+      <div className="closing-profit-heading">
+        <h3>Recorded profit summary</h3>
+        <InfoTip label="How recorded net profit is calculated">
+          <span>Net profit = net sales − cost of goods sold − recorded expenses − damaged stock cost.</span>
+          <span>Net sales subtract discounts and sales returns. Cost of goods sold uses the recorded cost of sold items, less the cost of returned items. Damage uses the recorded cost of damaged stock.</span>
+          <span>This summary uses recorded transactions for the selected date. It does not use the drawer count or unexplained cash difference.</span>
+          <span>For this date: {money(recordedProfit.revenue)} − {money(recordedProfit.cogs)} − {money(recordedProfit.expenses)} − {money(recordedProfit.damage)} = {money(recordedProfit.net)}.</span>
+        </InfoTip>
+      </div>
       <Table
         headers={[
           "Recorded net sales",
@@ -132,12 +165,14 @@ export function DailyClosingView({
         ]}
       />
 
-      <p className="form-hint" style={{ marginLeft: 16 }}>
-        Expected cash in hand = opening cash + cash received − cash paid out.
-        Bank and wallet balances are shown separately above. A sale paid by
-        bank or on credit does not add to the drawer; a reversed bill removes
-        the original amount from the same account it was paid into.
-      </p>
+      <div className="form-hint closing-variance-help">
+        <InfoTip label="How the cash difference is calculated">
+          <span>Cash difference = counted cash − expected cash.</span>
+          <span>A negative result is a shortage; a positive result is an overage. Saving a difference records the count and explanation only. It does not change cash, expenses, or profit. Record the confirmed receipt, expense, or correction separately.</span>
+          <span>Current expected drawer cash: {money(expected)}.</span>
+        </InfoTip>
+        <span className="closing-variance-copy">Need help understanding the count? Select the info icon to expand the explanation.</span>
+      </div>
 
       {actor.role === "owner" && !activeClose && (
         <form
@@ -190,7 +225,7 @@ export function DailyClosingView({
                 required={
                   variance !== null && variance !== 0 && !unknownReason
                 }
-                placeholder={`Expected cash in hand is ${money(expected)}. Explain any shortage, overage, forgotten expense, or unrecorded receipt.`}
+              placeholder={`Expected cash in hand is ${money(expected)}. Explain any shortage, overage, forgotten expense, or unrecorded receipt.`}
               />
             </Field>
           </div>
@@ -240,13 +275,13 @@ export function DailyClosingView({
 
       <Table
         headers={[
-          "Date",
+          "Business date",
           "Expected cash",
           "Counted cash",
           "Variance",
           "Explanation",
           "Status",
-          "Closed by / time",
+          "Recorded by / at",
           "Action",
         ]}
         rows={[...(s.dailyCloses || [])]
@@ -256,7 +291,7 @@ export function DailyClosingView({
               b.closedAt.localeCompare(a.closedAt)
           )
           .map((c) => [
-            c.date,
+            <time key="date" dateTime={c.date}>{formatClosingDate(c.date)}</time>,
             money(c.expected),
             money(c.counted),
             money(c.variance),
@@ -272,8 +307,13 @@ export function DailyClosingView({
                 (c.actorId === actor.id ? actor.name : undefined) ||
                 `Owner · ${c.actorId.slice(0, 8)}`}
               <small>
-                {new Date(c.closedAt).toLocaleString("en-PK", {
+                Recorded {new Date(c.closedAt).toLocaleString("en-PK", {
                   timeZone: "Asia/Karachi",
+                  day: "2-digit",
+                  month: "short",
+                  year: "numeric",
+                  hour: "2-digit",
+                  minute: "2-digit",
                 })}
               </small>
               {c.reopenReason && <small>Reopened: {c.reopenReason}</small>}
@@ -292,12 +332,17 @@ export function DailyClosingView({
           ])}
       />
 
-      {(s.dailyCloses || [])
+      {[...(s.dailyCloses || [])]
         .filter((c) => !!c.summary)
+        .sort(
+          (a, b) =>
+            b.date.localeCompare(a.date) ||
+            b.closedAt.localeCompare(a.closedAt)
+        )
         .map((c) => (
           <details className="daily-close-form" key={c.id}>
             <summary>
-              {c.date} · saved closing summary ({c.status})
+              <time dateTime={c.date}>{formatClosingDate(c.date)}</time> · saved closing summary ({c.status})
             </summary>
             <Table
               headers={[

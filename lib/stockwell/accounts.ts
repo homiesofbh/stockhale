@@ -15,12 +15,20 @@ export type Account = {
   description: string;
 };
 
+const legacyAccountDefaults: Record<string, Account["type"]> = {
+  sales: "Income", purchases: "Expense", expenses: "Expense",
+  cash: "Asset", bank: "Asset", receivables: "Asset", payables: "Liability",
+  "supplier payments": "Liability", "customer payments": "Asset",
+  "other income": "Income", "other expenses": "Expense",
+};
+
 /** Stable legacy IDs preserve name-based transaction links without a data rewrite. */
 export function chartAccounts(s: Store): Account[] {
   const records = s.accounts || [];
   return [...records, ...s.heads.map((name, i): Account => ({
     id: `legacy:${name}`, code: `L${String(i + 1).padStart(4, "0")}`, name,
-    parentId: "", type: "Unclassified", nature: "Debit", openingBalance: 0,
+    parentId: "", type: legacyAccountDefaults[name.trim().toLocaleLowerCase()] || "Unclassified",
+    nature: ["Liability", "Equity", "Income"].includes(legacyAccountDefaults[name.trim().toLocaleLowerCase()] || "Unclassified") ? "Credit" : "Debit", openingBalance: 0,
     openingDate: "", description: "",
   })).filter(a => !records.some(record => record.name === a.name))];
 }

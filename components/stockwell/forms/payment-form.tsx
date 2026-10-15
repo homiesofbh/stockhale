@@ -67,7 +67,7 @@ export function PaymentForm({
               amount:
                 round(num(f, "amount")) *
                 (advance
-                  ? paymentKind === "Customer" ? 1 : -1
+                  ? 1
                   : balance(
                       s,
                       (paymentKind === "Customer" ? s.invoices : s.purchases).find(
@@ -129,6 +129,11 @@ export function PaymentForm({
           </GlassSelect>
         </Field>
         <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={advance} onChange={e => { setAdvance(e.target.checked); setSelectedTrade(""); }} /> Advance payment (not linked to a bill yet)</label>
+        {advance && <p className="field-help payment-advance-help">
+          {paymentKind === "Supplier"
+            ? "A supplier advance is money paid now. It reduces cash or bank and appears as a credit on the supplier ledger until matched to a purchase."
+            : "A customer advance is money received now. It increases cash or bank and appears as a credit on the customer ledger until matched to a sale."}
+        </p>}
         <Field label="Bill / purchase with a pending balance or credit">
           <GlassSelect
             name="trade"

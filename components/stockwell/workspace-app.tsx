@@ -177,6 +177,13 @@ export function WorkspaceApp() {
     setError("");
     setModal("");
   }
+  function commitInline(next: Store, message: string, targetModule = module) {
+    if (storageError) throw new Error(storageError);
+    workspace.commit(next, targetModule, message);
+    setS(next);
+    setNotice(message);
+    setError("");
+  }
   function go(m: Module) {
     if (!canAccess(m)) {
       setNotice("You do not have authority for this module.");
@@ -727,6 +734,7 @@ export function WorkspaceApp() {
           {modal === "Product details" && detailProduct && <ProductDetailView s={s} product={detailProduct} />}
           {modal === "Product" && (
             <ProductForm
+              commitInline={(next, message) => commitInline(next, message, "Inventory")}
               submit={submit}
               editProduct={editProduct}
               text={text}
@@ -831,6 +839,7 @@ export function WorkspaceApp() {
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
               canAddProduct={canAccess("Inventory")}
+              saveProductCategory={(next, message) => commitInline(next, message, "Inventory")}
               addProduct={(next, productId) => {
                 if (storageError) throw new Error(storageError);
                 workspace.commit(next, "Inventory", "Product added from purchase form.");
@@ -862,6 +871,7 @@ export function WorkspaceApp() {
           )}
           {modal === "Expense" && (
             <ExpenseForm
+              commitInline={(next, message) => commitInline(next, message, "Expenses")}
               actor={account.member}
               submit={submit}
               num={num}

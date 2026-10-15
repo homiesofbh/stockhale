@@ -36,8 +36,10 @@ export function ReturnForm({
   const [scan, setScan] = useState("");
   const [scanError, setScanError] = useState("");
   const [refundMode, setRefundMode] = useState<RefundMode>("Refund payment");
+  const [tradeSearch, setTradeSearch] = useState("");
 
   const trades = returnKind === "Sales return" ? s.invoices : s.purchases;
+  const postedTrades = trades.filter(isPosted);
   const selectedOriginal = trades.find((t) => t.id === selectedTrade);
   const eligible = s.products.filter((p) => {
     if (returnKind === "Damaged stock") return true;
@@ -153,6 +155,7 @@ export function ReturnForm({
               setRefundMode("Refund payment");
               setReturnKind(e);
               setSelectedTrade("");
+              setTradeSearch("");
             }}
           >
             <option>Sales return</option>
@@ -165,26 +168,29 @@ export function ReturnForm({
         </Field>
         {returnKind !== "Damaged stock" && (
           <Field label="Original transaction">
-            <GlassSelect
-              required
-              searchable
-              searchPlaceholder="Search invoice or date…"
-              value={selectedTrade}
-              onValueChange={(e) => {
-                setSelectedTrade(e);
-                setReturnLines([{ id: uid(), productId: "", qty: "" }]);
-                setScanError("");
-              }}
-            >
-              <option value="">Select transaction</option>
-              {trades.filter(isPosted).map(
-                (t) => (
-                  <option key={t.id} value={t.id}>
-                    {t.number} · {t.date}
-                  </option>
-                ),
-              )}
-            </GlassSelect>
+            <div>
+              <input
+                type="search"
+                list="return-trade-options"
+                required
+                placeholder="Search invoice or date…"
+                value={tradeSearch}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const match = postedTrades.find((t) => `${t.number} · ${t.date}` === next);
+                  setTradeSearch(next);
+                  setSelectedTrade(match?.id || "");
+                  setReturnLines([{ id: uid(), productId: "", qty: "" }]);
+                  setScanError("");
+                }}
+                aria-label="Search invoice or date"
+              />
+              <datalist id="return-trade-options">
+                {postedTrades.map((t) => (
+                  <option key={t.id} value={`${t.number} · ${t.date}`} />
+                ))}
+              </datalist>
+            </div>
           </Field>
         )}
         {selectedOriginal && (

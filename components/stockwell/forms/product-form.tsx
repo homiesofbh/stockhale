@@ -18,6 +18,7 @@ type Props = {
   text: (f: FormData, key: string) => string;
   num: (f: FormData, key: string) => number;
   commit: (next: Store, message: string) => void;
+  commitInline?: (next: Store, message: string) => void;
   s: Store;
   setModal: Dispatch<SetStateAction<string>>;
 };
@@ -27,6 +28,7 @@ export function ProductForm({
   text,
   num,
   commit,
+  commitInline,
   s,
   setModal,
 }: Props) {
@@ -105,7 +107,12 @@ export function ProductForm({
               const name = categoryName.trim();
               if (!name) { setCategoryError("Enter a category name."); return; }
               const existing = categories.find(value => value.toLowerCase() === name.toLowerCase());
-              if (!existing) setNewCategories(values => [...values, name]);
+              if (!existing) {
+                try {
+                  if (commitInline) commitInline({ ...s, categories: [...s.categories, name] }, "Category added.");
+                  else setNewCategories(values => [...values, name]);
+                } catch (error) { setCategoryError(error instanceof Error ? error.message : "Could not add category."); return; }
+              }
               setCategory(existing || name);
               setAddingCategory(false); setCategoryName(""); setCategoryError("");
             }}>Add category</button>

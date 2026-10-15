@@ -18,6 +18,13 @@ function fixture() {
 }
 const bill = patch => ({ id: 'bill', number: '', date: before, contactId: 'customer', lines: [{ productId: 'p', qty: 2, price: 10, cost: 5 }], discount: 0, tax: 0, paid: 0, method: 'Cash', head: 'Sales', ...patch });
 const opts = (report, to = '', from = '') => ({ report, to, from, query: '', status: 'All', paymentMethod: 'All', reportContact: '' });
+test('supplier advances reduce cash and negative advances are rejected', () => {
+ const s = fixture();
+ const payment = { id: 'advance', date: day, kind: 'Supplier', contactId: 'supplier', tradeId: '', advance: true, amount: 25, method: 'Cash', head: 'Purchases', notes: '' };
+ const next = m.recordPayment(s, payment);
+ assert.equal(m.financialRows(next).filter(row => row.type === 'Supplier payment').reduce((sum, row) => sum + row.cash, 0), -25);
+ assert.throws(() => m.recordPayment(s, { ...payment, amount: -25 }), /greater than zero/);
+});
 test('sync recovery preserves independent edits and rejects overlapping edits', () => {
  const base = fixture();
  const local = { ...base, customers: [...base.customers, { id: 'local', name: 'Local', phone: '', address: '', email: '' }] };

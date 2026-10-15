@@ -38,6 +38,10 @@ function optionText(children: ReactNode): string {
     .join("");
 }
 
+function searchableText(value: string) {
+  return value.normalize("NFKD").replace(/[^\p{L}\p{N}]/gu, "").toLocaleLowerCase();
+}
+
 export function GlassSelect({
   children,
   value,
@@ -70,7 +74,7 @@ export function GlassSelect({
     }));
   const placeholder = options.find((option) => option.value === "")?.label;
   const visibleOptions = searchable && search.trim()
-    ? options.filter((option) => option.text.toLowerCase().includes(search.trim().toLowerCase()))
+    ? options.filter((option) => searchableText(option.text).includes(searchableText(search.trim())))
     : options;
 
   return (
@@ -142,7 +146,7 @@ export function GlassSelect({
               ))}
             </Select.List>
             {searchable && visibleOptions.length === 0 && (
-              <div className={styles.noResults}>No matching transactions</div>
+              <div className={styles.noResults}>No matching options</div>
             )}
           </Select.Popup>
         </Select.Positioner>

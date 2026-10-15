@@ -1,7 +1,7 @@
 "use client";
 import { ReasonDialog } from "../reason-dialog";
 import { reverseVoucher, type Actor } from "@/lib/stockwell/operations";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { accountPath, chartAccounts, type Account } from "@/lib/stockwell/accounts";
 import { JournalForm } from "@/components/stockwell/forms/journal-form";
 import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib/stockwell/journals";
@@ -36,6 +36,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   const [journalEditor, setJournalEditor] = useState<JournalVoucher | "new" | null>(null);
   const [journalDetails, setJournalDetails] = useState<JournalVoucher | null>(null);
   const [selectedWeek, setSelectedWeek] = useState("");
+  const [accountPage, setAccountPage] = useState(0);
   const transactions = accounting
     .filter(r => inRange(r.date) && matches(r.head, r.reference, r.type))
     .sort((a, b) => b.date.localeCompare(a.date));
@@ -60,6 +61,11 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
     ...v.lines.flatMap(l => [accounts.find(a => a.id === l.accountId)?.name, l.description]),
   )).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
   const roots = sorted.filter(a => !a.parentId || !accounts.some(parent => parent.id === a.parentId));
+  const visibleRoots = roots.filter(account => visible.has(account.id));
+  const accountPageSize = 25;
+  const accountPageCount = Math.ceil(visibleRoots.length / accountPageSize);
+  const currentAccountPage = Math.min(accountPage, Math.max(0, accountPageCount - 1));
+  useEffect(() => setAccountPage(0), [visible.size, matches]);
   function renderAccount(account: Account, ancestors: string[] = []) {
     if (!visible.has(account.id) || ancestors.includes(account.id)) return null;
     const children = sorted.filter(a => a.parentId === account.id && visible.has(a.id));
@@ -86,7 +92,14 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
     <>
       <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
         <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
-        {visible.size ? <ul className="chart-accounts-grid">{roots.map(account => renderAccount(account))}</ul> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
+        {visible.size ? <>
+          <ul className="chart-accounts-grid">{visibleRoots.slice(currentAccountPage * accountPageSize, (currentAccountPage + 1) * accountPageSize).map(account => renderAccount(account))}</ul>
+          {accountPageCount > 1 && <nav className="account-week-pagination" aria-label="Chart of accounts pages">
+            <button className="secondary" disabled={currentAccountPage === 0} onClick={() => setAccountPage(currentAccountPage - 1)}>← Previous</button>
+            <span aria-live="polite">Showing {currentAccountPage * accountPageSize + 1}–{Math.min((currentAccountPage + 1) * accountPageSize, visibleRoots.length)} of {visibleRoots.length} account groups · Page {currentAccountPage + 1} of {accountPageCount}</span>
+            <button className="secondary" disabled={currentAccountPage >= accountPageCount - 1} onClick={() => setAccountPage(currentAccountPage + 1)}>Next →</button>
+          </nav>}
+        </> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
       </section>
       {editing && <Modal title="Edit account" close={() => setEditing(null)}><AccountForm s={s} account={editing} commit={(next, message) => { commit(next, message); setEditing(null); }} /></Modal>}
       <section className="card" aria-labelledby="journal-register-title">

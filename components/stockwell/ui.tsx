@@ -1,9 +1,11 @@
 "use client";
-import { Package, X } from "lucide-react";
+import { Info, Package, X } from "lucide-react";
 import {
   cloneElement,
   useEffect,
   useRef,
+  useId,
+  useState,
   type ReactElement,
   type ReactNode,
 } from "react";
@@ -35,6 +37,32 @@ export function Badge({
 }) {
   return <span className={`badge ${tone}`}>{children}</span>;
 }
+
+export function InfoTip({
+  label,
+  children,
+}: {
+  label: string;
+  children: ReactNode;
+}) {
+  const id = useId();
+  return (
+    <details className="info-tip-wrap">
+      <summary
+        className="info-tip-trigger"
+        aria-label={label}
+        aria-controls={id}
+        title={`${label} — select to expand`}
+      >
+        <Info size={15} aria-hidden="true" />
+      </summary>
+      <div className="info-tip-popover" id={id} role="note">
+        <strong>{label}</strong>
+        <div>{children}</div>
+      </div>
+    </details>
+  );
+}
 export function Empty({
   title = "No records yet",
   children,
@@ -59,7 +87,16 @@ export function Table({
   rows: ReactNode[][];
   empty?: string;
 }) {
-  return rows.length ? (
+  const pageSize = 25;
+  const [page, setPage] = useState(0);
+  // A filtered result can change while retaining the same number of rows.
+  // Reset when its source array changes so the table never stays on a stale page.
+  useEffect(() => setPage(0), [rows]);
+  const pageCount = Math.ceil(rows.length / pageSize);
+  const currentPage = Math.min(page, Math.max(0, pageCount - 1));
+  const visibleRows = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
+  if (!rows.length) return <Empty title={empty} />;
+  return <>
     <div className="table-scroll">
       <table>
         <thead>
@@ -70,8 +107,8 @@ export function Table({
           </tr>
         </thead>
         <tbody>
-          {rows.map((r, i) => (
-            <tr key={i}>
+          {visibleRows.map((r, i) => (
+            <tr key={currentPage * pageSize + i}>
               {r.map((c, j) => (
                 <td key={j}>{c}</td>
               ))}
@@ -80,9 +117,12 @@ export function Table({
         </tbody>
       </table>
     </div>
-  ) : (
-    <Empty title={empty} />
-  );
+    {pageCount > 1 && <nav className="account-week-pagination" aria-label="Table pages">
+      <button type="button" className="secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>← Previous</button>
+      <span aria-live="polite">Showing {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, rows.length)} of {rows.length} · Page {currentPage + 1} of {pageCount}</span>
+      <button type="button" className="secondary" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>Next →</button>
+    </nav>}
+  </>;
 }
 export function Modal({
   title,

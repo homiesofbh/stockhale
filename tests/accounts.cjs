@@ -7,10 +7,14 @@ const w = require(path.join(process.env.STOCKWELL_TEST_DIR, "workspace.js"));
 const root = () => ({ id: "assets", code: "1000", name: "Assets", parentId: "", type: "Asset", nature: "Debit", openingBalance: 500, openingDate: "2026-10-01", description: "Opening assets" });
 const child = () => ({ ...root(), id: "petty", code: "1000.01", name: "Petty cash", parentId: "assets", openingBalance: 100 });
 
-test("legacy chart is deterministic and does not invent opening balances or types", () => {
+test("legacy chart classifies standard heads while preserving unknown heads and zero openings", () => {
   const s = m.emptyStore();
   assert.deepEqual(a.chartAccounts(s), a.chartAccounts(structuredClone(s)));
-  assert.ok(a.chartAccounts(s).every(x => x.type === "Unclassified" && x.openingBalance === 0));
+  assert.ok(a.chartAccounts(s).every(x => x.openingBalance === 0));
+  assert.equal(a.chartAccounts(s).find(x => x.name === "Sales").type, "Income");
+  assert.equal(a.chartAccounts(s).find(x => x.name === "Sales").nature, "Credit");
+  assert.equal(a.chartAccounts(s).find(x => x.name === "Expenses").type, "Expense");
+  assert.equal(a.chartAccounts({ ...s, heads: [...s.heads, "Custom head"] }).find(x => x.name === "Custom head").type, "Unclassified");
   const old = a.chartAccounts(s)[0];
   const next = a.saveAccount(s, { ...old, code: "4000", type: "Income", nature: "Credit" });
   assert.deepEqual(next.heads, s.heads);

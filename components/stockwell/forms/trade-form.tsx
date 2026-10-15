@@ -63,6 +63,7 @@ type Props = {
   canChangeHead: boolean;
   canAddProduct: boolean;
   addProduct: (next: Store, productId: string) => void;
+  saveProductCategory: (next: Store, message: string) => void;
 };
 export function TradeForm({
   submit,
@@ -94,6 +95,7 @@ export function TradeForm({
   canChangeHead,
   canAddProduct,
   addProduct,
+  saveProductCategory,
 }: Props) {
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
@@ -491,6 +493,7 @@ export function TradeForm({
     {addingProduct && <Modal title="Add product to purchase" close={() => setAddingProduct(false)}>
       {productError && <p role="alert" className="form-error">{productError}</p>}
       <ProductForm s={s} editProduct={null} text={text} num={num}
+        commitInline={saveProductCategory}
         setModal={() => setAddingProduct(false)}
         submit={async (event, fn) => {
           event.preventDefault(); setProductError("");

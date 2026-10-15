@@ -26,7 +26,7 @@ export function BankVoucherForm({ s, voucher, commit }: { s: Store; voucher?: Ba
     } catch (err) { setError(err instanceof Error ? err.message : "Could not save voucher."); }
   }
   return <form onSubmit={save}>
-    <p>Use these vouchers for other receipts, payments, and transfers. Settle customer or supplier bills through Record payment to keep their outstanding balances correct. Drafts have no balance effect.</p>
+    <p>Use these vouchers for other receipts, payments, and transfers. For income received, select the income account (such as Other income) as the counter-account; posting records it once against the selected bank. Settle customer or supplier bills through Record payment to keep their outstanding balances correct. Drafts have no balance effect.</p>
     <div className="form-grid">
       <Field label="Voucher number"><input value={voucher?.number || nextBankVoucherNumber(s)} readOnly /></Field>
       <Field label="Voucher type"><GlassSelect value={kind} onValueChange={value => setKind(value as BankVoucher["kind"])}><option>Receipt</option><option>Payment</option><option>Transfer</option></GlassSelect></Field>
