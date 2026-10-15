@@ -10,6 +10,8 @@ type PendingAttachment = Attachment & {
   pendingId: string;
 };
 type QueueEntry = {
+  workspaceId: string;
+  memberId: string;
   pendingId: string;
   recordType: RecordType;
   recordId: string;
@@ -20,6 +22,16 @@ type QueueEntry = {
 const queueKey = "stockwell.pending-attachments";
 const dbName = "stockwell-attachments";
 const storeName = "files";
+
+function activeIdentity(): { workspaceId: string; memberId: string } | null {
+  try {
+    const workspaceId = localStorage.getItem("stockwell.active");
+    if (!workspaceId) return null;
+    const cache = JSON.parse(localStorage.getItem(`stockwell.workspace.${workspaceId}`) || "null");
+    const memberId = cache?.workspace?.member?.id;
+    return typeof memberId === "string" ? { workspaceId, memberId } : null;
+  } catch { return null; }
+}
 
 function readQueue(): Omit<QueueEntry, "file">[] {
   try {
@@ -94,19 +106,24 @@ export async function uploadAttachment(file: File, recordType: RecordType, recor
   if (navigator.onLine) return uploadNow(file, recordType, recordId);
 
   const pendingId = crypto.randomUUID();
+  const identity = activeIdentity();
+  if (!identity) throw new Error("Sign in before saving an attachment for offline upload.");
   const attachment: Attachment = { id: pendingId, key: `pending/${pendingId}`, name: file.name, contentType: file.type, size: file.size, status: "pending" };
   await storeFile(pendingId, file);
   const queue = readQueue();
-  writeQueue([...queue, { pendingId, recordType, recordId, attachment }]);
+  writeQueue([...queue, { ...identity, pendingId, recordType, recordId, attachment }]);
   return attachment;
 }
 
 export async function retryAttachmentQueue(): Promise<PendingAttachment[]> {
   if (!navigator.onLine) return [];
   const queue = readQueue();
+  const identity = activeIdentity();
+  if (!identity) return [];
+  const eligible = queue.filter(entry => entry.workspaceId === identity.workspaceId && entry.memberId === identity.memberId);
   const completed: PendingAttachment[] = [];
   const remaining = [...queue];
-  for (const entry of queue) {
+  for (const entry of eligible) {
     try {
       const file = await readFile(entry.pendingId);
       const attachment = await uploadNow(file, entry.recordType, entry.recordId, entry.pendingId);

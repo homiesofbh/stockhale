@@ -4,6 +4,7 @@ import { validateBanks } from "./bank-vouchers";
 import { validateAccounts } from "./accounts";
 import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { isIP } from "node:net";
 import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
 import { emptyStore, normalizeStore } from "./model";
@@ -15,6 +16,32 @@ const row = async (sql: string, ...args: unknown[]) =>
 const all = async (sql: string, ...args: unknown[]) =>
   (await query(sql, args)).rows as Row[];
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
+function trustedClientIp(request: Request) {
+  const header =
+    process.env.STOCKHALE_TRUSTED_CLIENT_IP_HEADER || "cf-connecting-ip";
+  if (!/^[a-z0-9-]+$/i.test(header)) return undefined;
+  const value = request.headers.get(header)?.trim();
+  return value && isIP(value) ? value : undefined;
+}
+async function consumeLimit(key: string, maximum: number, windowMs: number) {
+  const now = Date.now();
+  // Expiry is stored as data in Postgres, so clean old keys during normal use.
+  await query("DELETE FROM limits WHERE expires <= $1", [now]);
+  const limit = await row(
+    `INSERT INTO limits(key,count,expires) VALUES($1,1,$2)
+     ON CONFLICT(key) DO UPDATE SET
+       count=CASE WHEN limits.expires <= $3 THEN 1 ELSE limits.count+1 END,
+       expires=CASE WHEN limits.expires <= $3 THEN $2 ELSE limits.expires END
+     RETURNING count`,
+    key,
+    now + windowMs,
+    now,
+  );
+  if (limit!.count > maximum)
+    throw Object.assign(new Error("Too many attempts. Try again later."), {
+      status: 429,
+    });
+}
 function required(value: unknown, max = 200) {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error("Required field is missing or too long.");
@@ -154,23 +181,18 @@ export async function authenticate(body: Row, request: Request) {
   )
     throw new Error("Enter a password of at most 128 characters.");
   const password = body.password;
-  const key = "auth:" + mail;
-  const now = Date.now();
-  const limit = await row(
-    `INSERT INTO limits(key,count,expires) VALUES($1,1,$2)
-     ON CONFLICT(key) DO UPDATE SET
-       count=CASE WHEN limits.expires <= $3 THEN 1 ELSE limits.count+1 END,
-       expires=CASE WHEN limits.expires <= $3 THEN $2 ELSE limits.expires END
-     RETURNING count`,
-    key,
-    now + 900000,
-    now,
-  );
-  if (limit!.count > 20)
+  const clientIp = trustedClientIp(request);
+  if (!clientIp && process.env.NODE_ENV === "production")
     throw Object.assign(
-      new Error("Too many attempts. Try again in 15 minutes."),
-      { status: 429 },
+      new Error("Sign-in protection is unavailable for this request."),
+      { status: 503 },
     );
+  // Use the trusted edge address in production so an attacker cannot exhaust
+  // another user's sign-in bucket by supplying only the victim's email.
+  const key = clientIp
+    ? "auth-ip:" + digest(clientIp)
+    : "auth:" + mail;
+  await consumeLimit(key, clientIp ? 100 : 20, 900_000);
   return transaction(async (client) => {
     const auth = getAuth(client, body.action === "team-signup");
     if (body.action !== "signup" && body.action !== "team-signup") {
@@ -229,8 +251,18 @@ export async function requestPasswordReset(body: Row, request: Request) {
       new Error("Password reset is unavailable until RESEND_API_KEY and RESEND_FROM are configured."),
       { status: 503 },
     );
+  const mail = email(body.email);
+  const clientIp = trustedClientIp(request);
+  if (!clientIp && process.env.NODE_ENV === "production")
+    throw Object.assign(
+      new Error("Password reset protection is unavailable for this request."),
+      { status: 503 },
+    );
+  if (clientIp)
+    await consumeLimit("reset-ip:" + digest(clientIp), 20, 900_000);
+  await consumeLimit("reset-email:" + digest(mail), 5, 3_600_000);
   await getAuth().api.requestPasswordReset({
-    body: { email: email(body.email) },
+    body: { email: mail },
     headers: request.headers,
   });
   // Do not reveal whether this address belongs to an account.

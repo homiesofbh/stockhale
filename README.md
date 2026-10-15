@@ -35,6 +35,10 @@ is not required.
    `pnpm db:migrate`. Use `DATABASE_MIGRATION_URL` for a direct migration connection.
 5. Run `pnpm deploy`. Wrangler binds the custom domain configured in the file.
    Verify signup, signin, session restoration, and workspace writes on the deployed Worker.
+   Sign-in and password-reset throttles use the trusted client IP header named by
+   `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` (Cloudflare's `cf-connecting-ip` by default).
+   On another host, set this variable to a header that the hosting proxy overwrites
+   with the verified client IP; production auth requests fail closed if it is absent.
 
 ### Cloudflare Workers Builds settings
 
@@ -73,6 +77,9 @@ bucket, configure registrar DNS, or deploy the Worker.
 1. Create a Neon project, starting on its Free plan. Choose a database region close to the Vercel function region. Leave scale-to-zero enabled.
 2. Copy Neon's **pooled** connection string (the hostname contains `-pooler`) to the Vercel `DATABASE_URL` environment variable. Keep the SSL parameters supplied by Neon.
 3. Set a random `BETTER_AUTH_SECRET`, and set `BETTER_AUTH_URL=https://stockhale.app` for this production deployment. Keep the secret stable across releases; changing it invalidates sessions.
+   Also set `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` to a single-IP header that Vercel
+   provides and overwrites. Sign-in and reset requests fail closed in production
+   when this trusted client address is unavailable.
 4. Configure the same values in a trusted local environment, then run `pnpm db:migrate` against the intended database. Optionally use `DATABASE_MIGRATION_URL` for Neon's direct connection. Migrations run explicitly, never during a build or on sign-in.
 5. Deploy/redeploy on Vercel and create your account. New instances and deployments now share persistent data and sessions.
 

@@ -387,4 +387,5 @@ lib/stockwell/*
 !lib/stockwell/attachments.ts
 !lib/stockwell/attachment-client.ts
 !lib/stockwell/cache-migrations.ts
+!lib/stockwell/request-body.ts
 .neon

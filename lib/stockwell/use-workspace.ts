@@ -5,9 +5,18 @@ import { normalizeStore, type Store } from "./model";
 import { configureServiceWorker } from "./service-worker-client";
 import { CACHE_VERSION, migrateCache } from "./cache-migrations";
 export async function workspaceRequest(body?: unknown) {
+  const isRestore =
+    !!body &&
+    typeof body === "object" &&
+    (body as { action?: unknown }).action === "restore";
   const res = await fetch("/api/workspace", {
     method: body ? "POST" : "GET",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
+    headers: body
+      ? {
+          "Content-Type": "application/json",
+          ...(isRestore ? { "X-StockHale-Action": "restore" } : {}),
+        }
+      : undefined,
     body: body ? JSON.stringify(body) : undefined,
     cache: "no-store",
     // A hung request (captive portal, dead Wi-Fi) would pin busy=true and stall

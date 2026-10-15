@@ -33,6 +33,7 @@
 	],
 	"vars": {
 		"BETTER_AUTH_URL": "https://stockhale.app",
+		"STOCKHALE_TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip",
 		"DISABLE_PUBLIC_SIGNUP": "false",
 		"RESEND_FROM": "StockHale <alerts@stockhale.app>",
 		"STOCKHALE_RUNTIME": "cloudflare"

@@ -42,3 +42,4 @@ CREATE TABLE IF NOT EXISTS limits (key TEXT PRIMARY KEY, count INTEGER NOT NULL,
 CREATE INDEX IF NOT EXISTS events_workspace_received ON events(workspace, "receivedAt" DESC);
 CREATE INDEX IF NOT EXISTS events_due_email ON events("nextAttempt") WHERE "emailStatus" <> 'sent';
 CREATE INDEX IF NOT EXISTS invites_expiry ON invites(expires);
+CREATE INDEX IF NOT EXISTS limits_expiry ON limits(expires);

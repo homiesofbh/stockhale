@@ -14,7 +14,7 @@ export async function migrate() {
     await client.query(
       `CREATE TABLE IF NOT EXISTS stockwell_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
     );
-    for (const name of ["001-workspace.sql"]) {
+    for (const name of ["001-workspace.sql", "002-attachment-quota.sql"]) {
       const applied = await client.query(
         "SELECT id FROM stockwell_migrations WHERE id=$1",
         [name],
@@ -30,6 +30,10 @@ export async function migrate() {
         name,
       ]);
     }
+    // Keep this idempotent for databases that already recorded 001-workspace.sql.
+    await client.query(
+      "CREATE INDEX IF NOT EXISTS limits_expiry ON limits(expires)",
+    );
   });
 }
 
