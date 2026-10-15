@@ -640,7 +640,7 @@ export function InfoPage({
             <span className="info-aside-mark">s.</span>
           </div>
           <div className="info-copy">
-            {"sections" in data ? data.sections.map((section) => (
+            {data.sections ? data.sections.map((section) => (
               <section className="legal-section" key={section.title}>
                 <h2>{section.title}</h2>
                 {section.paragraphs.map((paragraph, i) => (
