@@ -1,14 +1,17 @@
 "use client";
 import { Modal, Table } from "@/components/stockwell/ui";
 import {
+  balance,
   contactBalance,
   isPosted,
   money,
+  unappliedCreditBalance,
   type Contact,
   type Store,
   type Trade,
 } from "@/lib/stockwell/model";
 import { createReportData } from "@/lib/stockwell/reports";
+import { chequeSettlements } from "@/lib/stockwell/operations";
 import { FileSpreadsheet } from "lucide-react";
 import type { Dispatch, JSX, SetStateAction } from "react";
 import { useState } from "react";
@@ -47,6 +50,9 @@ export function ContactsView({
         reportContact: detailContact.id,
       })
     : null;
+  const detailKind = module === "Suppliers" ? "Supplier" : "Customer";
+  const openBillBalance = detailContact ? (module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === detailContact.id && isPosted(t)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0) : 0;
+  const unappliedCredits = detailContact ? unappliedCreditBalance(s, detailKind, detailContact.id) : 0;
   async function downloadLedger() {
     if (!ledgerReport || !detailContact || exporting) return;
     setExporting(true);
@@ -81,7 +87,7 @@ export function ContactsView({
             module === "Customers" ? "Customer / company" : "Supplier name",
             "Contact details",
             "Address",
-            "Outstanding balance",
+            "Net account balance",
             "",
           ]}
           rows={(module === "Suppliers" ? s.suppliers : s.customers).slice().reverse()
@@ -131,8 +137,21 @@ export function ContactsView({
             <button className={detailTab === "history" ? "primary" : "secondary-button"} onClick={() => setDetailTab("history")} role="tab" aria-selected={detailTab === "history"}>Invoices & payments</button>
             <button className={detailTab === "ledger" ? "primary" : "secondary-button"} onClick={() => setDetailTab("ledger")} role="tab" aria-selected={detailTab === "ledger"}>Business ledger</button>
           </div>
+          <div className={`contact-balance-summary${module === "Suppliers" ? " contact-balance-summary-single" : ""}`}>
+            <div><small>{module === "Suppliers" ? "Payable balance · entire supplier account" : "Net account balance"}</small><strong>{money(contactBalance(s, detailKind, detailContact.id))}</strong><span>{module === "Suppliers" ? "Total amount owed after posted payments and credits" : "After settled payments and credits"}</span></div>
+            {module === "Customers" && <>
+              <div><small>Open bill balances</small><strong>{money(openBillBalance)}</strong><span>Outstanding on individual bills</span></div>
+              <div><small>Unapplied credits</small><strong>{money(unappliedCredits)}</strong><span>Advances awaiting bill matching</span></div>
+            </>}
+          </div>
+          <p className="contact-balance-explainer" role="note">{module === "Suppliers"
+            ? "This is the total payable for the supplier’s whole account. Use this amount when recording a payment; individual purchase bills remain available below for reference."
+            : "The net account balance is the overall amount due after credits. Unapplied credits reduce that total but are not assigned to a specific bill yet."}</p>
           {detailTab === "history" ? <>
             <h3>{module === "Suppliers" ? "Purchase history" : "Billing & sales history"}</h3>
+            {unappliedCredits !== 0 && <p className="form-hint contact-advance-note">{module === "Suppliers"
+              ? "Purchase bill balances stay bill-specific. Account-level payments, advances, and forwarded cheques reduce the payable balance above without being assigned to one bill."
+              : "Bill balances are shown per bill. Unapplied credits reduce the net account balance above, but remain separate until matched to a bill."}</p>}
             <div className="contact-table-scroll">
               <Table
                 headers={module === "Suppliers" ? ["Purchase", "Supplier", "Quantity", "UOM", "Net total", "Status", "Paid", "Balance", ""] : basicHeaders}
@@ -145,7 +164,11 @@ export function ContactsView({
                 headers={["Date", "Reference", "Amount", "Method", "Notes"]}
                 rows={[
                   ...(module === "Suppliers" ? s.purchases : s.invoices).filter(t => isPosted(t) && t.contactId === detailContact.id && t.paid > 0).map(t => [t.date, t.number, money(t.paid), t.method, "Paid at creation"]),
-                  ...s.payments.filter(p => p.contactId === detailContact.id).map(p => [p.date, [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "", money(p.amount), p.method, p.notes]),
+                  ...s.payments.filter(p => p.contactId === detailContact.id).map(p => [p.date, p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "", money(p.amount), p.method, p.notes]),
+                  ...(module === "Suppliers" ? (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === detailContact.id).flatMap(c => {
+                    const source = s.payments.find(p => p.id === c.sourcePaymentId);
+                    return source?.method === "Cheque" ? chequeSettlements(s, source).filter(e => e.status === "cleared" || e.status === "bounced").map(e => [e.date, "Forwarded customer cheque", money(e.amount), "Cheque", source.chequeNumber || source.chequeBank || ""]) : [];
+                  }) : []),
                 ]}
               />
             </div>
@@ -157,6 +180,16 @@ export function ContactsView({
             <div className="contact-table-scroll">
               <Table headers={ledgerReport?.columns || []} rows={(ledgerReport?.rows || []).map(row => row.map(value => typeof value === "number" ? value.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : String(value)))} />
             </div>
+            {ledgerReport?.contactSummary && <section className="contact-ledger-reconciliation" aria-label="Ledger totals">
+              <div><h4>How the balance is calculated</h4><p>Charges minus payments and credits equals the remaining account balance.</p></div>
+              <div className="contact-ledger-equation">
+                <div><small>Total charges after returns</small><strong>{money(ledgerReport.contactSummary.business)}</strong></div>
+                <span aria-hidden="true">−</span>
+                <div><small>Payments &amp; cheque adjustments</small><strong>{money(ledgerReport.contactSummary.payments)}</strong></div>
+                <span aria-hidden="true">=</span>
+                <div className="contact-ledger-result"><small>Remaining account balance</small><strong>{money(Math.abs(ledgerReport.contactSummary.outstanding))}</strong><span>{ledgerReport.contactSummary.outstanding < 0 ? module === "Suppliers" ? "Supplier credit owed to you" : "Customer credit" : module === "Suppliers" ? "Amount you owe" : "Amount customer owes"}</span></div>
+              </div>
+            </section>}
           </>}
         </Modal>
       )}

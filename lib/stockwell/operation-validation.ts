@@ -33,6 +33,12 @@ export function validateStore(s: Store) {
   check(new Set([...s.invoices, ...s.purchases].map(t => t.number)).size === s.invoices.length + s.purchases.length, "Duplicate bill references.");
   for (const p of s.payments) {
     const trade = (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId);
+    if (p.accountLevel) {
+      check(p.kind === "Supplier" && !p.advance && !p.tradeId && s.suppliers.some(c => c.id === p.contactId) && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid supplier account payment.");
+      check(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || !!s.financialAccounts?.some(a => a.name === p.method), "Invalid supplier payment method.");
+      check(p.method !== "Cheque" || !!p.chequeNumber && !!p.chequeBank && validDate(p.chequeDate || "") && ["pending", "cleared", "bounced", "cancelled"].includes(p.chequeStatus || "pending"), "Invalid cheque details.");
+      continue;
+    }
     if (p.advance) {
       check(!p.tradeId && !!p.contactId && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid advance payment.");
       continue;

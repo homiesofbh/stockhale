@@ -18,6 +18,7 @@ import {
   stock,
   subtotal,
   total,
+  unappliedCreditBalance,
   type Store,
 } from "./model";
 import {
@@ -32,6 +33,7 @@ export function createReportData(
 ): {
   columns: string[];
   rows: unknown[][];
+  contactSummary?: { business: number; payments: number; outstanding: number };
 } {
   const { report, reportContact, from, to, query } = options;
   // The start date selects bills; all settlements through the end date count,
@@ -42,6 +44,8 @@ export function createReportData(
     purchases: s.purchases.map(t => tradeAt(s, t, to)),
     payments: s.payments.map(p => paymentAt(s, p, to)).filter((p) => paymentDate(p) <= to),
     returns: s.returns.filter((r) => r.date <= to),
+    chequeEvents: (s.chequeEvents || []).filter(event => event.date <= to),
+    crossCheques: (s.crossCheques || []).filter(crossCheque => crossCheque.date <= to),
   } : s;
   const invoices = filterTrades(asOf, asOf.invoices, options);
   const purchases = filterTrades(asOf, asOf.purchases, options, true);
@@ -73,6 +77,20 @@ export function createReportData(
     if (report === "Credit-sale report") list = list.filter(t => balance(asOf, t) > 0);
     if (report === "Receivables report" || report === "Payables report")
       list = list.filter((t) => balance(asOf, t) !== 0);
+    const tradeRows = list.map((t) => [t.number, t.date, cName(t.contactId, supplier, t), subtotal(t), t.discount, t.tax, total(t), returned(asOf, t.id), paid(asOf, t), balance(asOf, t)]);
+    const advanceRows = report === "Receivables report" || report === "Payables report"
+      ? asOf.payments.filter(p => p.kind === (supplier ? "Supplier" : "Customer") && (p.advance || p.accountLevel) && !p.tradeId && isSettledPayment(p) && inRange(p.date))
+          .filter(p => (!reportContact || p.contactId === reportContact) && matches(p.date, cName(p.contactId, supplier), p.accountLevel ? "Supplier account payment" : "Unapplied advance", p.method, p.head, p.notes))
+          .map(p => [p.accountLevel ? "ACCOUNT PAYMENT" : "ADVANCE", p.date, cName(p.contactId, supplier), 0, 0, 0, 0, 0, p.amount, -p.amount])
+      : [];
+    const forwardedChequeRows = supplier && report === "Payables report"
+      ? (asOf.crossCheques || []).filter(c => c.destinationKind === "Supplier" && (!reportContact || c.destinationId === reportContact)).flatMap(c => {
+          const source = asOf.payments.find(p => p.id === c.sourcePaymentId);
+          return source ? chequeSettlements(asOf, source).filter(entry => (entry.status === "cleared" || entry.status === "bounced") && inRange(entry.date))
+            .filter(entry => matches(entry.date, c.destinationName, "Forwarded customer cheque", source.chequeNumber, source.chequeBank))
+            .map(entry => ["FORWARDED CHEQUE", entry.date, c.destinationName, 0, 0, 0, 0, 0, entry.amount, -entry.amount]) : [];
+        })
+      : [];
     return {
       columns: [
         "Reference",
@@ -86,18 +104,7 @@ export function createReportData(
         "Paid",
         "Balance",
       ],
-      rows: list.map((t) => [
-        t.number,
-        t.date,
-        cName(t.contactId, supplier, t),
-        subtotal(t),
-        t.discount,
-        t.tax,
-        total(t),
-        returned(asOf, t.id),
-        paid(asOf, t),
-        balance(asOf, t),
-      ]),
+      rows: [...tradeRows, ...advanceRows, ...forwardedChequeRows],
     };
   }
   if (report === "Payment report") {
@@ -124,7 +131,15 @@ export function createReportData(
     const rows = contacts.map(c => {
       const trades = c.kind === "Customer" ? asOf.invoices : asOf.purchases;
       const buckets = [0, 0, 0, 0];
-      trades.filter(t => isPosted(t) && t.contactId === c.id && balance(asOf, t) > 0).forEach(t => { const days = age(t.date); buckets[days < 30 ? 0 : days < 60 ? 1 : days < 90 ? 2 : 3] += balance(asOf, t); });
+      const kind = c.kind as "Customer" | "Supplier";
+      let credit = round(unappliedCreditBalance(asOf, kind, c.id) + trades.filter(t => isPosted(t) && t.contactId === c.id).reduce((sum, t) => sum + Math.max(-balance(asOf, t), 0), 0));
+      trades.filter(t => isPosted(t) && t.contactId === c.id && balance(asOf, t) > 0).sort((a, b) => a.date.localeCompare(b.date)).forEach(t => {
+        const due = balance(asOf, t), applied = Math.min(due, Math.max(credit, 0));
+        credit = round(credit - applied);
+        const days = age(t.date);
+        buckets[days < 30 ? 0 : days < 60 ? 1 : days < 90 ? 2 : 3] += round(due - applied);
+      });
+      if (credit > 0) buckets[0] -= credit;
       return [c.kind, c.name, c.company || "", ...buckets.map(round), round(buckets.reduce((n, v) => n + v, 0))];
     }).filter(row => row[7] !== 0 && matches(row[0], row[1], row[2]));
     return { columns: ["Type", "Contact", "Company", "Current", "30–59 days", "60–89 days", "90+ days", "Total outstanding"], rows };
@@ -325,7 +340,14 @@ export function createReportData(
     (s.corrections || []).filter(c => c.kind === (supplier ? "Purchase" : "Sale") && (!reportContact || c.after.contactId === reportContact)).forEach(c => entries.push({ date: c.date, ref: c.after.number, name: cName(c.after.contactId, supplier, c.after), type: c.after.status === "void" ? "Bill reversal" : "Bill correction", charge: (isPosted(c.after) ? total(c.after) : 0) - total(c.before), payment: (isPosted(c.after) ? c.after.paid : 0) - c.before.paid, id: c.after.contactId, order: Date.parse(c.occurredAt) }));
     s.payments.filter(p => p.kind === kind && (!reportContact || p.contactId === reportContact)).forEach(p => {
       const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, status: "paid" }];
-      settlements.forEach(e => entries.push({ date: e.date, ref: trades.find(t => t.id === p.tradeId)?.number || "", name: cName(p.contactId, supplier, trades.find(t => t.id === p.tradeId)), type: e.status === "bounced" ? "Cheque bounce" : "Payment", charge: 0, payment: e.amount, id: p.contactId, order: p.createdAt || 0 }));
+      settlements.forEach(e => entries.push({ date: e.date, ref: p.accountLevel ? "Supplier account payment" : trades.find(t => t.id === p.tradeId)?.number || "", name: cName(p.contactId, supplier, trades.find(t => t.id === p.tradeId)), type: e.status === "bounced" ? "Cheque bounce" : p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : "Payment", charge: 0, payment: e.amount, id: p.contactId, order: p.createdAt || 0 }));
+    });
+    if (supplier) (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && (!reportContact || c.destinationId === reportContact)).forEach(c => {
+      const source = s.payments.find(p => p.id === c.sourcePaymentId);
+      if (!source) return;
+      chequeSettlements(s, source).forEach(e => {
+        if (e.status === "cleared" || e.status === "bounced") entries.push({ date: e.date, ref: source.chequeNumber || "", name: c.destinationName, type: "Forwarded customer cheque", charge: 0, payment: e.amount, id: c.destinationId, order: source.createdAt || 0 });
+      });
     });
     const balances = new Map<string, number>();
     const rows: unknown[][] = [];
@@ -337,7 +359,11 @@ export function createReportData(
         if (inRange(e.date) && matches(e.name, e.ref, e.type))
           rows.push([e.date, e.name, e.ref, e.type, e.charge, e.payment, b]);
       });
+    const business = round(entries.reduce((sum, entry) => sum + entry.charge, 0));
+    const paymentTotal = round(entries.reduce((sum, entry) => sum + entry.payment, 0));
+    const openingBalance = reportContact ? s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === reportContact)?.openingBalance || 0 : 0;
     return {
+      contactSummary: { business, payments: paymentTotal, outstanding: round(business + openingBalance - paymentTotal) },
       columns: [
         "Date",
         supplier ? "Supplier" : "Customer",

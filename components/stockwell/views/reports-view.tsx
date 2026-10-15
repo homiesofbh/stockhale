@@ -125,7 +125,7 @@ export function ReportsView({
                 : report.includes("ledger")
                   ? "Running balance includes transactions before the selected start date."
                   : ["Billing report", "Sales report", "Purchase report", "Receivables report", "Payables report"].includes(report)
-                    ? "Bills are selected by date range. Paid, return credit, balance, and status are calculated through the end date, or through today’s recorded activity when no end date is selected."
+                    ? "Bills are selected by date range. Paid, return credit, balance, and status are calculated through the end date, or through today’s recorded activity when no end date is selected. Unapplied advances appear as separate credit rows in receivables and payables reports."
                     : "Figures reflect the selected date range."}{" "}
               Amounts in PKR.
             </p>

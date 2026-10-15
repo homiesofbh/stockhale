@@ -55,7 +55,7 @@ export function AuthPageClient({
         )
       );
       localStorage.setItem("stockwell.active", w.id);
-      location.assign("/");
+      location.assign("/workspace");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign in");
     } finally {
@@ -163,6 +163,21 @@ export function AuthPageClient({
               </label>
             )}
             {signup && <small>At least 12 characters.</small>}
+            {signup && (
+              <label className="auth-legal-consent">
+                <input name="legalConsent" type="checkbox" required />
+                <span>
+                  I agree to the{" "}
+                  <a href="/terms-and-conditions" target="_blank" rel="noreferrer">
+                    Terms &amp; Conditions
+                  </a>{" "}
+                  and acknowledge the{" "}
+                  <a href="/privacy-policy" target="_blank" rel="noreferrer">
+                    Privacy Policy
+                  </a>.
+                </span>
+              </label>
+            )}
             {team && !invite && (
               <p role="alert" className="form-error">
                 Open the signup link provided by your workspace owner to join

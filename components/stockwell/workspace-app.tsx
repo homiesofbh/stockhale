@@ -3,6 +3,7 @@ import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balance,
+  contactBalance,
   findProductByCode,
   emptyStore,
   financialRows,
@@ -248,14 +249,8 @@ export function WorkspaceApp() {
   const accounting = financialRows(s);
   const cash = accounting.reduce((n, r) => n + r.cash, 0);
   const bank = round((s.financialAccounts || []).reduce((n, a) => n + bankStatement(s, a).closing, 0) + accounting.filter(r => !r.financialAccountId).reduce((n, r) => n + r.bank, 0));
-  const receivables = s.invoices.reduce(
-    (n, t) => n + Math.max(balance(s, t), 0),
-    0,
-  );
-  const payables = s.purchases.reduce(
-    (n, t) => n + Math.max(balance(s, t), 0),
-    0,
-  );
+  const receivables = s.customers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Customer", c.id), 0), s.invoices.filter(t => !s.customers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
+  const payables = s.suppliers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Supplier", c.id), 0), s.purchases.filter(t => !s.suppliers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
   const lowStock = s.products.filter((p) => stock(s, p.id) <= p.low);
   const inventoryValue = s.products.reduce(
     (n, p) => n + stock(s, p.id) * p.cost,

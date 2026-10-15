@@ -112,7 +112,7 @@ export function PaymentsView({
       })),
     ...s.payments.map(p => ({
       date: p.date, contact: cName(p.contactId, p.kind === "Supplier"),
-      reference: [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "",
+      reference: p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "",
       kind: p.kind, amount: p.amount,
       method: p.chequeStatus ? `Cheque ${p.chequeStatus}` : p.method,
       cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}${p.clearedDate ? ` · cleared ${p.clearedDate}` : ""}` : "",
@@ -140,13 +140,13 @@ export function PaymentsView({
         <Stat
           label="Customer receivables"
           value={money(receivables)}
-          detail="Outstanding bills"
+          detail="Net of settled customer credits"
           accent
         />
         <Stat
           label="Supplier payables"
           value={money(payables)}
-          detail="Outstanding purchases"
+          detail="Net of settled supplier credits"
         />
         <Stat
           label="Cash / Bank"

@@ -106,6 +106,7 @@ export type Payment = {
   contactId: string;
   tradeId: string;
   advance?: boolean;
+  accountLevel?: boolean;
   amount: number;
   method: string;
   financialAccountId?: string;
@@ -296,6 +297,21 @@ export const paid = (s: Store, t: Trade) =>
 // A negative balance is a credit owed back to the customer, or due back from the supplier.
 export const balance = (s: Store, t: Trade) =>
   isPosted(t) ? round(total(t) - returned(s, t.id) - paid(s, t)) : 0;
+/** Settled advances and supplier account payments not matched to individual bills. */
+export const unappliedAdvanceBalance = (s: Store, kind: "Customer" | "Supplier", id: string) => round(
+  s.payments.filter(p => p.kind === kind && p.contactId === id && p.advance && !p.tradeId && isSettledPayment(p)).reduce((sum, p) => sum + p.amount, 0),
+);
+export const forwardedSupplierChequeBalance = (s: Store, supplierId: string) => round(
+  (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === supplierId).reduce((sum, c) => {
+    const source = s.payments.find(p => p.id === c.sourcePaymentId);
+    return sum + (source?.method === "Cheque" ? chequeSettlements(s, source).reduce((settled, entry) => settled + entry.amount, 0) : 0);
+  }, 0),
+);
+export const unappliedCreditBalance = (s: Store, kind: "Customer" | "Supplier", id: string) => round(
+  unappliedAdvanceBalance(s, kind, id) +
+  s.payments.filter(p => p.kind === kind && p.contactId === id && p.accountLevel && !p.tradeId && isSettledPayment(p)).reduce((sum, p) => sum + p.amount, 0) +
+  (kind === "Supplier" ? forwardedSupplierChequeBalance(s, id) : 0),
+);
 export const contactBalance = (
   s: Store,
   kind: "Customer" | "Supplier",
@@ -305,7 +321,21 @@ export const contactBalance = (
     (kind === "Customer" ? s.invoices : s.purchases)
       .filter((t) => t.contactId === id)
       .reduce((n, t) => n + balance(s, t), 0),
-  ) + (s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === id)?.openingBalance || 0);
+  ) + (s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === id)?.openingBalance || 0)
+    - unappliedCreditBalance(s, kind, id);
+export const supplierPayableBalance = (s: Store, supplierId: string) => {
+  const balance = contactBalance(s, "Supplier", supplierId);
+  const pending = s.payments.filter(p => p.kind === "Supplier" && p.contactId === supplierId && p.method === "Cheque" && (p.chequeStatus || "pending") === "pending" && !p.clearedDate);
+  const pendingOutgoing = pending.reduce((sum, p) => sum + Math.max(p.amount, 0), 0);
+  const pendingRefunds = pending.reduce((sum, p) => sum + Math.max(-p.amount, 0), 0);
+  const pendingForwarded = (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === supplierId && ["pending", "submitted"].includes(c.status)).reduce((sum, c) => {
+    const source = s.payments.find(p => p.id === c.sourcePaymentId);
+    return sum + (source?.method === "Cheque" && (source.chequeStatus || "pending") === "pending" && !source.clearedDate ? Math.abs(source.amount) : 0);
+  }, 0);
+  if (balance > 0) return round(Math.max(0, balance - pendingOutgoing - pendingForwarded));
+  if (balance < 0) return -round(Math.max(0, Math.abs(balance) - pendingRefunds));
+  return 0;
+};
 export const periodMatch = (date: string, from: string, to: string) =>
   (!from || date >= from) && (!to || date <= to);
 const assert = (ok: boolean, message: string) => {
@@ -552,6 +582,19 @@ export function recordPayment(s: Store, p: Payment): Store {
     (t) => t.id === p.tradeId && t.contactId === p.contactId,
   );
   requireOpenDate(s, p.date);
+  if (p.accountLevel) {
+    assert(p.kind === "Supplier" && !p.advance && !p.tradeId && !!p.contactId && s.suppliers.some(supplier => supplier.id === p.contactId), "Select a supplier account for this payment.");
+    assert(Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount, "Enter a valid supplier account payment amount.");
+    const remaining = supplierPayableBalance(s, p.contactId);
+    assert((remaining > 0 && p.amount > 0 && p.amount <= remaining) || (remaining < 0 && p.amount < 0 && Math.abs(p.amount) <= Math.abs(remaining)), "Payment exceeds the supplier’s remaining payable balance.");
+    assert(s.heads.includes(p.head), "Select a valid account head.");
+    assert(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some(a => a.name === p.method && a.active !== false), "Select a valid payment method.");
+    if (p.method === "Cheque") {
+      assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
+      p.chequeStatus = "pending";
+    }
+    return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
+  }
   if (p.advance) {
     assert(!p.tradeId && !!p.contactId, "Select a customer or supplier for the advance payment.");
     assert(Number.isFinite(p.amount) && p.amount >= 0.01 && round(p.amount) === p.amount, "Advance payment must be greater than zero.");
