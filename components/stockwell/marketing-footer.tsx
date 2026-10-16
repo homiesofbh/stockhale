@@ -42,6 +42,7 @@ export function MarketingFooter() {
             <Link href="/how-to-use">How to use</Link>
             <Link href="/#who-its-for">Who it’s for</Link>
             <Link href="/about-us">About us</Link>
+            <Link href="/pricing">Pricing</Link>
             <Link href="/contact-us">Contact</Link>
           </div>
           <div>

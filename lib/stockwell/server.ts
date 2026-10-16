@@ -72,6 +72,13 @@ async function workspace(user: Row, lock = false) {
   if (!w) throw new Error("Workspace unavailable.");
   return w;
 }
+function requireWorkspaceAccess(w: Row) {
+  if (w.plan_active) return;
+  if (!w.trial_started_at) return; // Existing workspaces retain access during rollout.
+  const expires = Date.parse(w.trial_started_at) + 72 * 60 * 60 * 1000;
+  if (Date.now() >= expires)
+    throw Object.assign(new Error("Your 3-day trial has ended. Choose a plan to continue using StockHale."), { status: 402, code: "TRIAL_EXPIRED" });
+}
 async function member(w: Row, u: Row): Promise<Member> {
   const m = await row(
     'SELECT modules FROM members WHERE workspace=$1 AND "user"=$2',
@@ -122,8 +129,21 @@ export async function recordAudit(user: Row, module: string, action: string, rec
 export async function snapshot(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
-    return readSnapshot(user);
+    const w = await workspace(user);
+    const access = trialAccess(w);
+    if (!access.locked) return readSnapshot(user);
+    return {
+      ...access, id: w.id, name: w.name, image: "", revision: 0,
+      store: emptyStore(), member: await member(w, user), members: [], audit: [],
+      readEvent: "", emailConfigured: false,
+    };
   });
+}
+function trialAccess(w: Row) {
+  const startedAt = w.trial_started_at ? new Date(w.trial_started_at).toISOString() : null;
+  const endsAt = startedAt ? new Date(Date.parse(startedAt) + 72 * 60 * 60 * 1000).toISOString() : null;
+  const locked = !w.plan_active && !!endsAt && Date.now() >= Date.parse(endsAt);
+  return { trial: { startedAt, endsAt, active: !locked, planActive: !!w.plan_active }, locked };
 }
 
 const ADMIN_EMAIL = "homiesbridge@gmail.com";
@@ -139,7 +159,7 @@ export async function adminOverview(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const workspaces = await all(
-      `SELECT w.id, w.name, w.subscription, w.revision, w.store, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
         (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
         (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
@@ -160,6 +180,8 @@ export async function adminOverview(user: Row) {
           name: item.name,
           owner: { id: item.owner_id, name: item.owner_name, email: item.owner_email },
           subscription: item.subscription,
+          trialStartedAt: item.trial_started_at,
+          planActive: !!item.plan_active,
           memberCount: Number(item.member_count),
           workforceEmailCount: Number(item.workforce_email_count),
           usage: {
@@ -184,7 +206,7 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
     throw new Error("Choose a valid subscription.");
   const result = await query(
-    "UPDATE workspaces SET subscription=$1 WHERE id=$2 RETURNING id",
+    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free') WHERE id=$2 RETURNING id",
     [subscription, workspaceId],
   );
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
@@ -229,6 +251,7 @@ async function readSnapshot(user: Row) {
         )
       )?.event || "",
     emailConfigured: !!(process.env.RESEND_API_KEY && process.env.RESEND_FROM),
+    ...trialAccess(w),
   };
 }
 export async function authenticate(body: Row, request: Request) {
@@ -298,7 +321,7 @@ export async function authenticate(body: Row, request: Request) {
     } else {
       const wid = randomUUID();
       await query(
-        "INSERT INTO workspaces(id,name,owner,store) VALUES($1,$2,$3,$4)",
+        "INSERT INTO workspaces(id,name,owner,store,trial_started_at,subscription,plan_active) VALUES($1,$2,$3,$4,NOW(),'Growth',FALSE)",
         [wid, storeName, user.id, JSON.stringify(emptyStore())],
       );
       await query(
@@ -345,6 +368,7 @@ export async function resetPassword(body: Row, request: Request) {
 export async function mutate(user: Row, body: Row) {
   return transaction(async () => {
     const w = await workspace(user, true);
+    requireWorkspaceAccess(w);
     if (body.action === "sync") {
       const m = await member(w, user);
       if (!Array.isArray(body.changes) || body.changes.length > 100)

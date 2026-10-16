@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       const { user } = await authorize(request);
       const body = await readJsonBody(request, 32_768) as Record<string, any>; policy(body);
       const snap = await snapshot(user);
+      if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
       const module = body.recordType === "expense" ? "Expenses" : "Purchases";
       if (!allowed(snap.member, module)) return Response.json({ error: "You do not have access to this module." }, { status: 403 });
       const id = randomUUID(), key = attachmentKey(snap.id, body.recordType, body.recordId, id);
@@ -53,6 +54,7 @@ export async function GET(request: Request) {
     const { user } = await authorize(request);
     const url = new URL(request.url), key = url.searchParams.get("key") || "";
     const snap = await snapshot(user);
+    if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
     if (!key.startsWith(`${snap.id}/`)) return Response.json({ error: "Invalid attachment scope." }, { status: 403 });
     const downloadUrl = await getSignedUrl(s3(), new GetObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: key }), { expiresIn: 900 });
     return Response.json({ downloadUrl, expiresIn: 900 });
@@ -63,6 +65,7 @@ export async function DELETE(request: Request) {
     const { user } = await authorize(request);
     const body = await readJsonBody(request, 32_768) as Record<string, any>;
     const snap = await snapshot(user);
+    if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
     if (snap.member.role !== "owner") return Response.json({ error: "Only the workspace owner can delete attachments." }, { status: 403 });
     if (typeof body?.key !== "string" || !body.key.startsWith(`${snap.id}/`)) return Response.json({ error: "Invalid attachment scope." }, { status: 403 });
     await s3().send(new DeleteObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: body.key }));

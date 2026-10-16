@@ -77,6 +77,7 @@ export function WorkspaceApp() {
   const [requestedModule, setModule] = useState<Module>("Dashboard");
   const [adminOpen, setAdminOpen] = useState(false);
   const [routeReady, setRouteReady] = useState(false);
+  const [trialExpired, setTrialExpired] = useState(false);
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
@@ -131,6 +132,10 @@ export function WorkspaceApp() {
     if (workspace.cache) {
       setS(workspace.cache.workspace.store);
       setReady(true);
+      const refreshTrial = () => setTrialExpired(!!workspace.cache?.workspace.trial?.endsAt && !workspace.cache.workspace.trial.planActive && Date.now() >= Date.parse(workspace.cache.workspace.trial.endsAt));
+      refreshTrial();
+      const timer = window.setInterval(refreshTrial, 1000);
+      return () => window.clearInterval(timer);
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);
   useEffect(() => {
@@ -437,6 +442,7 @@ export function WorkspaceApp() {
       </div>
     );
   const isPlatformAdmin = account.member.email.trim().toLowerCase() === "homiesbridge@gmail.com";
+  if (account.locked || trialExpired) return <div className="trial-lock"><section><span className="section-eyebrow">YOUR 3-DAY TRIAL HAS ENDED</span><h1>Choose a plan<br/><em>to keep going.</em></h1><p>Your workspace is safely saved. Contact our team to activate a subscription; once activated, you can continue where you left off.</p><a className="pricing-action" href="/pricing">Review plans</a><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Activate%20StockHale%20plan">Contact us to activate</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
   return (
     <>
       <div className="app-shell">

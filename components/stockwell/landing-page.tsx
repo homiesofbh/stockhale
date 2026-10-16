@@ -20,6 +20,8 @@ import {
 } from "lucide-react";
 import { MarketingHeader } from "./marketing-header";
 import { MarketingFooter } from "./marketing-footer";
+import { PricingSection } from "./pricing-section";
+import { headers } from "next/headers";
 
 export function MarketingFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -171,7 +173,9 @@ function Hero() {
   );
 }
 
-export function LandingPage() {
+export async function LandingPage() {
+  const requestHeaders = await headers();
+  const country = (requestHeaders.get("cf-ipcountry") || requestHeaders.get("x-vercel-ip-country") || "US").toUpperCase();
   return (
     <MarketingFrame>
       <main>
@@ -190,6 +194,7 @@ export function LandingPage() {
             ))}
           </div>
         </section>
+        <PricingSection compact country={country} />
         <section className="features-section" id="features">
           <div className="section-heading">
             <div>
@@ -586,6 +591,7 @@ export function InfoPage({
         "These Terms & Conditions govern access to and use of StockHale. Please read them before creating an account or using a workspace.",
       sections: [
         { title: "1. About these terms", paragraphs: ["In these terms, “StockHale,” “we,” “us,” and “our” refer to the StockHale service and its operators. “You” means the person using the service. If you use StockHale for a business, you confirm that you are authorized to act for that business, and “you” also refers to that business.", "By creating an account, accepting an invitation, or using StockHale, you agree to these terms. If you do not agree, do not use the service. If you use StockHale for an organization, you are responsible for ensuring that its users follow these terms."] },
+        { title: "Paid plans and 3-day trial", paragraphs: ["New workspace owners receive a 72-hour trial beginning when they create their account. The trial includes access to the service during that period and does not require a payment card. At the end of 72 hours, access to workspace features is paused unless a paid plan has been activated. The workspace and its records remain stored while access is paused; contact hello@stockhale.app to arrange activation or account closure.", "Plan names, prices, billing period, applicable taxes, payment method, and any plan-specific limits will be shown on the Pricing page or confirmed with you before activation. Prices are shown in PKR for visitors identified as being in Pakistan and USD for visitors identified elsewhere. A plan is active only after StockHale confirms activation. Subscription payment and renewal arrangements are confirmed with you before activation; automatic recurring billing is not currently available. Contact hello@stockhale.app to cancel or ask about a refund. Refunds are handled in line with applicable law and any payment terms confirmed with you."] },
         { title: "2. The service", paragraphs: ["StockHale provides online tools for retail operations, which may include inventory, purchasing, sales and billing records, contacts, expenses, accounts, reports, team access, file attachments, and data import or export. Features may change as we maintain and develop the service.", "StockHale is an operational record-keeping tool. It is not a bank, payment processor, accounting firm, tax adviser, or legal adviser, and it does not independently verify the information you enter or the reports it produces."] },
         { title: "3. Accounts and team access", paragraphs: ["You must provide accurate account information and keep your sign-in credentials confidential. You are responsible for activity under your account and should promptly tell us if you suspect unauthorized access.", "Workspace owners control invitations, roles, and access to workspace information. Owners are responsible for inviting only people who should have access, assigning appropriate permissions, and removing access when it is no longer needed. Team members must use their own accounts and must not share credentials."] },
         { title: "4. Your information and content", paragraphs: ["You retain your rights to the business records, customer and supplier details, files, and other content you submit to StockHale (“Customer Content”). You give us permission to host, store, transmit, back up, and otherwise process Customer Content only as reasonably needed to operate, secure, support, and improve the service and to meet legal obligations.", "You are responsible for having the rights and permissions needed to enter and use Customer Content, including personal information about customers, suppliers, or staff. You must ensure that your use of that information follows applicable privacy and record-keeping laws. You are also responsible for the accuracy, completeness, and lawful use of your records.", "Keep your own copies of important records. Where available, use StockHale’s export or backup tools and check that exported files are stored securely. The service may not be your only or permanent copy of business records."] },
@@ -600,7 +606,7 @@ export function InfoPage({
         { title: "13. General", paragraphs: ["If a court finds part of these terms unenforceable, the rest remains in effect. A delay in enforcing a term does not waive our right to enforce it later. You may not transfer your rights under these terms without our consent; we may transfer them as part of a reorganization or transfer of the service. These terms and any separately agreed service terms form the agreement between you and us about StockHale.", "These terms are governed by the laws that apply where the StockHale service operator is established, without regard to conflict-of-law rules, except where mandatory consumer protection laws provide otherwise. Courts with jurisdiction there will hear disputes, subject to any mandatory rights you have to bring a claim elsewhere."] },
         { title: "14. Contact", paragraphs: ["Questions about these terms? Email hello@stockhale.app."] },
       ],
-      label: "Last updated October 15, 2026.",
+      label: "Last updated October 16, 2026.",
     },
     privacy: {
       eyebrow: "YOUR INFORMATION, RESPECTED",
@@ -615,6 +621,7 @@ export function InfoPage({
         "This policy explains what information StockHale handles, why we use it, and the choices available to you when you use our retail operations service.",
       sections: [
         { title: "1. Who this policy covers", paragraphs: ["This Privacy Policy applies when you visit StockHale’s website, create or use an account, join a workspace, contact us, or otherwise use our service. StockHale is designed for businesses. A workspace owner or employer may control your account and the business information in a workspace; if so, direct requests about that workspace to its owner first.", "For questions about this policy or personal information, contact us at hello@stockhale.app."] },
+        { title: "Trial, subscription, and regional pricing data", paragraphs: ["We store the date and time a workspace trial starts, its trial or paid access status, and the plan selected or activated so we can provide access and administer subscriptions. We may use a country code provided by our hosting network to display regional pricing. We do not use that country code as precise location data. Subscription and trial information is retained with workspace records for service administration, security, billing records, and legal obligations."] },
         { title: "2. Information we collect", paragraphs: ["Account and contact details. We handle information such as your name, email address, password credentials, account identifiers, and messages you send to us. Passwords are handled using authentication safeguards; we do not need to see your plain-text password.", "Workspace and business records. We process the information you or your team choose to store, such as workspace settings, products, stock movements, sales and purchase records, expenses, accounts, customer and supplier details, team membership, and reports.", "Files and attachments. If you upload supporting files, such as purchase or expense documents, we process the file and related details needed to store and associate it with the relevant record.", "Service and device information. Our systems may receive technical information needed to deliver and protect the service, such as IP address, browser and device details, request logs, timestamps, and security events. Your browser may also store essential session or local application data so that sign-in and workspace features work. StockHale does not currently use third-party advertising cookies.", "Support communications. If you contact us, we receive the content of your message and the contact details you provide so we can respond."] },
         { title: "3. How we use information", paragraphs: ["We use information to create and authenticate accounts, provide workspaces and requested features, store and sync business records, enable team access, process file uploads and exports, respond to support requests, send account or security messages, troubleshoot errors, protect the service against fraud or abuse, and meet legal obligations.", "We may use limited service information to understand reliability and improve the product. We do not sell personal information or business records, and we do not use your business records for third-party targeted advertising."] },
         { title: "4. Legal grounds where required", paragraphs: ["Where privacy law requires a legal basis, we process information as needed to perform our agreement with you, pursue legitimate interests such as securing and improving the service and providing support, comply with legal obligations, or with your consent where consent is required. The workspace owner may separately determine why and how workspace business records are used."] },
@@ -627,7 +634,7 @@ export function InfoPage({
         { title: "11. Changes to this policy", paragraphs: ["We may update this policy when our service or practices change. We will revise the date below and take reasonable steps to notify users about material changes. The updated policy applies from its stated effective date."] },
         { title: "12. Contact", paragraphs: ["For privacy questions or requests, email hello@stockhale.app."] },
       ],
-      label: "Last updated October 15, 2026.",
+      label: "Last updated October 16, 2026.",
     },
   }[type];
   return (

@@ -61,6 +61,8 @@ export type Workspace = {
   audit: Audit[];
   readEvent?: string;
   emailConfigured: boolean;
+  trial?: { startedAt: string | null; endsAt: string | null; active: boolean; planActive: boolean };
+  locked?: boolean;
 };
 export type Change = {
   actorId: string;

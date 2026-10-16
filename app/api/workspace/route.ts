@@ -28,6 +28,7 @@ function failure(e: unknown) {
         : e instanceof Error
           ? e.message
           : "Request failed.",
+      code: error.code === "TRIAL_EXPIRED" ? error.code : undefined,
     },
     {
       status: infrastructure ? 503 : error.statusCode || error.status || 400,
@@ -47,8 +48,10 @@ export async function GET(request: Request) {
       const { user, headers: authHeaders } = await authorize(request);
       if (new URL(request.url).searchParams.get("admin") === "overview")
         return Response.json(await adminOverview(user), { headers: sessionHeaders(authHeaders) });
+      const overview = await snapshot(user);
+      if (overview.locked) return Response.json(overview, { headers: sessionHeaders(authHeaders) });
       await deliverEmails();
-      return Response.json(await snapshot(user), {
+      return Response.json(overview, {
         headers: sessionHeaders(authHeaders),
       });
     });

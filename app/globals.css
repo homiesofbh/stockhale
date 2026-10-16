@@ -4128,6 +4128,18 @@ form > .form-copy {
   border-radius: 20px;
   animation-delay: 0.3s;
 }
+/* The marketing hero's stock card shares a name with the dashboard panel. */
+.dashboard-workspace .primary-records > .stock-card {
+  position: relative;
+  inset: auto;
+  width: auto;
+  padding: 0;
+  border-radius: 27px;
+  animation: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  box-shadow: none;
+}
 .float-card-top {
   display: flex;
   align-items: center;
@@ -8098,6 +8110,36 @@ body::-webkit-scrollbar,
   margin: auto;
   padding: 64px 6% 110px;
 }
+.pricing-section { max-width: 1320px; margin: 0 auto; padding: 90px 6% 110px; }
+.pricing-heading { max-width: 660px; margin: 0 auto 42px; text-align: center; }
+.pricing-heading h2 { margin: 18px 0; color: #43384d; font: 700 clamp(40px, 5vw, 64px)/1.05 var(--display); letter-spacing: -2.5px; }
+.pricing-heading h2 em { color: #827092; font-style: normal; }
+.pricing-heading p, .pricing-footnote { color: #685e72; font-size: 14px; line-height: 1.7; }
+.pricing-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 20px; align-items: stretch; }
+.pricing-card { position: relative; display: flex; flex-direction: column; padding: 30px; border: 1px solid #fff; border-radius: 24px; background: #ffffff9c; box-shadow: 0 18px 45px #61537012; }
+.pricing-popular { border: 2px solid #8b759e; box-shadow: 0 18px 45px #61537022; }
+.pricing-badge { position: absolute; top: -13px; right: 22px; padding: 6px 10px; border-radius: 99px; background: #817091; color: white; font-size: 9px; font-weight: 800; letter-spacing: 1px; }
+.pricing-name { color: #403649; font: 700 25px var(--display); }
+.pricing-card > p { min-height: 42px; color: #746b7b; font-size: 13px; }
+.pricing-price { margin-top: 15px; color: #3f354a; font: 700 34px var(--display); letter-spacing: -1px; }
+.pricing-price small { font: 500 13px Inter, sans-serif; letter-spacing: 0; }
+.pricing-annual { margin: 5px 0 20px; color: #81778a; font-size: 11px; }
+.pricing-card ul { display: grid; gap: 13px; padding: 20px 0; margin: 0 0 20px; border-top: 1px solid #e8e2ec; list-style: none; color: #5e5568; font-size: 12px; }
+.pricing-card li { display: flex; align-items: flex-start; gap: 9px; }
+.pricing-card li svg { flex: none; color: #728b70; }
+.pricing-action { display: block; width: 100%; padding: 13px 18px; border: 0; border-radius: 99px; background: #493c54; color: white; text-align: center; text-decoration: none; font-size: 12px; font-weight: 700; cursor: pointer; }
+.pricing-footnote { margin: 28px auto 0; text-align: center; font-size: 12px; }
+.pricing-footnote a, .trial-contact { color: #645275; font-weight: 700; }
+.pricing-compact { padding-top: 75px; padding-bottom: 80px; }
+.pricing-compact .pricing-card { padding: 24px; }
+.trial-lock { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f2eef5; }
+.trial-lock section { width: min(100%, 580px); padding: clamp(28px, 7vw, 60px); border: 1px solid white; border-radius: 28px; background: #ffffffc9; box-shadow: 0 25px 80px #44384f20; text-align: center; }
+.trial-lock h1 { margin: 18px 0; color: #403649; font: 700 clamp(40px, 7vw, 60px)/1.05 var(--display); letter-spacing: -2px; }
+.trial-lock h1 em { color: #827092; font-style: normal; }
+.trial-lock p { margin-bottom: 25px; color: #685e72; line-height: 1.7; }
+.trial-contact { display: block; margin: 18px; }
+.trial-lock button { border: 0; background: transparent; color: #756b80; cursor: pointer; text-decoration: underline; }
+@media (max-width: 800px) { .pricing-grid { grid-template-columns: 1fr; max-width: 470px; margin: auto; } .pricing-card > p { min-height: 0; } }
 .story-hero {
   position: relative;
   min-height: 390px;
