@@ -52,7 +52,7 @@ function Hero() {
     <section className="hx" aria-labelledby="hx-title">
       <div className="hx-copy">
         <span className="hx-label">
-          <span className="live-dot" /> YOUR STORE. IN GOOD ORDER.
+          <span className="live-dot" /> KEEP YOUR STOCK HEALTHY
         </span>
         <h1 id="hx-title">
           Your whole store.

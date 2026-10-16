@@ -55,6 +55,12 @@ type Testimonial = {
 };
 
 type Tone = "green" | "amber" | "neutral";
+type WorkspaceSort =
+  | "alphabetical"
+  | "accountCreated"
+  | "planActivated"
+  | "planExpires"
+  | "subscription";
 
 /* -------------------------------------------------------------------------- */
 /* Helpers                                                                    */
@@ -175,6 +181,17 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState("");
   const [query, setQuery] = useState("");
+  const [subscriptionFilter, setSubscriptionFilter] = useState("All");
+  const [sortBy, setSortBy] = useState<WorkspaceSort>("alphabetical");
+  const [sortDirection, setSortDirection] = useState<"asc" | "desc">("asc");
+  const [workspacePage, setWorkspacePage] = useState(1);
+  const workspacePageSize = 10;
+
+  function updateSort(value: string) {
+    const [field, direction] = value.split(":") as [WorkspaceSort, "asc" | "desc"];
+    setSortBy(field);
+    setSortDirection(direction);
+  }
 
   /* ---------- Data loading ---------- */
 
@@ -276,17 +293,57 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
     [testimonials],
   );
 
-  const workspaces = useMemo(() => {
+  const workspaceMatches = useMemo(() => {
     const term = query.trim().toLowerCase();
     if (!data) return [];
-    if (!term) return data.workspaces;
-    return data.workspaces.filter((w) =>
-      [w.name, w.owner.name, w.owner.email, w.id]
+    return data.workspaces.filter((w) => {
+      if (subscriptionFilter !== "All" && w.subscription !== subscriptionFilter)
+        return false;
+      if (!term) return true;
+      return [w.name, w.owner.name, w.owner.email, w.id]
         .join(" ")
         .toLowerCase()
-        .includes(term),
-    );
-  }, [data, query]);
+        .includes(term);
+    });
+  }, [data, query, subscriptionFilter]);
+
+  const sortedWorkspaces = useMemo(() => {
+    const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
+    const value = (workspace: Workspace) => {
+      if (sortBy === "alphabetical") return workspace.name || workspace.owner.name || workspace.owner.email;
+      if (sortBy === "subscription") return workspace.subscription;
+      if (sortBy === "accountCreated") return workspace.accountCreatedAt;
+      if (sortBy === "planActivated") return workspace.planActivatedAt || "";
+      return workspace.planExpiresAt || "";
+    };
+    return [...workspaceMatches].sort((a, b) => {
+      const aValue = value(a);
+      const bValue = value(b);
+      const aMissing = !aValue;
+      const bMissing = !bValue;
+      if (aMissing !== bMissing) return aMissing ? 1 : -1;
+      const result = typeof aValue === "string" && typeof bValue === "string"
+        ? (sortBy === "accountCreated" || sortBy === "planActivated" || sortBy === "planExpires"
+            ? aValue.localeCompare(bValue)
+            : collator.compare(aValue, bValue))
+        : 0;
+      return sortDirection === "asc" ? result : -result;
+    });
+  }, [sortBy, sortDirection, workspaceMatches]);
+
+  const workspacePageCount = Math.max(1, Math.ceil(sortedWorkspaces.length / workspacePageSize));
+  const workspaces = sortedWorkspaces.slice(
+    (workspacePage - 1) * workspacePageSize,
+    workspacePage * workspacePageSize,
+  );
+
+  useEffect(() => {
+    setWorkspacePage(1);
+  }, [query, subscriptionFilter, sortBy, sortDirection]);
+
+  useEffect(() => {
+    setWorkspacePage((page) => Math.min(page, workspacePageCount));
+  }, [workspacePageCount]);
 
   /* ---------- Render ---------- */
 
@@ -433,20 +490,48 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
                 <span className="eyebrow">WORKSPACES</span>
                 <h2 id="admin-workspaces-title">Plans &amp; access</h2>
                 <p>
-                  Showing {workspaces.length} of {data.workspaces.length}{" "}
-                  workspaces.
+                  {sortedWorkspaces.length === 0
+                    ? "No matching workspaces."
+                    : `Showing ${(workspacePage - 1) * workspacePageSize + 1}–${Math.min(
+                        workspacePage * workspacePageSize,
+                        sortedWorkspaces.length,
+                      )} of ${sortedWorkspaces.length} workspaces.`}
                 </p>
               </div>
-              <label className="admin-search">
-                <Search size={16} aria-hidden="true" />
-                <span className="sr-only">Search workspaces</span>
-                <input
-                  type="search"
-                  placeholder="Search name, email or ID"
-                  value={query}
-                  onChange={(event) => setQuery(event.target.value)}
-                />
-              </label>
+              <div className="admin-workspace-controls">
+                <label className="admin-search">
+                  <Search size={16} aria-hidden="true" />
+                  <span className="sr-only">Search workspaces</span>
+                  <input
+                    type="search"
+                    placeholder="Search name, email or ID"
+                    value={query}
+                    onChange={(event) => setQuery(event.target.value)}
+                  />
+                </label>
+                <label className="admin-control-field">
+                  <span>Subscription</span>
+                  <select value={subscriptionFilter} onChange={(event) => setSubscriptionFilter(event.target.value)}>
+                    <option value="All">All plans</option>
+                    {data.plans.map((plan) => <option key={plan} value={plan}>{plan}</option>)}
+                  </select>
+                </label>
+                <label className="admin-control-field admin-sort-field">
+                  <span>Sort by</span>
+                  <select value={`${sortBy}:${sortDirection}`} onChange={(event) => updateSort(event.target.value)}>
+                    <option value="alphabetical:asc">Alphabetical · A–Z</option>
+                    <option value="alphabetical:desc">Alphabetical · Z–A</option>
+                    <option value="accountCreated:asc">Account created · Oldest first</option>
+                    <option value="accountCreated:desc">Account created · Newest first</option>
+                    <option value="planActivated:asc">Plan activation · Oldest first</option>
+                    <option value="planActivated:desc">Plan activation · Newest first</option>
+                    <option value="planExpires:asc">Plan expiration · Soonest first</option>
+                    <option value="planExpires:desc">Plan expiration · Latest first</option>
+                    <option value="subscription:asc">Subscription · A–Z</option>
+                    <option value="subscription:desc">Subscription · Z–A</option>
+                  </select>
+                </label>
+              </div>
             </header>
 
             <div className="admin-table-wrap">
@@ -604,6 +689,13 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
                     ? "No workspaces yet."
                     : "No workspaces match your search."}
                 </p>
+              )}
+              {sortedWorkspaces.length > workspacePageSize && (
+                <nav className="admin-pagination" aria-label="Workspace pages">
+                  <button type="button" className="secondary-button" disabled={workspacePage === 1} onClick={() => setWorkspacePage((page) => page - 1)}>Previous</button>
+                  <span>Page {workspacePage} of {workspacePageCount}</span>
+                  <button type="button" className="secondary-button" disabled={workspacePage === workspacePageCount} onClick={() => setWorkspacePage((page) => page + 1)}>Next</button>
+                </nav>
               )}
             </div>
           </section>

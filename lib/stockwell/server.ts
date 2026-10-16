@@ -232,10 +232,40 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
     throw new Error("Choose a valid subscription.");
   const result = await query(
-    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free'), plan_activated_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_activated_at,NOW()) END, plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE plan_expires_at END, access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END WHERE id=$2 RETURNING id, subscription, plan_active",
+    `UPDATE workspaces
+     SET subscription=$1,
+         plan_active=($1 <> 'Free'),
+         plan_activated_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_activated_at,NOW()) END,
+         plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_expires_at,NOW() + INTERVAL '30 days') END,
+         access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END
+     WHERE id=$2
+     RETURNING id, subscription, plan_active, plan_expires_at`,
     [subscription, workspaceId],
   );
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
+  await query(
+    `DELETE FROM events
+     WHERE workspace=$1 AND action='Plan renewal reminder' AND "emailStatus" <> 'sent'`,
+    [workspaceId],
+  );
+  const activated = result.rows[0].plan_active && result.rows[0].plan_expires_at;
+  if (activated) {
+    const expiresAt = new Date(result.rows[0].plan_expires_at);
+    await query(
+      `INSERT INTO events(id,workspace,actor,module,action,records,"occurredAt","receivedAt","emailStatus","nextAttempt")
+       VALUES($1,$2,$3,$4,$5,$6,$7,$7,'queued',$8)`,
+      [
+        randomUUID(),
+        workspaceId,
+        "StockHale <alerts@stockhale.app>",
+        "Billing",
+        "Plan renewal reminder",
+        `${result.rows[0].subscription} plan expires at ${expiresAt.toISOString()}. Renew your plan to keep access active.`,
+        new Date().toISOString(),
+        Math.max(0, expiresAt.getTime() - 24 * 60 * 60 * 1000),
+      ],
+    );
+  }
   return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: !!result.rows[0].plan_active, appliedAt: new Date().toISOString() };
 }
 

@@ -143,7 +143,9 @@ export async function POST(request: Request) {
       if (payload.action === "testimonial-review")
         return Response.json(await reviewTestimonial(user, payload), { headers: sessionHeaders(authHeaders) });
       if (payload.action === "admin-subscription") {
-        return Response.json(await updateAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
+        const result = await updateAdminSubscription(user, payload);
+        await deliverEmails();
+        return Response.json(result, { headers: sessionHeaders(authHeaders) });
       }
       if (payload.action === "admin-cancel-subscription") {
         return Response.json(await cancelAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
