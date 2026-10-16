@@ -67,6 +67,7 @@ import {
 import { createReportData } from "@/lib/stockwell/reports";
 
 import { ProductSearch } from "./product-search";
+import { AdminPanel } from "./admin-panel";
 
 export function WorkspaceApp() {
   const workspace = useWorkspace();
@@ -74,6 +75,7 @@ export function WorkspaceApp() {
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [requestedModule, setModule] = useState<Module>("Dashboard");
+  const [adminOpen, setAdminOpen] = useState(false);
   const [routeReady, setRouteReady] = useState(false);
   const [query, setQuery] = useState("");
   const [from, setFrom] = useState("");
@@ -434,6 +436,7 @@ export function WorkspaceApp() {
         StockHale<a href="/sign-in">Sign in to open your workspace</a>
       </div>
     );
+  const isPlatformAdmin = account.member.email.trim().toLowerCase() === "homiesbridge@gmail.com";
   return (
     <>
       <div className="app-shell">
@@ -449,11 +452,13 @@ export function WorkspaceApp() {
           setModule={setModule}
           setNotice={setNotice}
         />
+        {isPlatformAdmin && <button className="platform-admin-link" onClick={() => setAdminOpen((open) => !open)}>{adminOpen ? "Close admin" : "Admin panel"}</button>}
         <div
           className={`workspace ${module === "Dashboard" ? "dashboard-workspace" : ""}`}
         >
           <main>
-            
+            {adminOpen && isPlatformAdmin ? <AdminPanel onBack={() => setAdminOpen(false)} /> : null}
+            {!adminOpen && <>
             {module === "Settings" && account.member.role === "owner" ? (
               <WorkspaceSettings
                 workspace={account}
@@ -702,6 +707,7 @@ export function WorkspaceApp() {
                 </footer>
               </>
             )}
+            </>}
           </main>
         </div>
       </div>

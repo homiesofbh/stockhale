@@ -40,24 +40,9 @@ const HERO_POINTS = [
 ];
 
 const HERO_KPIS = [
-  {
-    label: "Today’s sales",
-    value: "Rs 84,250",
-    note: "Today at a glance",
-    trend: true,
-  },
-  {
-    label: "Items in stock",
-    value: "2,486",
-    note: "Across your catalog",
-    trend: false,
-  },
-  {
-    label: "Orders recorded",
-    value: "128",
-    note: "Every detail connected",
-    trend: false,
-  },
+  { label: "Offline workspace", value: "Keep recording", note: "Previously loaded workspaces can edit offline", trend: false },
+  { label: "Changes", value: "Saved on device", note: "Queued and synced when you reconnect", trend: false },
+  { label: "For setup", value: "Connect once", note: "Sign-in and team changes need internet", trend: false },
 ];
 
 function Hero() {
@@ -95,7 +80,7 @@ function Hero() {
 
       <div
         className="hx-stage"
-        aria-label="Illustrative StockHale workspace preview with sample inventory and sales figures"
+        aria-label="Illustrative StockHale product interface"
       >
         <div className="hx-board">
           <div className="hx-board-top">
@@ -105,7 +90,7 @@ function Hero() {
               </span>
               YOUR WORKSPACE
             </span>
-            <span className="hx-tag">PRODUCT PREVIEW</span>
+            <span className="hx-tag">SAMPLE DATA</span>
           </div>
 
           <div className="hx-kpis">
@@ -169,7 +154,7 @@ function Hero() {
             <Check size={16} />
           </span>
           <div>
-            <strong>Everything in sync.</strong>
+        <strong>Changes sync when you’re online.</strong>
             <small>More time for what’s next.</small>
           </div>
           <Sparkles size={17} />
@@ -441,6 +426,17 @@ export function LandingPage() {
             <span className="manifesto-mark">s.</span>
           </div>
         </section>
+        <section className="proof-section" id="see-it">
+          <div className="section-heading">
+            <div>
+              <span className="section-eyebrow">HOW THE WORKSPACE WORKS</span>
+              <h2>See the workbench<br /><em>before you sign up.</em></h2>
+            </div>
+            <p>Use a previously loaded workspace to keep recording while offline. Changes stay on the device and sync when connectivity returns; first sign-in and team administration require internet.</p>
+          </div>
+          <div className="offline-flow" aria-label="Offline workspace flow"><div><span>01</span><b>Load your workspace</b><small>Sign in while connected</small></div><ArrowRight /><div><span>02</span><b>Keep recording</b><small>Previously loaded records stay available</small></div><ArrowRight /><div><span>03</span><b>Reconnect to sync</b><small>Queued updates are sent when online</small></div></div>
+          <div className="proof-links"><Link href="/how-to-use">Follow a typical workflow <ArrowRight size={15} /></Link><Link href="/sign-up">Open your own workspace <ArrowUpRight size={15} /></Link></div>
+        </section>
         <section className="promise-section">
           <div className="promise-left">
             <span className="section-eyebrow">A GOOD DAY, BY DESIGN</span>
@@ -492,6 +488,21 @@ export function LandingPage() {
               <Check size={17} />
             </div>
           </div>
+        </section>
+        <section className="comparison-section" id="compare">
+          <div className="section-heading">
+            <div><span className="section-eyebrow">CHOOSE WITH A CLEAR PICTURE</span><h2>Where StockHale<br /><em>fits your workflow.</em></h2></div>
+            <p>A straightforward view of the tools you get here, and what to confirm when comparing other systems.</p>
+          </div>
+          <div className="comparison-wrap"><table><thead><tr><th scope="col">Capability</th><th scope="col">StockHale</th><th scope="col">Basic spreadsheets</th><th scope="col">POS suites</th></tr></thead><tbody>
+            <tr><th scope="row">Stock, purchases & sales records</th><td>Connected workspace</td><td>Manual linking</td><td>Common; confirm plan</td></tr>
+            <tr><th scope="row">Accounts, expenses & reports</th><td>Included tools</td><td>Build your own</td><td>Varies by provider</td></tr>
+            <tr><th scope="row">Team roles & shared records</th><td>Workspace access</td><td>File permissions</td><td>Common; confirm limits</td></tr>
+            <tr><th scope="row">Barcode entry</th><td>Barcode field and scanner input</td><td>Manual setup</td><td>Hardware support varies</td></tr>
+            <tr><th scope="row">Offline work</th><td>Loaded workspace can record changes and sync on reconnect</td><td>Local file access</td><td>Confirm with provider</td></tr>
+            <tr><th scope="row">External integrations & multiple branches</th><td>Contact us to discuss fit</td><td>Separate setup</td><td>Confirm with provider</td></tr>
+          </tbody></table></div>
+          <p className="comparison-note">Comparison is a general guide, not a feature audit of a named provider. POS capabilities, integrations, hardware, and pricing depend on each product and plan; verify them directly before choosing.</p>
         </section>
         <section className="closing-cta">
           <div className="closing-orbit orbit-one" />

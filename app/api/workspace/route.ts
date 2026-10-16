@@ -7,6 +7,8 @@ import {
   mutate,
   logout,
   deliverEmails,
+  adminOverview,
+  updateAdminSubscription,
 } from "@/lib/stockwell/server";
 import { withDatabase } from "@/lib/stockwell/database";
 import { readJsonBody } from "@/lib/stockwell/request-body";
@@ -43,6 +45,8 @@ export async function GET(request: Request) {
   try {
     return await withDatabase(async () => {
       const { user, headers: authHeaders } = await authorize(request);
+      if (new URL(request.url).searchParams.get("admin") === "overview")
+        return Response.json(await adminOverview(user), { headers: sessionHeaders(authHeaders) });
       await deliverEmails();
       return Response.json(await snapshot(user), {
         headers: sessionHeaders(authHeaders),
@@ -122,6 +126,9 @@ export async function POST(request: Request) {
       }
       const { user, headers: authHeaders } =
         restoreAuthorization || (await authorize(request));
+      if (payload.action === "admin-subscription") {
+        return Response.json(await updateAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
+      }
       const result = await mutate(user, payload);
       await deliverEmails();
       return Response.json(

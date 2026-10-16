@@ -294,6 +294,25 @@ h3 {
   max-width: 2200px;
   margin: auto;
 }
+.platform-admin-link { position: fixed; z-index: 20; right: 22px; bottom: 18px; display: inline-flex; align-items: center; gap: 7px; padding: 10px 14px; border: 1px solid #ffffffa8; border-radius: 14px; background: #51485f; color: #fff; box-shadow: 0 8px 24px #352a4635; font-size: 11px; font-weight: 650; cursor: pointer; }
+.admin-page { padding: 42px 0 70px; }
+.admin-page .page-heading { margin-bottom: 24px; }
+.admin-page .heading-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.admin-totals { display: grid; grid-template-columns: repeat(3,minmax(0,1fr)); gap: 12px; margin: 18px 0 24px; }
+.admin-totals article { padding: 20px; border: 1px solid #ffffff9e; border-radius: 18px; background: #ffffff55; }
+.admin-totals span, .admin-totals strong { display: block; }
+.admin-totals span { color: #756e80; font-size: 11px; }
+.admin-totals strong { margin-top: 10px; color: #453d51; font-size: 28px; }
+.admin-table-wrap { overflow-x: auto; border: 1px solid #ffffff9e; border-radius: 18px; background: #ffffff52; }
+.admin-table { width: 100%; min-width: 850px; border-collapse: collapse; text-align: left; font-size: 11px; color: #514b5b; }
+.admin-table th, .admin-table td { padding: 16px; border-bottom: 1px solid #d8d2e266; vertical-align: top; }
+.admin-table thead th { color: #70687b; font-size: 9px; letter-spacing: .7px; text-transform: uppercase; }
+.admin-table td strong, .admin-table td small, .admin-table td span { display: block; }
+.admin-table td small { margin-top: 5px; color: #777182; font-size: 10px; }
+.admin-table .admin-workspace-name { margin-top: 8px; color: #4e465b; font-weight: 650; }
+.admin-member-count { display: flex !important; align-items: center; gap: 5px; }
+.admin-table select { min-width: 120px; padding: 8px 28px 8px 10px; border: 1px solid #c9c1d3; border-radius: 9px; background: #fff; }
+.admin-empty, .admin-notice { padding: 12px 0; color: #60576d; font-size: 12px; }
 .workspace main {
   padding: 0 clamp(24px, 3.2vw, 60px) 0;
   margin: auto;
@@ -4324,6 +4343,28 @@ form > .form-copy {
   margin: auto;
   padding: 112px 6% 104px;
 }
+.proof-section,
+.comparison-section {
+  max-width: 1320px;
+  margin: auto;
+  padding: 82px 6%;
+}
+.offline-flow { display: grid; grid-template-columns: 1fr 28px 1fr 28px 1fr; gap: 14px; align-items: center; padding: 30px; border: 1px solid #ffffffa8; border-radius: 24px; background: linear-gradient(125deg,#ddd8e7aa,#ffffff60); }
+.offline-flow > div { min-height: 118px; padding: 20px; border: 1px solid #ffffffa8; border-radius: 18px; background: #ffffff6b; }
+.offline-flow > div > span, .offline-flow b, .offline-flow small { display: block; }
+.offline-flow > div > span { color: #81778d; font-size: 9px; letter-spacing: 1px; }
+.offline-flow b { margin-top: 14px; color: #4a4355; font-size: 14px; }
+.offline-flow small { margin-top: 7px; color: #716b7c; font-size: 10px; line-height: 1.6; }
+.offline-flow > svg { width: 18px; color: #81778d; }
+.proof-links { display: flex; gap: 24px; flex-wrap: wrap; margin-top: 20px; }
+.proof-links a { display: inline-flex; align-items: center; gap: 8px; color: #554b63; font-size: 12px; font-weight: 650; text-decoration: none; }
+.comparison-wrap { overflow-x: auto; border: 1px solid #ffffffa8; border-radius: 20px; background: #ffffff52; }
+.comparison-wrap table { width: 100%; min-width: 720px; border-collapse: collapse; text-align: left; color: #514b5c; font-size: 11px; }
+.comparison-wrap th, .comparison-wrap td { padding: 16px 18px; border-bottom: 1px solid #d9d3e166; }
+.comparison-wrap thead th { background: #d9d4e377; color: #51485f; font-size: 9px; letter-spacing: .7px; text-transform: uppercase; }
+.comparison-wrap tbody th { font-weight: 650; }
+.comparison-note { margin-top: 13px; color: #746e7d; font-size: 10px; line-height: 1.7; }
+@media (max-width: 700px) { .offline-flow { grid-template-columns: 1fr; padding: 18px; } .offline-flow > svg { transform: rotate(90deg); justify-self: center; } }
 .section-heading {
   display: flex;
   justify-content: space-between;

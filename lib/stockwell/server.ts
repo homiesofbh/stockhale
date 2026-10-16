@@ -125,6 +125,71 @@ export async function snapshot(user: Row) {
     return readSnapshot(user);
   });
 }
+
+const ADMIN_EMAIL = "homiesbridge@gmail.com";
+const ADMIN_PLANS = ["Free", "Starter", "Growth", "Pro", "Enterprise"] as const;
+
+function requireAdmin(user: Row) {
+  if (String(user.email || "").trim().toLowerCase() !== ADMIN_EMAIL)
+    throw Object.assign(new Error("Admin access is restricted."), { status: 403 });
+}
+
+export async function adminOverview(user: Row) {
+  requireAdmin(user);
+  return transaction(async () => {
+    await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const workspaces = await all(
+      `SELECT w.id, w.name, w.subscription, w.revision, w.store, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+        (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
+        (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
+        (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
+        (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id AND e.action ILIKE '%sale%') AS sales_count
+       FROM workspaces w JOIN users u ON u.id=w.owner ORDER BY w.name, w.id`,
+    );
+    return {
+      plans: ADMIN_PLANS,
+      totals: {
+        users: (await row("SELECT COUNT(*)::int AS count FROM users"))?.count || 0,
+        workspaces: workspaces.length,
+        workforceEmails: workspaces.reduce((sum, item) => sum + Number(item.workforce_email_count), 0),
+      },
+      workspaces: workspaces.map((item) => {
+        const store = normalizeStore(JSON.parse(item.store));
+        return {
+          id: item.id,
+          name: item.name,
+          owner: { id: item.owner_id, name: item.owner_name, email: item.owner_email },
+          subscription: item.subscription,
+          memberCount: Number(item.member_count),
+          workforceEmailCount: Number(item.workforce_email_count),
+          usage: {
+            products: store.products.length,
+            sales: Number(item.sales_count),
+            purchases: store.purchases.length,
+            customers: store.customers.length,
+            suppliers: store.suppliers.length,
+            activity: Number(item.activity_count),
+            revision: Number(item.revision),
+          },
+        };
+      }),
+    };
+  });
+}
+
+export async function updateAdminSubscription(user: Row, body: Row) {
+  requireAdmin(user);
+  const workspaceId = required(body.workspaceId, 200);
+  const subscription = required(body.subscription, 40);
+  if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
+    throw new Error("Choose a valid subscription.");
+  const result = await query(
+    "UPDATE workspaces SET subscription=$1 WHERE id=$2 RETURNING id",
+    [subscription, workspaceId],
+  );
+  if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
+  return { ok: true };
+}
 async function readSnapshot(user: Row) {
   const w = await workspace(user),
     m = await member(w, user);
