@@ -8156,6 +8156,7 @@ body::-webkit-scrollbar,
 .pricing-compact { padding-top: 75px; padding-bottom: 80px; }
 .pricing-compact .pricing-card { padding: 24px; }
 .trial-lock { min-height: 100vh; display: grid; place-items: center; padding: 24px; background: #f2eef5; }
+.admin-expired-shell { min-height: 100vh; padding: 28px; background: #f2eef5; }
 .trial-lock section { width: min(100%, 580px); padding: clamp(28px, 7vw, 60px); border: 1px solid white; border-radius: 28px; background: #ffffffc9; box-shadow: 0 25px 80px #44384f20; text-align: center; }
 .trial-lock h1 { margin: 18px 0; color: #403649; font: 700 clamp(40px, 7vw, 60px)/1.05 var(--display); letter-spacing: -2px; }
 .trial-lock h1 em { color: #827092; font-style: normal; }

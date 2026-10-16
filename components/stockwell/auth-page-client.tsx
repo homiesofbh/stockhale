@@ -46,12 +46,15 @@ export function AuthPageClient({
         throw new Error(
           "Pending records belong to another user. Sign in as that user to sync them first."
         );
+      const workspace = w.locked && cached
+        ? { ...w, store: cached.workspace.store, revision: cached.workspace.revision }
+        : w;
       localStorage.setItem(
         cacheKey(w.id),
         JSON.stringify(
           cached?.queue?.length
-            ? { ...cached, workspace: { ...w, store: cached.workspace.store } }
-            : { workspace: w, revision: w.revision, queue: [] }
+            ? { ...cached, workspace: { ...workspace, store: cached.workspace.store } }
+            : { workspace, revision: workspace.revision, queue: [] }
         )
       );
       localStorage.setItem("stockwell.active", w.id);

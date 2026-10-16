@@ -442,7 +442,10 @@ export function WorkspaceApp() {
       </div>
     );
   const isPlatformAdmin = account.member.email.trim().toLowerCase() === "homiesbridge@gmail.com";
-  if (account.locked || trialExpired) return <div className="trial-lock"><section><span className="section-eyebrow">YOUR 3-DAY TRIAL HAS ENDED</span><h1>Choose a plan<br/><em>to keep going.</em></h1><p>Your workspace is safely saved. Contact our team to activate a subscription; once activated, you can continue where you left off.</p><a className="pricing-action" href="/pricing">Review plans</a><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Activate%20StockHale%20plan">Contact us to activate</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
+  if (account.locked || trialExpired) {
+    if (isPlatformAdmin) return <div className="admin-expired-shell"><AdminPanel onBack={() => void workspace.signout()} /></div>;
+    return <div className="trial-lock"><section><span className="section-eyebrow">WORKSPACE ACCESS PAUSED</span><h1>Choose a plan<br/><em>to keep going.</em></h1><p>Your workspace and records are safely saved. Contact our team to activate a subscription; once activated, you can continue where you left off.</p><a className="pricing-action" href="/pricing">Review plans</a><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Activate%20StockHale%20plan">Contact us to activate</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
+  }
   return (
     <>
       <div className="app-shell">

@@ -57,7 +57,7 @@ export async function GET(request: Request) {
       if (new URL(request.url).searchParams.get("admin") === "testimonials")
         return Response.json(await adminTestimonials(user), { headers: sessionHeaders(authHeaders) });
       const overview = await snapshot(user);
-      if (overview.locked) return Response.json(overview, { headers: sessionHeaders(authHeaders) });
+      if (overview.locked) return Response.json({ error: "Your trial has expired.", code: "TRIAL_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
       await deliverEmails();
       return Response.json(overview, {
         headers: sessionHeaders(authHeaders),

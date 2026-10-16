@@ -73,10 +73,7 @@ async function workspace(user: Row, lock = false) {
   return w;
 }
 function requireWorkspaceAccess(w: Row) {
-  if (w.plan_active) return;
-  if (!w.trial_started_at) return; // Existing workspaces retain access during rollout.
-  const expires = Date.parse(w.trial_started_at) + 72 * 60 * 60 * 1000;
-  if (Date.now() >= expires)
+  if (trialAccess(w).locked)
     throw Object.assign(new Error("Your 3-day trial has ended. Choose a plan to continue using StockHale."), { status: 402, code: "TRIAL_EXPIRED" });
 }
 async function member(w: Row, u: Row): Promise<Member> {
@@ -142,12 +139,33 @@ export async function snapshot(user: Row) {
 function trialAccess(w: Row) {
   const startedAt = w.trial_started_at ? new Date(w.trial_started_at).toISOString() : null;
   const endsAt = startedAt ? new Date(Date.parse(startedAt) + 72 * 60 * 60 * 1000).toISOString() : null;
-  const locked = !w.plan_active && !!endsAt && Date.now() >= Date.parse(endsAt);
-  return { trial: { startedAt, endsAt, active: !locked, planActive: !!w.plan_active }, locked };
+  const revoked = !!w.access_revoked_at;
+  const expired = !!endsAt && Date.now() >= Date.parse(endsAt);
+  const locked = !w.plan_active && (revoked || expired);
+  return { trial: { startedAt, endsAt, active: !locked && !w.plan_active, planActive: !!w.plan_active }, locked };
 }
 
 const ADMIN_EMAIL = "homiesbridge@gmail.com";
-const ADMIN_PLANS = ["Free", "Starter", "Growth", "Pro", "Enterprise"] as const;
+const ADMIN_PLANS = ["Free", "Starter", "Growth", "Business", "Pro", "Enterprise"] as const;
+
+function signupCountry(request: Request) {
+  const country = (request.headers.get("cf-ipcountry") || request.headers.get("x-vercel-ip-country") || "").trim().toUpperCase();
+  return /^[A-Z]{2}$/.test(country) ? country : null;
+}
+
+function planPrice(country: string | null, subscription: string) {
+  const prices: Record<string, [number, number]> = {
+    Starter: [999, 9990], Growth: [2499, 24990], Business: [5999, 59990],
+    Pro: [5999, 59990], Enterprise: [0, 0],
+  };
+  const [pkrMonthly, pkrYearly] = prices[subscription] || [0, 0];
+  const isPakistan = country === "PK";
+  return {
+    currency: isPakistan ? "PKR" : "USD",
+    monthly: isPakistan ? pkrMonthly : ({ Starter: 12, Growth: 29, Business: 69, Pro: 69 }[subscription] || 0),
+    yearly: isPakistan ? pkrYearly : ({ Starter: 120, Growth: 290, Business: 690, Pro: 690 }[subscription] || 0),
+  };
+}
 
 function requireAdmin(user: Row) {
   if (String(user.email || "").trim().toLowerCase() !== ADMIN_EMAIL)
@@ -159,7 +177,7 @@ export async function adminOverview(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const workspaces = await all(
-      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
         (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
         (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
@@ -182,6 +200,11 @@ export async function adminOverview(user: Row) {
           subscription: item.subscription,
           trialStartedAt: item.trial_started_at,
           planActive: !!item.plan_active,
+          accessRevokedAt: item.access_revoked_at,
+          locked: trialAccess(item).locked,
+          trialEndsAt: item.trial_started_at ? new Date(new Date(item.trial_started_at).getTime() + 72 * 60 * 60 * 1000).toISOString() : null,
+          countryCode: item.country_code?.trim() || null,
+          price: planPrice(item.country_code?.trim() || null, item.subscription),
           memberCount: Number(item.member_count),
           workforceEmailCount: Number(item.workforce_email_count),
           usage: {
@@ -206,11 +229,11 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
     throw new Error("Choose a valid subscription.");
   const result = await query(
-    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free') WHERE id=$2 RETURNING id",
+    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free'), access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END WHERE id=$2 RETURNING id, subscription, plan_active",
     [subscription, workspaceId],
   );
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
-  return { ok: true };
+  return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: !!result.rows[0].plan_active, appliedAt: new Date().toISOString() };
 }
 
 export async function publicTestimonials() {
@@ -228,6 +251,7 @@ export async function submitTestimonial(user: Row, body: Row) {
   if (!Number.isInteger(rating) || rating < 1 || rating > 5)
     throw new Error("Choose a rating from 1 to 5.");
   const w = await workspace(user);
+  requireWorkspaceAccess(w);
   owner(w, user);
   await query(
     `INSERT INTO testimonials(id, workspace, owner, name, business, quote, rating, status) VALUES($1,$2,$3,$4,$5,$6,$7,'pending')`,
@@ -327,6 +351,9 @@ export async function authenticate(body: Row, request: Request) {
         headers: request.headers,
         returnHeaders: true,
       });
+      const countryCode = signupCountry(request);
+      if (countryCode)
+        await query("UPDATE workspaces SET country_code=COALESCE(country_code,$1) WHERE owner=$2", [countryCode, result.response.user.id]);
       await query("DELETE FROM limits WHERE key=$1", [key]);
       return { user: result.response.user, headers: result.headers };
     }
@@ -359,8 +386,8 @@ export async function authenticate(body: Row, request: Request) {
     } else {
       const wid = randomUUID();
       await query(
-        "INSERT INTO workspaces(id,name,owner,store,trial_started_at,subscription,plan_active) VALUES($1,$2,$3,$4,NOW(),'Growth',FALSE)",
-        [wid, storeName, user.id, JSON.stringify(emptyStore())],
+        "INSERT INTO workspaces(id,name,owner,store,trial_started_at,subscription,plan_active,country_code) VALUES($1,$2,$3,$4,NOW(),'Growth',FALSE,$5)",
+        [wid, storeName, user.id, JSON.stringify(emptyStore()), signupCountry(request)],
       );
       await query(
         'INSERT INTO members(workspace,"user",modules) VALUES($1,$2,$3)',

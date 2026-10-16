@@ -27,6 +27,7 @@ export async function workspaceRequest(body?: unknown) {
   if (!res.ok)
     throw Object.assign(new Error(value.error || "Server unavailable"), {
       status: res.status,
+      code: value.code,
     });
   return value;
 }
@@ -167,7 +168,12 @@ export function useWorkspace() {
       if (remaining.length && (!c || w.revision === c.revision + 1)) setTimeout(() => void sync(), 100);
     } catch (e) {
       const status = (e as { status?: number }).status;
+      const code = (e as { code?: string }).code;
       const message = e instanceof Error ? e.message : "Pending change rejected";
+      if (code === "TRIAL_EXPIRED" && current.current) {
+        const active = current.current;
+        save({ ...active, workspace: { ...active.workspace, locked: true, trial: { startedAt: active.workspace.trial?.startedAt || null, endsAt: active.workspace.trial?.endsAt || null, active: false, planActive: false } } });
+      }
       setSyncError(message);
       if (status === 401) {
         setSyncStatus("Session expired · sign in to sync");

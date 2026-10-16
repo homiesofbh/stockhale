@@ -1,0 +1,2 @@
+ALTER TABLE workspaces
+  ADD COLUMN IF NOT EXISTS access_revoked_at TIMESTAMPTZ;
