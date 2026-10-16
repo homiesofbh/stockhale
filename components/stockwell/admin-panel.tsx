@@ -11,10 +11,13 @@ type Overview = {
     id: string;
     name: string;
     owner: { name: string; email: string };
+    accountCreatedAt: string;
     subscription: string;
     trialStartedAt: string | null;
     trialEndsAt: string | null;
     planActive: boolean;
+    planActivatedAt: string | null;
+    planExpiresAt: string | null;
     locked: boolean;
     accessRevokedAt: string | null;
     countryCode: string | null;
@@ -89,6 +92,21 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
     }
   }
 
+  async function cancelPlan(workspaceId: string) {
+    setBusy(workspaceId); setError(""); setNotice("");
+    try {
+      const result = await workspaceRequest({ action: "admin-cancel-subscription", workspaceId });
+      if (result.error) throw new Error(result.error);
+      setNotice("Plan cancelled and access revoked immediately.");
+      await load();
+    } catch (e) { setError(e instanceof Error ? e.message : "Plan could not be cancelled."); }
+    finally { setBusy(""); }
+  }
+
+  function formatDate(value: string | null | undefined) {
+    return value ? new Date(value).toLocaleString() : "Not recorded";
+  }
+
   return <section className="admin-page">
     <div className="page-heading"><div><span className="eyebrow">ADMINISTRATION</span><h1>Accounts &amp; usage</h1><p>Registered users, workspace activity, team email counts, and assigned subscriptions.</p></div><div className="heading-actions"><button className="secondary-button" onClick={() => void load()}><RefreshCw size={16}/> Refresh</button><button className="secondary-button" onClick={onBack}><ArrowLeft size={16}/> Back to workspace</button></div></div>
     {error && <div className="error-banner" role="alert">{error}</div>}
@@ -97,10 +115,10 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
     {data && <>
       <div className="admin-testimonials"><div className="page-heading"><div><span className="eyebrow">TESTIMONIALS</span><h2>Owner submissions</h2><p>Approve submissions to publish them, or deny them.</p></div></div>{testimonials.length === 0 ? <p className="admin-empty">No testimonials submitted.</p> : <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>Workspace / owner</th><th>Testimonial</th><th>Status</th><th>Review</th></tr></thead><tbody>{testimonials.map(t => <tr key={t.id}><td><strong>{t.workspaceName}</strong><small>{t.name} · {t.ownerEmail}</small>{t.business && <small>{t.business}</small>}</td><td><span>{"★".repeat(t.rating)}{"☆".repeat(5-t.rating)}</span><p>{t.quote}</p></td><td>{t.status}</td><td>{t.status === "pending" ? <div className="admin-testimonial-actions"><button className="primary-button" disabled={busy === t.id} onClick={() => void reviewTestimonial(t.id,"approved")}>Approve</button><button className="secondary-button" disabled={busy === t.id} onClick={() => void reviewTestimonial(t.id,"denied")}>Deny</button></div> : <span>Reviewed</span>}</td></tr>)}</tbody></table></div>}</div>
       <div className="admin-totals"><article><span>Registered users</span><strong>{data.totals.users}</strong></article><article><span>Workspaces</span><strong>{data.totals.workspaces}</strong></article><article><span>Workforce email addresses</span><strong>{data.totals.workforceEmails}</strong></article></div>
-      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>User / workspace</th><th>Users</th><th>Region &amp; price</th><th>Usage</th><th>Plan &amp; access</th></tr></thead><tbody>{data.workspaces.map((item) => {
+      <div className="admin-table-wrap"><table className="admin-table"><thead><tr><th>User / workspace</th><th>Users</th><th>Region &amp; price</th><th>Usage</th><th>Plan &amp; access</th><th>Account &amp; plan dates</th></tr></thead><tbody>{data.workspaces.map((item) => {
         const trialExpired = !!item.trialEndsAt && Date.now() >= Date.parse(item.trialEndsAt) && !item.planActive;
         const accessLabel = item.planActive ? "Active" : item.locked ? (trialExpired ? "Trial expired · locked" : "Access revoked · locked") : item.trialStartedAt ? "Trial active" : "Legacy access";
-        return <tr key={item.id}><td><strong>{item.owner.name || item.owner.email}</strong><small>{item.owner.email}</small><span className="admin-workspace-name">{item.name}</span><small>Workspace ID: {item.id}</small></td><td><span className="admin-member-count"><Users size={14}/>{item.memberCount}</span></td><td><strong>{item.countryCode || "Unknown region · USD default"}</strong>{item.subscription === "Enterprise" ? <small>Custom pricing</small> : item.subscription === "Free" ? <small>No paid plan selected</small> : <><small>{item.price.currency} {item.price.monthly.toLocaleString()} / month</small><small>{item.price.currency} {item.price.yearly.toLocaleString()} / year</small></>}</td><td><span>{item.usage.products} products · {item.usage.sales} sales</span><small>{item.usage.purchases} purchases · {item.usage.customers} customers · {item.usage.suppliers} suppliers</small><small>{item.usage.activity} activity records</small></td><td><select aria-label={`Subscription for ${item.name}`} value={item.subscription} disabled={busy === item.id} onChange={(event) => void changePlan(item.id, event.target.value)}>{data.plans.map((plan) => <option key={plan} value={plan}>{planLabel(plan, item.countryCode)}</option>)}</select><small><strong>{accessLabel}</strong></small>{item.trialStartedAt && <small>Trial ends: {new Date(item.trialEndsAt || item.trialStartedAt).toLocaleString()}</small>}</td></tr>;
+        return <tr key={item.id}><td><strong>{item.owner.name || item.owner.email}</strong><small>{item.owner.email}</small><span className="admin-workspace-name">{item.name}</span><small>Workspace ID: {item.id}</small></td><td><span className="admin-member-count"><Users size={14}/>{item.memberCount}</span></td><td><strong>{item.countryCode || "Unknown region · USD default"}</strong>{item.subscription === "Enterprise" ? <small>Custom pricing</small> : item.subscription === "Free" ? <small>No paid plan selected</small> : <><small>{item.price.currency} {item.price.monthly.toLocaleString()} / month</small><small>{item.price.currency} {item.price.yearly.toLocaleString()} / year</small></>}</td><td><span>{item.usage.products} products · {item.usage.sales} sales</span><small>{item.usage.purchases} purchases · {item.usage.customers} customers · {item.usage.suppliers} suppliers</small><small>{item.usage.activity} activity records</small></td><td><select aria-label={`Subscription for ${item.name}`} value={item.subscription} disabled={busy === item.id} onChange={(event) => void changePlan(item.id, event.target.value)}>{data.plans.map((plan) => <option key={plan} value={plan}>{planLabel(plan, item.countryCode)}</option>)}</select>{item.planActive && <button className="secondary-button admin-cancel-plan" disabled={busy === item.id} onClick={() => void cancelPlan(item.id)}>Cancel plan</button>}<small><strong>{accessLabel}</strong></small></td><td><small>Account created: {formatDate(item.accountCreatedAt)}</small><small>Plan activated: {formatDate(item.planActivatedAt || (item.planActive ? item.trialStartedAt : null))}</small><small>Plan expires: {formatDate(item.planExpiresAt)}</small>{item.trialStartedAt && <small>Trial started: {formatDate(item.trialStartedAt)} · ends {formatDate(item.trialEndsAt)}</small>}</td></tr>;
       })}</tbody></table>{data.workspaces.length === 0 && <p className="admin-empty">No workspaces yet.</p>}</div>
     </>}
   </section>;

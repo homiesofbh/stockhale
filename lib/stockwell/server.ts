@@ -177,7 +177,7 @@ export async function adminOverview(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const workspaces = await all(
-      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email,
+      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, w.plan_activated_at, w.plan_expires_at, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email, u."createdAt" AS owner_created_at,
         (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
         (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
@@ -198,8 +198,11 @@ export async function adminOverview(user: Row) {
           name: item.name,
           owner: { id: item.owner_id, name: item.owner_name, email: item.owner_email },
           subscription: item.subscription,
+          accountCreatedAt: item.owner_created_at,
           trialStartedAt: item.trial_started_at,
           planActive: !!item.plan_active,
+          planActivatedAt: item.plan_activated_at,
+          planExpiresAt: item.plan_expires_at,
           accessRevokedAt: item.access_revoked_at,
           locked: trialAccess(item).locked,
           trialEndsAt: item.trial_started_at ? new Date(new Date(item.trial_started_at).getTime() + 72 * 60 * 60 * 1000).toISOString() : null,
@@ -229,11 +232,22 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
     throw new Error("Choose a valid subscription.");
   const result = await query(
-    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free'), access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END WHERE id=$2 RETURNING id, subscription, plan_active",
+    "UPDATE workspaces SET subscription=$1, plan_active=($1 <> 'Free'), plan_activated_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_activated_at,NOW()) END, plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE plan_expires_at END, access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END WHERE id=$2 RETURNING id, subscription, plan_active",
     [subscription, workspaceId],
   );
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
   return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: !!result.rows[0].plan_active, appliedAt: new Date().toISOString() };
+}
+
+export async function cancelAdminSubscription(user: Row, body: Row) {
+  requireAdmin(user);
+  const workspaceId = required(body.workspaceId, 200);
+  const result = await query(
+    "UPDATE workspaces SET subscription='Free', plan_active=FALSE, plan_expires_at=NOW(), access_revoked_at=NOW() WHERE id=$1 AND plan_active=TRUE RETURNING id",
+    [workspaceId],
+  );
+  if (!result.rowCount) throw Object.assign(new Error("No active plan found for this workspace."), { status: 409 });
+  return { ok: true, workspaceId, subscription: "Free", planActive: false, appliedAt: new Date().toISOString() };
 }
 
 export async function publicTestimonials() {

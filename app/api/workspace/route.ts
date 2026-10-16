@@ -13,6 +13,7 @@ import {
   reviewTestimonial,
   submitTestimonial,
   updateAdminSubscription,
+  cancelAdminSubscription,
 } from "@/lib/stockwell/server";
 import { withDatabase } from "@/lib/stockwell/database";
 import { readJsonBody } from "@/lib/stockwell/request-body";
@@ -143,6 +144,9 @@ export async function POST(request: Request) {
         return Response.json(await reviewTestimonial(user, payload), { headers: sessionHeaders(authHeaders) });
       if (payload.action === "admin-subscription") {
         return Response.json(await updateAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
+      }
+      if (payload.action === "admin-cancel-subscription") {
+        return Response.json(await cancelAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
       }
       const result = await mutate(user, payload);
       await deliverEmails();

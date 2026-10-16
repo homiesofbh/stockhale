@@ -1,0 +1,3 @@
+ALTER TABLE workspaces
+  ADD COLUMN IF NOT EXISTS plan_activated_at TIMESTAMPTZ,
+  ADD COLUMN IF NOT EXISTS plan_expires_at TIMESTAMPTZ;

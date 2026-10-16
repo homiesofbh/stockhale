@@ -14,7 +14,7 @@ export async function migrate() {
     await client.query(
       `CREATE TABLE IF NOT EXISTS stockwell_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
     );
-    for (const name of ["001-workspace.sql", "002-attachment-quota.sql", "003-admin-subscriptions.sql", "004-trials.sql", "005-testimonials.sql", "006-workspace-country.sql", "007-plan-access-revocation.sql"]) {
+    for (const name of ["001-workspace.sql", "002-attachment-quota.sql", "003-admin-subscriptions.sql", "004-trials.sql", "005-testimonials.sql", "006-workspace-country.sql", "007-plan-access-revocation.sql", "008-plan-dates.sql"]) {
       const applied = await client.query(
         "SELECT id FROM stockwell_migrations WHERE id=$1",
         [name],
