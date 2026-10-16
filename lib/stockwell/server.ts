@@ -212,6 +212,44 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
   return { ok: true };
 }
+
+export async function publicTestimonials() {
+  const testimonials = await all(
+    `SELECT id, name, business, quote, rating FROM testimonials WHERE status='approved' ORDER BY "reviewedAt" DESC, "createdAt" DESC LIMIT 12`,
+  );
+  return { testimonials };
+}
+
+export async function submitTestimonial(user: Row, body: Row) {
+  const quote = required(body.quote, 1200);
+  const name = required(body.name, 120);
+  const business = typeof body.business === "string" ? body.business.trim().slice(0, 160) : "";
+  const rating = Number(body.rating);
+  if (!Number.isInteger(rating) || rating < 1 || rating > 5)
+    throw new Error("Choose a rating from 1 to 5.");
+  const w = await workspace(user);
+  owner(w, user);
+  await query(
+    `INSERT INTO testimonials(id, workspace, owner, name, business, quote, rating, status) VALUES($1,$2,$3,$4,$5,$6,$7,'pending')`,
+    [randomUUID(), w.id, user.id, name, business, quote, rating],
+  );
+  return { ok: true };
+}
+
+export async function adminTestimonials(user: Row) {
+  requireAdmin(user);
+  return { testimonials: await all(`SELECT t.id, t.name, t.business, t.quote, t.rating, t.status, t."createdAt", w.name AS "workspaceName", u.email AS "ownerEmail" FROM testimonials t JOIN workspaces w ON w.id=t.workspace JOIN users u ON u.id=t.owner ORDER BY CASE WHEN t.status='pending' THEN 0 ELSE 1 END, t."createdAt" DESC`) };
+}
+
+export async function reviewTestimonial(user: Row, body: Row) {
+  requireAdmin(user);
+  const id = required(body.id, 100);
+  const status = required(body.status, 20);
+  if (status !== "approved" && status !== "denied") throw new Error("Choose approve or deny.");
+  const result = await query(`UPDATE testimonials SET status=$1, "reviewedAt"=NOW(), "reviewedBy"=$2 WHERE id=$3 AND status='pending' RETURNING id`, [status, user.id, id]);
+  if (!result.rowCount) throw Object.assign(new Error("This testimonial is no longer pending."), { status: 409 });
+  return { ok: true };
+}
 async function readSnapshot(user: Row) {
   const w = await workspace(user),
     m = await member(w, user);

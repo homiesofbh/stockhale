@@ -21,6 +21,7 @@ import {
 import { MarketingHeader } from "./marketing-header";
 import { MarketingFooter } from "./marketing-footer";
 import { PricingSection } from "./pricing-section";
+import { TestimonialSection } from "./testimonials";
 
 export function MarketingFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -91,7 +92,7 @@ function Hero() {
               </span>
               YOUR WORKSPACE
             </span>
-            <span className="hx-tag">SAMPLE DATA</span>
+            <span className="hx-tag mr-4 mb-1">SAMPLE DATA</span>
           </div>
 
           <div className="hx-kpis">
@@ -192,6 +193,7 @@ export function LandingPage({ country = "US" }: { country?: string }) {
           </div>
         </section>
         <PricingSection compact country={country} />
+        <TestimonialSection />
         <section className="features-section" id="features">
           <div className="section-heading">
             <div>

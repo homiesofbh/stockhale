@@ -4354,6 +4354,29 @@ form > .form-copy {
   margin: auto;
   padding: 112px 6% 104px;
 }
+.testimonial-section { max-width: 1320px; margin: 0 auto; padding: 72px 6% 96px; }
+.testimonial-heading { display:flex; align-items:flex-end; justify-content:space-between; gap:24px; margin-bottom:28px; }
+.testimonial-heading h2 { margin-top:14px; font:700 clamp(30px,4vw,48px)/1.1 var(--display); letter-spacing:-1.8px; color:#403a4a; }
+.testimonial-heading p { margin-top:10px; color:#6e687c; font-size:12px; }
+.testimonial-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; }
+.testimonial-card,.testimonial-empty { padding:24px; border:1px solid #ffffffa8; border-radius:22px; background:#ffffff59; color:#514b5c; }
+.testimonial-stars { color:#8d7b47; letter-spacing:2px; font-size:14px; }
+.testimonial-card blockquote { min-height:108px; margin:17px 0 22px; font:500 15px/1.7 var(--font); }
+.testimonial-card strong,.testimonial-card small { display:block; }
+.testimonial-card small { margin-top:5px; }
+.testimonial-empty { display:flex; align-items:center; gap:20px; max-width:560px; }
+.testimonial-empty span { font:700 34px var(--display); color:#897e99; }
+.testimonial-notice { margin:0 0 16px; color:#514b5c; }
+.testimonial-form { display:grid; grid-template-columns:1fr 1fr 180px; gap:14px; margin:0 0 22px; padding:22px; border:1px solid #ffffffa8; border-radius:22px; background:#ffffff59; }
+.testimonial-form label { display:grid; gap:7px; color:#514b5c; font-size:11px; font-weight:650; }
+.testimonial-form textarea { resize:vertical; border-radius:16px; }
+.testimonial-quote-field { grid-column:1/-1; }
+.testimonial-form > p { grid-column:1/3; align-self:center; color:#746e7d; font-size:11px; line-height:1.6; }
+.admin-testimonials { margin-bottom:34px; }
+.admin-testimonials .page-heading { margin-bottom:16px; }
+.admin-testimonials .admin-table td p { max-width:440px; margin-top:7px; white-space:normal; line-height:1.6; }
+.admin-testimonial-actions { display:flex; gap:8px; }
+@media(max-width:700px){.testimonial-grid{grid-template-columns:1fr}.testimonial-heading{align-items:flex-start; flex-direction:column}.testimonial-form{grid-template-columns:1fr}.testimonial-form > p,.testimonial-quote-field{grid-column:auto}}
 .proof-section,
 .comparison-section {
   max-width: 1320px;

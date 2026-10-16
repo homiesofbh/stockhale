@@ -8,6 +8,10 @@ import {
   logout,
   deliverEmails,
   adminOverview,
+  adminTestimonials,
+  publicTestimonials,
+  reviewTestimonial,
+  submitTestimonial,
   updateAdminSubscription,
 } from "@/lib/stockwell/server";
 import { withDatabase } from "@/lib/stockwell/database";
@@ -45,9 +49,13 @@ function sessionHeaders(authHeaders: Headers) {
 export async function GET(request: Request) {
   try {
     return await withDatabase(async () => {
+      if (new URL(request.url).searchParams.get("testimonials") === "public")
+        return Response.json(await publicTestimonials(), { headers });
       const { user, headers: authHeaders } = await authorize(request);
       if (new URL(request.url).searchParams.get("admin") === "overview")
         return Response.json(await adminOverview(user), { headers: sessionHeaders(authHeaders) });
+      if (new URL(request.url).searchParams.get("admin") === "testimonials")
+        return Response.json(await adminTestimonials(user), { headers: sessionHeaders(authHeaders) });
       const overview = await snapshot(user);
       if (overview.locked) return Response.json(overview, { headers: sessionHeaders(authHeaders) });
       await deliverEmails();
@@ -129,6 +137,10 @@ export async function POST(request: Request) {
       }
       const { user, headers: authHeaders } =
         restoreAuthorization || (await authorize(request));
+      if (payload.action === "testimonial-submit")
+        return Response.json(await submitTestimonial(user, payload), { headers: sessionHeaders(authHeaders) });
+      if (payload.action === "testimonial-review")
+        return Response.json(await reviewTestimonial(user, payload), { headers: sessionHeaders(authHeaders) });
       if (payload.action === "admin-subscription") {
         return Response.json(await updateAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
       }
