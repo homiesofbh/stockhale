@@ -19,6 +19,8 @@ type Props = {
   setProductSearch: Dispatch<SetStateAction<string>>;
   setModule: Dispatch<SetStateAction<Module>>;
   setNotice: Dispatch<SetStateAction<string>>;
+  isPlatformAdmin: boolean;
+  openAdmin: () => void;
 };
 export function WorkspaceHeader({
   go,
@@ -31,6 +33,8 @@ export function WorkspaceHeader({
   setProductSearch,
   setModule,
   setNotice,
+  isPlatformAdmin,
+  openAdmin,
 }: Props) {
   const [reviewOpen, setReviewOpen] = useState(false);
   const [reviewError, setReviewError] = useState("");
@@ -133,6 +137,7 @@ export function WorkspaceHeader({
           <p>
             {account.member.name} · {account.member.role}
           </p>
+          {isPlatformAdmin && <button onClick={() => { openAdmin(); if (profileMenu.current) profileMenu.current.open = false; }}><Settings size={16} /> Admin panel</button>}
           <nav className={styles.mobileNavigation} aria-label="Mobile navigation">
             {nav
               .filter(({ name }) => canAccess(name))

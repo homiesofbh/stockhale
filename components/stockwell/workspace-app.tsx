@@ -451,8 +451,9 @@ export function WorkspaceApp() {
           setProductSearch={setProductSearch}
           setModule={setModule}
           setNotice={setNotice}
+          isPlatformAdmin={isPlatformAdmin}
+          openAdmin={() => setAdminOpen(true)}
         />
-        {isPlatformAdmin && <button className="platform-admin-link" onClick={() => setAdminOpen((open) => !open)}>{adminOpen ? "Close admin" : "Admin panel"}</button>}
         <div
           className={`workspace ${module === "Dashboard" ? "dashboard-workspace" : ""}`}
         >
