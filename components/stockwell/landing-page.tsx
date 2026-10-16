@@ -21,7 +21,6 @@ import {
 import { MarketingHeader } from "./marketing-header";
 import { MarketingFooter } from "./marketing-footer";
 import { PricingSection } from "./pricing-section";
-import { headers } from "next/headers";
 
 export function MarketingFrame({ children }: { children: React.ReactNode }) {
   return (
@@ -173,9 +172,7 @@ function Hero() {
   );
 }
 
-export async function LandingPage() {
-  const requestHeaders = await headers();
-  const country = (requestHeaders.get("cf-ipcountry") || requestHeaders.get("x-vercel-ip-country") || "US").toUpperCase();
+export function LandingPage({ country = "US" }: { country?: string }) {
   return (
     <MarketingFrame>
       <main>
