@@ -7,6 +7,18 @@ import { csv } from "@/lib/stockwell/downloads";
 import { type Store } from "@/lib/stockwell/model";
 import { FileText } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+
+function printReport(report: string, columns: string[], rows: unknown[][], from: string, to: string) {
+  const popup = window.open("", "_blank", "width=1100,height=800");
+  if (!popup) {
+    window.alert("Allow pop-ups to print this report.");
+    return;
+  }
+  const escape = (value: unknown) => String(value ?? "").replace(/[&<>\"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '\"': "&quot;", "'": "&#39;" })[char]!);
+  popup.document.write(`<!doctype html><html><head><title>${escape(report)} · StockHale</title><style>body{font:13px Arial,sans-serif;color:#222;margin:32px}h1{font-size:22px;margin:0 0 6px}p{color:#555;margin:0 0 20px}table{border-collapse:collapse;width:100%}th,td{border:1px solid #ccc;padding:7px;text-align:left}th{background:#f2f2f2}@media print{body{margin:12mm}}</style></head><body><h1>StockHale · ${escape(report)}</h1><p>${from || to ? `Period: ${escape(from || "—")} to ${escape(to || "—")}` : "All dates"} · Amounts in PKR</p><table><thead><tr>${columns.map((column) => `<th>${escape(column)}</th>`).join("")}</tr></thead><tbody>${rows.map((row) => `<tr>${row.map((value) => `<td>${escape(typeof value === "number" ? value.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : value)}</td>`).join("")}</tr>`).join("")}</tbody></table><script>window.onload=()=>window.print()</script></body></html>`);
+  popup.document.close();
+}
+
 type Props = {
   actor: Actor;
   commit: (s: Store, message: string) => void;
@@ -14,6 +26,8 @@ type Props = {
   setReport: Dispatch<SetStateAction<string>>;
   setReportContact: Dispatch<SetStateAction<string>>;
   reportContact: string;
+  from: string;
+  to: string;
   s: Store;
   reportResult: {
     columns: string[];
@@ -26,6 +40,8 @@ export function ReportsView({
   setReport,
   setReportContact,
   reportContact,
+  from,
+  to,
   s,
   reportResult,
 }: Props) {
@@ -70,7 +86,7 @@ export function ReportsView({
                 "Accounts Head report",
                 "Profit summary",
                 "Date-wise transaction report",
-              ].map((r) => (
+              ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((r) => (
                 <option key={r}>{r}</option>
               ))}
             </GlassSelect>
@@ -82,6 +98,8 @@ export function ReportsView({
               <GlassSelect
                 value={reportContact}
                 onValueChange={(e) => setReportContact(e)}
+                searchable
+                searchPlaceholder="Search contacts"
               >
                 <option value="">All contacts</option>
                 {(report === "Customer ledger" ? s.customers : s.suppliers).map(
@@ -108,7 +126,7 @@ export function ReportsView({
           >
             <FileText size={16} /> Download CSV
           </button>
-          <button className="secondary-button" onClick={() => window.print()}>
+          <button className="secondary-button" onClick={() => printReport(report, reportResult.columns, reportResult.rows, from, to)}>
             Print report
           </button>
         </div>
@@ -120,6 +138,8 @@ export function ReportsView({
             <p>
               {report === "Inventory report"
                 ? "Current stock snapshot. Date filters do not change this report."
+                : report === "Daily cash sheet"
+                  ? "One row per day in the selected date range, including days with no activity."
                 : report === "Bank-balance report"
                   ? "Receipts includes all money added to the account. Sales receipts shows only money received from sales and customer payments. Payments shows money leaving the account."
                 : report.includes("ledger")

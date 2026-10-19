@@ -13,6 +13,7 @@ type Workspace = {
   name: string;
   owner: { name: string; email: string };
   accountCreatedAt: string;
+  lastActivityAt: string | null;
   subscription: string;
   trialStartedAt: string | null;
   trialEndsAt: string | null;
@@ -652,6 +653,10 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
                             <div>
                               <dt>Account created</dt>
                               <dd>{formatDate(item.accountCreatedAt)}</dd>
+                            </div>
+                            <div>
+                              <dt>Last activity</dt>
+                              <dd>{formatDate(item.lastActivityAt)}</dd>
                             </div>
                             <div>
                               <dt>Plan activated</dt>

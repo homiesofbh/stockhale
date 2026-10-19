@@ -618,6 +618,7 @@ export function WorkspaceApp() {
                           selectProduct={(product) => { setDetailProduct(product); open("Product details"); }}
                         />
                       )}
+                      {module === "Billing" && account.member.role !== "owner" && <p className="field-help billing-record-policy">New sales appear in this billing register and the Sales report. Staff can create sales dated today; posted bills can only be corrected by the owner, with changes recorded in the activity log.</p>}
                       {module === "Billing" && <WalkInReview s={s} actor={account.member} commit={commit} />}
                       {(module === "Purchases" || module === "Billing") && (
                         <TradeHistoryView
@@ -703,6 +704,8 @@ export function WorkspaceApp() {
                           setReport={setReport}
                           setReportContact={setReportContact}
                           reportContact={reportContact}
+                          from={from}
+                          to={to}
                           s={s}
                           reportResult={reportResult}
                         />
@@ -831,7 +834,11 @@ export function WorkspaceApp() {
               num={num}
               s={s}
               modal={modal}
-              commit={commit}
+              isOwner={account.member.role === "owner"}
+              commit={(next, message) => {
+                commit(next, message);
+                if (modal === "Bill") { setQuery(""); setFrom(""); setTo(""); }
+              }}
               setInvoice={setInvoice}
               setPaper={setPaper}
               scanInput={scanInput}

@@ -181,6 +181,7 @@ export async function adminOverview(user: Row) {
         (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
         (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
+        (SELECT MAX(e."receivedAt") FROM events e WHERE e.workspace=w.id AND COALESCE(e.action,'') <> 'Plan renewal reminder') AS last_activity_at,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id AND e.action ILIKE '%sale%') AS sales_count
        FROM workspaces w JOIN users u ON u.id=w.owner ORDER BY w.name, w.id`,
     );
@@ -219,6 +220,7 @@ export async function adminOverview(user: Row) {
             activity: Number(item.activity_count),
             revision: Number(item.revision),
           },
+          lastActivityAt: item.last_activity_at,
         };
       }),
     };
@@ -236,7 +238,7 @@ export async function updateAdminSubscription(user: Row, body: Row) {
      SET subscription=$1,
          plan_active=($1 <> 'Free'),
          plan_activated_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_activated_at,NOW()) END,
-         plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_expires_at,NOW() + INTERVAL '30 days') END,
+         plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE CASE WHEN plan_expires_at > NOW() THEN plan_expires_at ELSE NOW() + INTERVAL '30 days' END END,
          access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END
      WHERE id=$2
      RETURNING id, subscription, plan_active, plan_expires_at`,

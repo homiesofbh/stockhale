@@ -1,7 +1,7 @@
 import { chartAccounts } from "./accounts";
 import { balance, emptyStore, isPosted, recordPayment, recordReturn, recordTrade, saveProduct, saveContact, round, stock, today, total, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
-import { cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, linkLegacyWalkIn, expenseDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
+import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
 export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?: string; allowLateExpense?: boolean };
 const clean = (value: any): any => Array.isArray(value) ? value.map(clean) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, clean(value[k])])) : value;
 export const same = (a: unknown, b: unknown) => JSON.stringify(clean(a)) === JSON.stringify(clean(b));
@@ -58,7 +58,7 @@ export function validateStore(s: Store) {
     let lastDate = payment.date;
     for (const event of events) {
       check(event.date >= lastDate && Number.isFinite(Date.parse(event.occurredAt)) && !!event.actorId && (status === "pending" || status === "cleared" && event.status === "bounced"), "Invalid cheque action sequence.");
-      if (event.status === "cleared") check(!!s.financialAccounts?.some(a => a.id === event.accountId), "Unknown cheque settlement account.");
+      if (event.status === "cleared") check(event.accountId === cashChequeSettlement && !!chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset") || !!s.financialAccounts?.some(a => a.id === event.accountId), "Unknown cheque settlement account.");
       status = event.status; lastDate = event.date;
     }
     if (events.length) check(status === payment.chequeStatus, "Cheque status does not match its action history.");
@@ -111,6 +111,7 @@ export function validateOperations(before: Store, after: Store, module: string, 
     }
     for (const trade of after[key].filter(t => !before[key].some(old => old.id === t.id && same(old, t)) && !newLinks.some(link => link.tradeId === t.id) && !(after.corrections || []).some(c => c.tradeId === t.id && !before.corrections?.some(old => old.id === c.id)))) {
       requireOpenDate(before, trade.date);
+      check(tradeDateAllowed(trade.date, actor, context.occurredAt, kind), kind === "Sale" ? "Staff can create sales only for today. Ask the owner to enter a historical sale." : "Staff can create purchases only for today or the previous two calendar days. Future dates are not allowed.");
       const base = { ...before, customers: after.customers, [key]: before[key].filter(t => t.id !== trade.id) };
       const replay = recordTrade(base, kind, trade);
       const computed = replay[key].find(t => t.id === trade.id)!;

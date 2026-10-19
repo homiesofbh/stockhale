@@ -5,6 +5,7 @@ import { saveJournal } from "./journals";
 export type Actor = { id: string; name?: string; role: "owner" | "member" };
 export type TradeCorrection = { id: string; tradeId: string; kind: "Sale" | "Purchase"; date: string; reason: string; actorId: string; occurredAt: string; before: Trade; after: Trade };
 export type ChequeEvent = { id: string; paymentId: string; date: string; status: "cleared" | "bounced" | "cancelled"; accountId: string; reason: string; actorId: string; occurredAt: string };
+export const cashChequeSettlement = "cash";
 export type DailyClose = { actorName?: string; summary?: { sales: number; purchases: number; expenses: number; openingCash: number; cashReceipts: number; cashPayments: number; bankClosing: number; bankBalances: { id: string; name: string; closing: number }[] }; id: string; date: string; status: "closed" | "reopened"; expected: number; counted: number; variance: number; explanation: string; actorId: string; closedAt: string; reopenedAt?: string; reopenedBy?: string; reopenReason?: string };
 export const check = (ok: boolean, message: string) => { if (!ok) throw new Error(message); };
 export function validDate(date: string) { return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date; }
@@ -30,6 +31,10 @@ export function postTrade(s: Store, kind: "Sale" | "Purchase", id: string): Stor
   check(!!trade && trade.status === "draft", "Only a draft can be posted.");
   requireOpenDate(s, trade!.date);
   return recordTrade({ ...s, [key]: s[key].filter(t => t.id !== id) }, kind, { ...trade!, status: "posted", postedAt: new Date().toISOString() });
+}
+export function tradeDateAllowed(date: string, actor: Actor, occurredAt = new Date().toISOString(), kind: "Sale" | "Purchase" = "Sale") {
+  const businessDate = today(new Date(occurredAt));
+  return validDate(date) && date <= businessDate && (actor.role === "owner" || (kind === "Sale" ? date === businessDate : date >= previousDate(businessDate, 2)));
 }
 export function correctTrade(s: Store, kind: "Sale" | "Purchase", replacement: Trade, reason: string, actor: Actor, date = today()): Store {
   check(actor.role === "owner", "Only the workspace owner can correct posted bills.");
@@ -94,16 +99,18 @@ export function changeCheque(s: Store, paymentId: string, status: ChequeEvent["s
   requireOpenDate(s, date);
   check(!!reason.trim(), "Enter the cheque action reason.");
   if (status === "cleared") {
-    if (!forwarded) check(!!s.financialAccounts?.find(a => a.id === accountId && a.active !== false), "Select the bank or wallet receiving/paying the cheque.");
-    if (!p!.accountLevel) {
-      const trade = [...s.invoices, ...s.purchases].find(t => t.id === p!.tradeId);
-      check(!!trade && isPosted(trade), "Cheque must belong to a posted bill.");
-      const due = balance(s, trade!);
+    if (!forwarded) check(accountId === cashChequeSettlement
+      ? !!chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset")
+      : !!s.financialAccounts?.find(a => a.id === accountId && a.active !== false), "Select Cash in hand or an active bank / wallet for cheque settlement.");
+    const trade = [...s.invoices, ...s.purchases].find(t => t.id === p!.tradeId);
+    if (trade) {
+      check(isPosted(trade), "Cheque must belong to a posted bill.");
+      const due = balance(s, trade);
       check(p!.amount > 0 ? p!.amount <= due : p!.amount >= due, "Cheque exceeds the remaining bill balance.");
-    }
+    } else check(!!p!.advance || !!p!.accountLevel, "A cheque without a bill must be an advance or account-level payment.");
   }
   const event: ChequeEvent = { id: uid(), paymentId, status, date, accountId: status === "cleared" ? accountId : p!.financialAccountId || "", reason: reason.trim(), actorId: actor.id, occurredAt: new Date().toISOString() };
-  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, ...(accountId ? { financialAccountId: accountId } : {}) } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), crossCheques: forwarded ? (s.crossCheques || []).map(c => c.id === forwarded.id ? { ...c, status: status === "cleared" ? "cleared" : status === "bounced" ? "bounced" : c.status } : c) : s.crossCheques, chequeEvents: [...(s.chequeEvents || []), event] };
+  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, ...(accountId && accountId !== cashChequeSettlement ? { financialAccountId: accountId } : { financialAccountId: undefined }) } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), crossCheques: forwarded ? (s.crossCheques || []).map(c => c.id === forwarded.id ? { ...c, status: status === "cleared" ? "cleared" : status === "bounced" ? "bounced" : c.status } : c) : s.crossCheques, chequeEvents: [...(s.chequeEvents || []), event] };
 }
 export function cashStatement(s: Store, from = "", to = today()) {
   const cash = chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset");
@@ -111,7 +118,7 @@ export function cashStatement(s: Store, from = "", to = today()) {
   const rows = financialRows(s).filter(r => (!to || r.date <= to) && (!cash?.openingDate || r.date >= cash.openingDate));
   const before = from ? rows.filter(r => r.date < from).reduce((n, r) => n + r.cash, 0) : 0;
   const adjustment = from && cash?.openingDate && cash.openingDate >= from ? base : 0;
-  const period = rows.filter(r => !from || r.date >= from);
+  const period = rows.filter(r => (!from || r.date >= from) && (!to || r.date <= to));
   const receipts = round(period.reduce((n, r) => n + Math.max(0, r.cash), 0)), payments = round(period.reduce((n, r) => n + Math.max(0, -r.cash), 0));
   const opening = round(base - adjustment + before);
   return { opening, openingAdjustment: adjustment, receipts, payments, closing: round(opening + adjustment + receipts - payments) };

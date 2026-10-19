@@ -260,9 +260,16 @@ export function createReportData(
     return { columns: ["SKU", "Product", "Current stock", "Oldest receipt", "Age (days)", "Stock value"], rows };
   }
   if (report === "Daily cash sheet") {
-    const date = to || from || today();
-    const statement = cashStatement(s, date, date);
-    return { columns: ["Date", "Opening cash", "Receipts", "Payments", "Expected closing", "Counted cash", "Variance"], rows: [[date, statement.opening, statement.receipts, statement.payments, statement.closing, (s.dailyCloses || []).find(c => c.date === date && c.status === "closed")?.counted ?? "—", (s.dailyCloses || []).find(c => c.date === date && c.status === "closed")?.variance ?? "—"]] };
+    const firstDate = from || to || today();
+    const lastDate = to || from || today();
+    const rows: unknown[][] = [];
+    for (let cursor = Date.parse(`${firstDate}T12:00:00Z`), end = Date.parse(`${lastDate}T12:00:00Z`); cursor <= end; cursor += 86400000) {
+      const date = new Date(cursor).toISOString().slice(0, 10);
+      const statement = cashStatement(s, date, date);
+      const close = (s.dailyCloses || []).find(c => c.date === date && c.status === "closed");
+      rows.push([date, statement.opening, statement.receipts, statement.payments, statement.closing, close?.counted ?? "—", close?.variance ?? "—"]);
+    }
+    return { columns: ["Date", "Opening cash", "Receipts", "Payments", "Expected closing", "Counted cash", "Variance"], rows };
   }
   if (report === "Expense report")
     return {

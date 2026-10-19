@@ -1,4 +1,4 @@
-import { chequeSettlements, requireOpenDate, type ChequeEvent, type DailyClose, type TradeCorrection, type WalkInLink } from "./operations";
+import { cashChequeSettlement, chequeSettlements, requireOpenDate, type ChequeEvent, type DailyClose, type TradeCorrection, type WalkInLink } from "./operations";
 import { bankVoucherLines } from "./bank-vouchers";
 import type { BankVoucher } from "./bank-vouchers";
 import type { JournalVoucher } from "./journals";
@@ -790,9 +790,9 @@ export function financialRows(s: Store): FinancialRow[] {
   s.payments.forEach(p => {
     const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, accountId: p.financialAccountId, status: "paid" }];
     const forwarded = p.method === "Cheque" && (s.crossCheques || []).some(c => c.sourcePaymentId === p.id);
-    settlements.forEach(entry => push(entry.date, (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId)?.number || "", `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
-      forwarded ? "Credit adjustment" : p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
-      entry.amount * (p.kind === "Customer" ? 1 : -1), entry.amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId));
+    settlements.forEach(entry => push(entry.date, (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId)?.number || (p.accountLevel ? "Supplier account payment" : ""), `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
+      forwarded ? "Credit adjustment" : entry.accountId === cashChequeSettlement ? "Cash" : p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
+      entry.amount * (p.kind === "Customer" ? 1 : -1), entry.amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId === cashChequeSettlement ? "" : entry.accountId));
   });
   (s.partners || []).forEach(p => {
     const contribution = p.kind === "Contribution";

@@ -39,6 +39,7 @@ type Props = {
   num: (f: FormData, key: string) => number;
   s: Store;
   modal: "Purchase" | "Bill";
+  isOwner: boolean;
   commit: (next: Store, message: string) => void;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
   setPaper: Dispatch<SetStateAction<InvoicePaper>>;
@@ -71,6 +72,7 @@ export function TradeForm({
   num,
   s,
   modal,
+  isOwner,
   commit,
   setInvoice,
   setPaper,
@@ -122,6 +124,7 @@ export function TradeForm({
     : [];
   const productSearch = productQuery.trim().toLowerCase();
   const selectableProducts = s.products.filter((p) => p.active !== false && (!productSearch || [p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.unit].filter(Boolean).join(" ").toLowerCase().includes(productSearch)));
+  const unpaidWalkIn = modal === "Bill" && !contact && paidAmount < billTotal;
   useEffect(() => setPaidAmount(billTotal), [billTotal]);
   function saveSupplier() {
     try {
@@ -192,7 +195,7 @@ export function TradeForm({
           );
           commit(
             next,
-            t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? "Bill posted. Inventory updated." : "Purchase posted. Inventory updated.",
+            t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? unpaidWalkIn ? "Unpaid bill recorded. Payment and remaining balance saved." : "Bill posted. Inventory and customer balance updated." : "Purchase posted. Inventory updated.",
           );
           if (modal === "Bill" && t.status !== "draft") {
             setInvoice(next.invoices[next.invoices.length - 1]);
@@ -237,7 +240,10 @@ export function TradeForm({
           )}
         </div>
         <Field label="Date">
-          <input type="date" name="date" required defaultValue={today()} />
+          <div>
+            <input type="date" name="date" required defaultValue={today()} min={modal === "Bill" && !isOwner ? today() : undefined} max={today()} />
+            {modal === "Bill" && !isOwner && <p className="field-help">Staff sales must be dated today. Ask the owner to enter a historical sale.</p>}
+          </div>
         </Field>
       </div>
       {modal === "Bill" && !contact && !addingCustomer && (
@@ -451,10 +457,18 @@ export function TradeForm({
         </Field>
       </div>
       <p className="form-hint">
-        Use zero paid for credit; a partial amount leaves a pending balance. A
-        customer is required for credit bills. Cheques remain pending until
-        marked cleared in Payments, then they reduce the balance.
+        {modal === "Bill"
+          ? contact
+            ? "Post the bill to update this customer's ledger. Any unpaid amount is added to their outstanding balance."
+            : "Enter the walk-in customer's details. A fully paid sale can be posted immediately; a sale with a remaining balance is recorded using Record unpaid bill."
+          : "Use zero paid for credit; a partial payment leaves an outstanding supplier balance."}
+        {" "}Cheques remain pending until marked cleared in Payments.
       </p>
+      {unpaidWalkIn && <div className="payment-balance-summary" role="status"><div>
+        <span>Unpaid bill</span>
+        <strong>{money(Math.max(0, billTotal - paidAmount))} remaining</strong>
+        <p className="field-help">Record this sale once with {money(paidAmount)} paid. The remaining amount stays on the bill for collection through Payments. Enter a customer name, company, or contact number above.</p>
+      </div></div>}
       <div className="bill-summary">
         <span>
           Subtotal <b>{money(subtotal({ lines }))}</b>
@@ -485,8 +499,8 @@ export function TradeForm({
           Cancel
         </button>
         <button className="secondary" value="draft" disabled={!lines.length || addingSupplier}>Save draft</button>
-        <button className="primary" value="post" disabled={!lines.length || addingSupplier}>
-          Post {modal === "Bill" ? "bill" : "purchase"}
+        <button className="primary" value={unpaidWalkIn ? "unpaid" : "post"} disabled={!lines.length || addingSupplier || addingCustomer}>
+          {unpaidWalkIn ? "Record unpaid bill" : `Post ${modal === "Bill" ? "bill" : "purchase"}`}
         </button>
       </div>
     </form>
