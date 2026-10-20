@@ -10,15 +10,16 @@ export const metadata: Metadata = {
     apple: [{ url: "/apple-icon.png", type: "image/png" }],
   },
   openGraph: {
-    title: "StockHale | Retail Inventory & Operations",
-    description: "Retail inventory, purchasing, billing, sales, accounts, and reporting.",
+    title: "Retail Inventory Software | StockHale",
+    description:
+      "Manage retail inventory, purchases, billing, accounts, and reports in one workspace built for independent stores.",
     url: "https://stockhale.app",
     siteName: "StockHale",
     type: "website",
   },
-  title: "StockHale | Retail Inventory & Operations",
+  title: "Retail Inventory Software | StockHale",
   description:
-    "StockHale retail inventory, purchasing, billing, sales, accounts, and reporting.",
+    "Manage retail inventory, purchases, billing, accounts, and reports in one workspace built for independent stores.",
   alternates: { canonical: "/" },
   robots: { index: true, follow: true },
 };

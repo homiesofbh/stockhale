@@ -392,3 +392,5 @@ lib/stockwell/*
 
 AGENTS.md
 CLAUDE.md
+
+.codex/

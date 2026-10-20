@@ -1,3 +1,3 @@
 import { InfoPage } from "@/components/stockwell/landing-page";
-export const metadata = { title: "Privacy Policy | StockHale", description: "Read how StockHale collects, uses, protects, and retains account and business information when you use our retail operations service.", alternates: { canonical: "/privacy-policy" } };
+export const metadata = { title: "StockHale Privacy Policy | Data Use & Choices", description: "Read the StockHale Privacy Policy to learn what account and business information we handle, why we use it, and what choices you have.", alternates: { canonical: "/privacy-policy" } };
 export default function Page() { return <InfoPage type="privacy"/>; }
