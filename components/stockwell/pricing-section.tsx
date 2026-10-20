@@ -10,7 +10,7 @@ const plans = [
 export function PricingSection({ compact = false, country = "PK" }: { compact?: boolean; country?: string }) {
   const pakistan = country === "PK";
   return <section className={`pricing-section${compact ? " pricing-compact" : ""}`} id="pricing">
-    <div className="pricing-heading"><span className="section-eyebrow">SIMPLE, REGIONAL PRICING</span><h2>Three days to try.<br/><em>Then choose what fits.</em></h2><p>Full access for 72 hours. No card required. Your country determines the currency shown.</p></div>
+    <div className="pricing-heading">{compact ? <span className="section-eyebrow">SIMPLE, REGIONAL PRICING</span> : <><span className="section-eyebrow">SIMPLE, REGIONAL PRICING</span><h1>Plans for your retail business</h1></>}<h2>Three days to try.<br/><em>Then choose what fits.</em></h2><p>Full access for 72 hours. No card required. Your country determines the currency shown.</p></div>
     <div className="pricing-grid">{plans.map(plan => <article className={`pricing-card${plan.popular ? " pricing-popular" : ""}`} key={plan.name}>
       {plan.popular && <span className="pricing-badge">MOST POPULAR</span>}<span className="pricing-name">{plan.name}</span><p>{plan.detail}</p>
       <strong className="pricing-price">{pakistan ? plan.pk : plan.usd}<small> / month</small></strong>

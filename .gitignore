@@ -389,3 +389,6 @@ lib/stockwell/*
 !lib/stockwell/cache-migrations.ts
 !lib/stockwell/request-body.ts
 .neon
+
+AGENTS.md
+CLAUDE.md

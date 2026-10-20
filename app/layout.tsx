@@ -1,4 +1,5 @@
 import type { Metadata } from "next";
+import Script from "next/script";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -18,6 +19,8 @@ export const metadata: Metadata = {
   title: "StockHale | Retail Inventory & Operations",
   description:
     "StockHale retail inventory, purchasing, billing, sales, accounts, and reporting.",
+  alternates: { canonical: "/" },
+  robots: { index: true, follow: true },
 };
 
 export default function RootLayout({
@@ -26,6 +29,16 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>{children}</body>
+      <Script id="google-analytics" strategy="afterInteractive">
+        {`window.dataLayer = window.dataLayer || [];
+window.gtag = function gtag(){window.dataLayer.push(arguments);};
+window.gtag('js', new Date());
+window.gtag('config', 'G-T8WGEJ1R5D');
+var gtagScript = document.createElement('script');
+gtagScript.async = true;
+gtagScript.src = 'https://www.googletagmanager.com/gtag/js?id=G-T8WGEJ1R5D';
+document.head.appendChild(gtagScript);`}
+      </Script>
     </html>
   );
 }

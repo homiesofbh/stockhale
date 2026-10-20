@@ -27,7 +27,7 @@ import {
 import { ChevronRight, Plus, Search, X } from "lucide-react";
 import { descriptions, type Module } from "./navigation";
 import { Badge, Empty, Field, Modal, Table } from "./ui";
-import { downloadInvoicePdf, type InvoicePaper } from "@/lib/stockwell/invoice-pdf";
+import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import { WorkspaceSettings } from "@/components/stockwell/workspace-settings";
 import { accessibleModule, canAccessModule } from "@/lib/stockwell/workspace";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
@@ -404,6 +404,7 @@ export function WorkspaceApp() {
     setPdfBusy(true);
     setPdfError("");
     try {
+      const { downloadInvoicePdf } = await import("@/lib/stockwell/invoice-pdf");
       const result = await downloadInvoicePdf(s, invoice, paper);
       setNotice(
         `PDF downloaded · ${(result.bytes / 1024).toFixed(1)} KB · ${result.pages} page${result.pages === 1 ? "" : "s"}`,

@@ -5,7 +5,7 @@
   "packageManager": "pnpm@12.11.2",
   "scripts": {
     "dev": "next dev --webpack",
-    "build": "next build --webpack",
+    "build": "next build",
     "start": "next start",
     "lint": "oxlint",
     "build:cloudflare": "opennextjs-cloudflare build",
