@@ -49,7 +49,7 @@ Skipped because no query data was supplied. No page/query ranking or CTR opportu
 
 A homepage-only `SoftwareApplication` JSON-LD proposal addresses AUD-02 and uses properties supported by repository metadata and product copy. The Editor initially returned the root-layout placement because it would have applied across every route; the one revision moved it to the homepage. The Editor approved that scope.
 
-The ready-to-review code is packaged under `04-implementer/`. It has **not** been applied to the app source. The `app/layout.tsx` mirror is explicitly marked as no change and should not be applied. AUD-01 is copy-only and was assigned to the Writer.
+The approved homepage-only JSON-LD has now been applied in `app/page.tsx`. The `app/layout.tsx` mirror remains a no-change file and was not applied. AUD-01 and the approved metadata/content recommendations have also been applied to the relevant app routes and marketing components.
 
 ## Writer: copy and content briefs
 
@@ -67,8 +67,8 @@ No numeric baseline could be established because there is no Search Console expo
 
 ## Top 5 actions to do first
 
-1. Capture and save the pre-launch Search Console, index-status, and performance baselines listed in `07-tracker.md`.
-2. Review and apply the approved homepage H1/title/copy updates and route-specific copy from `05-writer.md`.
-3. Review and apply the homepage-only JSON-LD proposal from `04-implementer/app/page.tsx`; do not apply the no-change layout mirror.
-4. Verify the deployed rendered metadata, homepage schema, canonicals, robots, sitemap, and index status; run schema validation and capture mobile performance data.
-5. Export the three-month Queries × Pages report and revisit the estimated query clusters and conditional page briefs with observed data before commissioning new pages.
+1. Capture and save the pre-launch Search Console, index-status, and performance baselines listed in `07-tracker.md` before deployment.
+2. Verify the rendered metadata, homepage schema, canonicals, robots, sitemap, and index status; validate the schema and capture mobile performance data.
+3. Deploy the approved source changes after review.
+4. Export the three-month Queries × Pages report and revisit the estimated query clusters with observed data.
+5. Validate distinct feature and industry workflows and demand before commissioning the conditional page briefs.

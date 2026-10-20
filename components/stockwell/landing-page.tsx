@@ -55,13 +55,13 @@ function Hero() {
           <span className="live-dot" /> KEEP YOUR STOCK HEALTHY
         </span>
         <h1 id="hx-title">
-          Your whole store.
+          Retail inventory software
           <br />
-          <em>One clear view.</em>
+          <em>for independent stores.</em>
         </h1>
         <p className="hx-lead">
-          From the first delivery to the last sale, bring your stock, billing,
-          and accounts together in a workspace that feels familiar.
+          Bring stock, purchases, billing, accounts, and reports together in
+          one workspace built for independent retail.
         </p>
         <div className="hx-actions">
           <Link className="hx-cta" href="/sign-up">
@@ -201,9 +201,9 @@ export function LandingPage({ country = "US" }: { country?: string }) {
                 THE WHOLE PICTURE, FINALLY
               </span>
               <h2>
-                Less juggling.
+                Stock, sales, and accounts
                 <br />
-                <em>More running your store.</em>
+                <em>in one clear view.</em>
               </h2>
             </div>
             <p>

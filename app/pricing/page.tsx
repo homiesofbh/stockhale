@@ -2,7 +2,7 @@ import { headers } from "next/headers";
 import { MarketingFrame } from "@/components/stockwell/landing-page";
 import { PricingSection } from "@/components/stockwell/pricing-section";
 
-export const metadata = { title: "StockHale Pricing [Plans & 3-Day Trial]", description: "Compare StockHale’s three retail plans, regional monthly and annual prices, included tools, and 72-hour trial with no card required.", alternates: { canonical: "/pricing" } };
+export const metadata = { title: "StockHale Pricing: Plans and 72-Hour Trial", description: "Compare StockHale plans, regional monthly and annual prices, and included tools. Try StockHale for 72 hours with no card required.", alternates: { canonical: "/pricing" } };
 
 export const dynamic = "force-dynamic";
 
