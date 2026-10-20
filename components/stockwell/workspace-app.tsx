@@ -591,7 +591,7 @@ export function WorkspaceApp() {
                     />
                   ) : (
                     <>
-                      {module !== "Closing" && <RecordFilters
+                      {module !== "Closing" && !(["Customers", "Suppliers"] as Module[]).includes(module) && <RecordFilters
                         query={query}
                         setQuery={setQuery}
                         module={module}
@@ -607,6 +607,14 @@ export function WorkspaceApp() {
                         setFrom={setFrom}
                         setTo={setTo}
                       />}
+                      {(module === "Customers" || module === "Suppliers") && <div className="contact-directory-toolbar">
+                        <label className="search">
+                          <Search size={17} aria-hidden="true" />
+                          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={`Search ${module.toLowerCase()} by name, phone, email…`} aria-label={`Search ${module.toLowerCase()}`} />
+                        </label>
+                        <span className="directory-count">{module === "Customers" ? s.customers.length : s.suppliers.length} accounts</span>
+                        <button className="primary directory-add" disabled={!!storageError} onClick={() => { setEditContact(null); open("Contact"); }}><Plus size={16} /> Add {module === "Customers" ? "customer" : "supplier"}</button>
+                      </div>}
                       {module === "Inventory" && (
                         <InventoryView
                           s={s}

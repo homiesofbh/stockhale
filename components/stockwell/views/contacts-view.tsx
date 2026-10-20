@@ -12,7 +12,7 @@ import {
 } from "@/lib/stockwell/model";
 import { createReportData } from "@/lib/stockwell/reports";
 import { chequeSettlements } from "@/lib/stockwell/operations";
-import { FileSpreadsheet } from "lucide-react";
+import { ArrowDownLeft, ArrowUpRight, Building2, FileSpreadsheet, Mail, MapPin, Phone } from "lucide-react";
 import type { Dispatch, JSX, SetStateAction } from "react";
 import { useState } from "react";
 type Props = {
@@ -26,6 +26,9 @@ type Props = {
   basicHeaders: string[];
   tradeRows: (list: Trade[], supplier?: boolean) => (string | JSX.Element)[][];
 };
+function queryEmptyMessage(module: "Suppliers" | "Customers") {
+  return module === "Customers" ? "No customers match this search" : "No suppliers match this search";
+}
 export function ContactsView({
   module,
   s,
@@ -51,6 +54,9 @@ export function ContactsView({
       })
     : null;
   const detailKind = module === "Suppliers" ? "Supplier" : "Customer";
+  const contacts = (module === "Suppliers" ? s.suppliers : s.customers).slice().reverse()
+    .filter((c) => matches(c.name, c.company, c.phone, c.mobile, c.email, c.address, c.ntn, c.contactPerson, c.salesTaxNumber, c.description));
+  const outstandingCount = contacts.filter(c => contactBalance(s, detailKind, c.id) > 0).length;
   const openBillBalance = detailContact ? (module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === detailContact.id && isPosted(t)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0) : 0;
   const unappliedCredits = detailContact ? unappliedCreditBalance(s, detailKind, detailContact.id) : 0;
   async function downloadLedger() {
@@ -81,49 +87,38 @@ export function ContactsView({
   }
   return (
     <>
-      <section className="card">
-        <Table
-          headers={[
-            module === "Customers" ? "Customer / company" : "Supplier name",
-            "Contact details",
-            "Address",
-            "Net account balance",
-            "",
-          ]}
-          rows={(module === "Suppliers" ? s.suppliers : s.customers).slice().reverse()
-            .filter((c) => matches(c.name, c.company, c.phone, c.mobile, c.email, c.address, c.ntn, c.contactPerson, c.salesTaxNumber, c.description))
-            .map((c) => [
-              <button className="link" onClick={() => { setDetailTab("history"); setDetailContact(c); }}>
-                {c.name}
-                {c.company && <small>{c.company}</small>}
-                {c.ntn && <small>NTN: {c.ntn}</small>}
-                {c.salesTaxNumber && <small>Sales tax: {c.salesTaxNumber}</small>}
-              </button>,
-              <>
-                {c.phone || "—"}
-                <small>{c.mobile}</small>
-                <small>{c.email}</small>
-              </>,
-              c.address || "—",
-              money(
-                contactBalance(
-                  s,
-                  module === "Suppliers" ? "Supplier" : "Customer",
-                  c.id,
-                ),
-              ),
-              <button
-                className="link"
-                onClick={() => {
-                  setEditContact(c);
-                  open("Contact");
-                }}
-              >
-                Edit profile
-              </button>,
-            ])}
-        />
-      </section>
+      <div className="contact-overview" aria-label={`${module} overview`}>
+        <div><span>{module === "Customers" ? "Customer accounts" : "Supplier accounts"}</span><strong>{contacts.length.toLocaleString("en-PK")}</strong><small>matching this search</small></div>
+        <div><span>{module === "Customers" ? "With receivable" : "With payable"}</span><strong>{outstandingCount.toLocaleString("en-PK")}</strong><small>accounts with an outstanding balance</small></div>
+        <div><span>{module === "Customers" ? "Total receivable" : "Total payable"}</span><strong>{money(contacts.reduce((sum, c) => sum + Math.max(contactBalance(s, detailKind, c.id), 0), 0))}</strong><small>across matching accounts</small></div>
+      </div>
+      {contacts.length ? <section className="contact-card-grid" aria-label={`${module} directory`}>
+        {contacts.map((c) => {
+          const amount = contactBalance(s, detailKind, c.id);
+          const count = (module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === c.id && isPosted(t)).length;
+          const initials = c.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "?";
+          return <article className="contact-card" key={c.id}>
+            <div className="contact-card-top">
+              <div className="contact-avatar" aria-hidden="true">{initials}</div>
+              <div className="contact-card-identity"><h2>{c.name}</h2><span>{c.company || (module === "Customers" ? "Customer account" : "Supplier account")}</span></div>
+              <span className={`contact-status${amount > 0 ? " is-open" : amount < 0 ? " is-credit" : " is-settled"}`}><i />{amount > 0 ? "Outstanding" : amount < 0 ? "Credit" : "Settled"}</span>
+            </div>
+            <div className="contact-card-details">
+              {(c.phone || c.mobile) && <span><Phone size={14} />{c.phone || c.mobile}{c.mobile && c.phone && <small>{c.mobile}</small>}</span>}
+              {c.email && <span><Mail size={14} />{c.email}</span>}
+              {c.address && <span><MapPin size={14} />{c.address}</span>}
+              {c.contactPerson && <span><Building2 size={14} />{c.contactPerson}</span>}
+              {!c.phone && !c.mobile && !c.email && !c.address && !c.contactPerson && <span className="contact-no-details">No contact details added yet</span>}
+            </div>
+            <div className="contact-card-balance"><div><small>{module === "Customers" ? "ACCOUNT RECEIVABLE" : "ACCOUNT PAYABLE"}</small><strong>{money(Math.abs(amount))}</strong></div><span>{count} {module === "Customers" ? "bills" : "purchases"}</span></div>
+            <div className="contact-card-footer">
+              <span>{module === "Customers" ? <ArrowDownLeft size={14} /> : <ArrowUpRight size={14} />}{amount > 0 ? module === "Customers" ? "Payment due" : "Payable" : amount < 0 ? "Credit available" : "Account clear"}</span>
+              <button className="contact-card-open" onClick={() => { setDetailTab("history"); setDetailContact(c); }}>View account <ArrowUpRight size={14} /></button>
+              <button className="contact-card-edit" aria-label={`Edit ${c.name}`} onClick={() => { setEditContact(c); open("Contact"); }}>Edit</button>
+            </div>
+          </article>;
+        })}
+      </section> : <section className="card contact-empty"><Table headers={[]} rows={[]} empty={queryEmptyMessage(module)} /></section>}
       {detailContact && (
         <Modal title={detailContact.name} eyebrow={module === "Customers" ? "CUSTOMER PROFILE" : "SUPPLIER PROFILE"} close={() => setDetailContact(null)}>
           <div className="section-head">
