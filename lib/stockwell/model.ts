@@ -56,6 +56,7 @@ export type Trade = {
   createdAt?: number;
   id: string;
   number: string;
+  previousNumbers?: string[];
   reference?: string;
   attachments?: Attachment[];
   date: string;

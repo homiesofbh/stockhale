@@ -27,14 +27,12 @@ import {
   type RecordFilters,
 } from "./record-selectors";
 
+export type ReportData = { columns: string[]; rows: unknown[][]; customerIds?: string[]; contactSummary?: { business: number; payments: number; outstanding: number } };
+
 export function createReportData(
   s: Store,
   options: RecordFilters & { report: string; reportContact: string },
-): {
-  columns: string[];
-  rows: unknown[][];
-  contactSummary?: { business: number; payments: number; outstanding: number };
-} {
+): ReportData {
   const { report, reportContact, from, to, query } = options;
   // The start date selects bills; all settlements through the end date count,
   // including those before the start date. Status filtering uses that same snapshot.
@@ -59,6 +57,23 @@ export function createReportData(
     if (contact) return [contact.name, contact.company, contact.phone].filter(Boolean).join(" · ");
     return [trade?.walkInName, trade?.walkInCompany, trade?.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer";
   };
+  if (report === "Customer business report") {
+    const groups = new Map<string, typeof invoices>();
+    invoices.filter(t => isPosted(t) && t.contactId && (!reportContact || t.contactId === reportContact)).forEach(t => {
+      groups.set(t.contactId, [...(groups.get(t.contactId) || []), t]);
+    });
+    const customerIds = [...groups.keys()].sort((a, b) => cName(a).localeCompare(cName(b), undefined, { sensitivity: "base" }));
+    return {
+      columns: ["Customer", "Bills", "Billed total", "Return credit", "Total business", "Paid", "Outstanding on these bills"],
+      customerIds,
+      rows: customerIds.map(id => {
+        const bills = groups.get(id)!;
+        const billed = round(bills.reduce((n, t) => n + total(t), 0));
+        const credits = round(bills.reduce((n, t) => n + returned(asOf, t.id), 0));
+        return [cName(id), bills.length, billed, credits, round(billed - credits), round(bills.reduce((n, t) => n + paid(asOf, t), 0)), round(bills.reduce((n, t) => n + balance(asOf, t), 0))];
+      }),
+    };
+  }
   if (
     [
       "Billing report",
@@ -77,7 +92,7 @@ export function createReportData(
     if (report === "Credit-sale report") list = list.filter(t => balance(asOf, t) > 0);
     if (report === "Receivables report" || report === "Payables report")
       list = list.filter((t) => balance(asOf, t) !== 0);
-    const tradeRows = list.map((t) => [t.number, t.date, cName(t.contactId, supplier, t), subtotal(t), t.discount, t.tax, total(t), returned(asOf, t.id), paid(asOf, t), balance(asOf, t)]);
+    const tradeRows = list.map((t) => [t.number, t.date, cName(t.contactId, supplier, t), subtotal(t), t.discount, t.tax, total(t), returned(asOf, t.id), paid(asOf, t), balance(asOf, t)]).filter(row => inRange(String(row[1])) && matches(row[0], row[1], row[2]));
     const advanceRows = report === "Receivables report" || report === "Payables report"
       ? asOf.payments.filter(p => p.kind === (supplier ? "Supplier" : "Customer") && (p.advance || p.accountLevel) && !p.tradeId && isSettledPayment(p) && inRange(p.date))
           .filter(p => (!reportContact || p.contactId === reportContact) && matches(p.date, cName(p.contactId, supplier), p.accountLevel ? "Supplier account payment" : "Unapplied advance", p.method, p.head, p.notes))
@@ -366,11 +381,13 @@ export function createReportData(
         if (inRange(e.date) && matches(e.name, e.ref, e.type))
           rows.push([e.date, e.name, e.ref, e.type, e.charge, e.payment, b]);
       });
-    const business = round(entries.reduce((sum, entry) => sum + entry.charge, 0));
-    const paymentTotal = round(entries.reduce((sum, entry) => sum + entry.payment, 0));
+    const periodEntries = entries.filter(entry => inRange(entry.date) && matches(entry.date, entry.ref, entry.name, entry.type));
+    const business = round(periodEntries.reduce((sum, entry) => sum + entry.charge, 0));
+    const paymentTotal = round(periodEntries.reduce((sum, entry) => sum + entry.payment, 0));
     const openingBalance = reportContact ? s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === reportContact)?.openingBalance || 0 : 0;
+    const outstanding = round(entries.filter(entry => entry.id === reportContact && (!to || entry.date <= to)).reduce((sum, entry) => sum + entry.charge - entry.payment, 0));
     return {
-      contactSummary: { business, payments: paymentTotal, outstanding: round(business + openingBalance - paymentTotal) },
+      contactSummary: { business, payments: paymentTotal, outstanding: reportContact ? outstanding : round(business + openingBalance - paymentTotal) },
       columns: [
         "Date",
         supplier ? "Supplier" : "Customer",

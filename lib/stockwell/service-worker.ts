@@ -10,7 +10,7 @@ self.addEventListener("activate", (event) => {
 // No fetch handler: development HTML and chunks always use the network.
 `;
 
-export const productionWorker = `const CACHE = "stockwell-offline-v5";
+export const productionWorker = `const CACHE = "stockwell-offline-v6";
 self.addEventListener("install", (event) => {
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);

@@ -43,6 +43,7 @@ export function WorkspaceHeader({
   const reviewBusy = reviewLoading || reviewActing || workspace.syncing;
   const hasConflict = workspace.review?.conflict || workspace.syncStatus.startsWith("Conflict");
   const needsHelp = hasConflict && workspace.review?.canRecover === false;
+  const canDropHead = !!workspace.cache?.queue.length && (hasConflict || workspace.syncStatus.startsWith("Review needed"));
   const syncLabel = workspace.syncing ? "Saving changes…"
     : !workspace.cache?.queue.length && !workspace.syncError ? "All changes saved"
     : hasConflict ? "Saved on this device · needs review"
@@ -67,6 +68,11 @@ export function WorkspaceHeader({
   useEffect(() => {
     if (reviewOpen) void inspect();
   }, [reviewOpen]);
+  useEffect(() => {
+    if (!workspace.syncNotice) return;
+    setNotice(workspace.syncNotice);
+    workspace.clearSyncNotice();
+  }, [workspace.syncNotice]);
   function openReview() {
     if (profileMenu.current) profileMenu.current.open = false;
     setReviewOpen(true);
@@ -205,7 +211,7 @@ export function WorkspaceHeader({
           <div className={styles.syncReviewBody} tabIndex={0} role="region" aria-label="Sync review details">
             <div className={`${styles.syncReviewAlert} ${!workspace.cache.queue.length ? styles.syncReviewSuccess : ""}`} role="status">
               <ShieldAlert size={20} />
-              <div><strong>{workspace.cache.queue.length ? "Your work is safe on this device." : "All changes are saved online."}</strong><p>{workspace.cache.queue.length ? needsHelp ? account.member.role === "owner" ? "A saved change needs your review. Save a copy, then check the details below." : "A saved change needs review. Ask the owner to check it before saving online." : "We save your changes online automatically. If saving is interrupted, you can try again below." : "You can close this window and continue working."}</p></div>
+              <div><strong>{workspace.cache.queue.length ? "Your work is safe on this device." : "All changes are saved online."}</strong><p>{workspace.cache.queue.length ? workspace.cache.blockedChangeIds?.length ? `${workspace.cache.blockedChangeIds.length} change${workspace.cache.blockedChangeIds.length === 1 ? "" : "s"} need review. Independent changes are syncing or already saved online; dependent changes stay with the conflict.` : needsHelp ? account.member.role === "owner" ? "A saved change needs your review. Save a copy, then check the details below." : "A saved change needs review. Ask the owner to check it before saving online." : "We save your changes online automatically. If saving is interrupted, you can try again below." : "You can close this window and continue working."}</p></div>
             </div>
             {reviewLoading && <p role="status">Checking your saved changes…</p>}
             {reviewError && <p className="form-error" role="alert">{reviewError}</p>}
@@ -225,8 +231,10 @@ export function WorkspaceHeader({
           </div>
           <div className={styles.syncReviewActions}>
             <button className="secondary" disabled={reviewActing || !workspace.cache.queue.length} onClick={workspace.exportPending}><Download size={16} /> Save a copy</button>
-            <button className="primary" disabled={reviewBusy} onClick={() => { if (workspace.cache?.queue.length) void runReviewAction(workspace.sync); else setReviewOpen(false); }}><RefreshCw size={16} /> {workspace.syncing || reviewActing ? "Saving…" : reviewLoading ? "Checking…" : workspace.cache.queue.length ? "Try again" : "Done"}</button>
+            {workspace.review?.conflict && workspace.review.canRecover && <button className="secondary" disabled={reviewBusy} onClick={() => void runReviewAction(workspace.recoverPending)}><RefreshCw size={16} /> Merge with latest records</button>}
+            <button className="primary" disabled={reviewBusy} onClick={() => { if (workspace.cache?.queue.length) void runReviewAction(() => workspace.sync(true)); else setReviewOpen(false); }}><RefreshCw size={16} /> {workspace.syncing || reviewActing ? "Saving…" : reviewLoading ? "Checking…" : workspace.cache.queue.length ? "Try again" : "Done"}</button>
           </div>
+          {canDropHead && <details className={styles.syncReviewOwnerTools}><summary>Skip a blocked change</summary><div className={styles.syncReviewDangerZone}><p>Drop “{workspace.cache.queue[0]?.action || "the first saved change"}” ({workspace.cache.queue[0]?.module})?<small>This removes the first saved change and only the later changes that cannot exist without it. Everything else stays saved on this device. A copy is downloaded first.</small></p><button className={styles.syncReviewDiscard} disabled={reviewBusy} onClick={() => void runReviewAction(workspace.dropHeadChange)}><Trash2 size={16} /> Drop this change</button></div></details>}
           {hasConflict && account.member.role === "owner" && <details className={styles.syncReviewOwnerTools}><summary>Owner recovery options</summary><div className={styles.syncReviewDangerZone}><p>Replace this device’s changes?<small>This deletes the changes waiting to save online. Save a copy first.</small></p><button className={styles.syncReviewDiscard} disabled={reviewBusy} onClick={() => void runReviewAction(workspace.useServer)}><Trash2 size={16} /> Delete device changes</button></div></details>}
         </div>
       </Modal>}

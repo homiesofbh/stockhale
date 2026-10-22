@@ -34,7 +34,7 @@ import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import { AdjustmentForm } from "@/components/stockwell/forms/adjustment-form";
 import { ContactForm } from "@/components/stockwell/forms/contact-form";
 import { ExpenseForm } from "@/components/stockwell/forms/expense-form";
-import { retryAttachmentQueue } from "@/lib/stockwell/attachment-client";
+import { acknowledgeAttachmentQueue, retryAttachmentQueue } from "@/lib/stockwell/attachment-client";
 import { MovementsForm } from "@/components/stockwell/forms/movements-form";
 import { PaymentForm } from "@/components/stockwell/forms/payment-form";
 import { ProductForm } from "@/components/stockwell/forms/product-form";
@@ -141,15 +141,21 @@ export function WorkspaceApp() {
   useEffect(() => {
     const retry = async () => {
       if (!navigator.onLine || !workspace.cache) return;
-      const completed = await retryAttachmentQueue();
-      if (!completed.length) return;
-      let next = workspace.cache.workspace.store;
-      for (const item of completed) {
-        const key = item.recordType === "expense" ? "expenses" : "purchases";
-        next = { ...next, [key]: next[key].map((record: any) => record.id === item.recordId ? { ...record, attachments: (record.attachments || []).map((a: any) => a.id === item.pendingId ? item : a) } : record) };
-      }
-      workspace.commit(next, completed[0].recordType === "expense" ? "Expenses" : "Purchases", "Offline attachments uploaded.");
-      setS(next);
+      await retryAttachmentQueue(async completed => {
+        const byModule = new Map<string, typeof completed>();
+        for (const item of completed) {
+          const moduleName = item.recordType === "expense" ? "Expenses" : "Purchases";
+          byModule.set(moduleName, [...(byModule.get(moduleName) || []), item]);
+        }
+        for (const [moduleName, items] of byModule) {
+          const base = workspace.cache!.workspace.store;
+          const key = moduleName === "Expenses" ? "expenses" : "purchases";
+          const next = { ...base, [key]: base[key].map((record: any) => record.id && items.some(item => item.recordId === record.id) ? { ...record, attachments: (record.attachments || []).map((attachment: any) => items.find(item => item.pendingId === attachment.id) || attachment) } : record) };
+          await workspace.commit(next, moduleName, "Offline attachments uploaded.");
+          await acknowledgeAttachmentQueue(items.map(item => item.pendingId));
+        }
+        setS(workspace.cache!.workspace.store);
+      });
     };
     window.addEventListener("online", retry);
     void retry();

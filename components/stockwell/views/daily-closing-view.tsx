@@ -1,14 +1,17 @@
 "use client";
 
 import { useState } from "react";
+import { BankVoucherForm } from "../forms/bank-voucher-form";
+import { GlassSelect } from "../glass-select";
+import { Modal } from "../ui";
 import {
   cashStatement,
   closeDay,
   reopenDay,
   type Actor,
 } from "@/lib/stockwell/operations";
-import { bankStatement } from "@/lib/stockwell/bank-vouchers";
-import { money, profit, round, today, type Store } from "@/lib/stockwell/model";
+import { bankStatement, nextBankVoucherNumber } from "@/lib/stockwell/bank-vouchers";
+import { money, profit, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, InfoTip, Table } from "../ui";
 import { ReasonDialog } from "../reason-dialog";
 
@@ -35,6 +38,8 @@ export function DailyClosingView({
   const [reopening, setReopening] = useState("");
   const [counted, setCounted] = useState("");
   const [unknownReason, setUnknownReason] = useState(false);
+  const [depositOpen, setDepositOpen] = useState(false);
+  const [closingStatus, setClosingStatus] = useState("All");
 
   const cash = cashStatement(s, date, date);
   const activeClose = s.dailyCloses?.find(
@@ -96,7 +101,7 @@ export function DailyClosingView({
               </div>
               <p>Only physical cash belongs in the counted cash field below.</p>
             </div>
-            <Badge tone="green">Drawer reconciliation</Badge>
+            <div className="journal-register-actions"><Badge tone="green">Drawer reconciliation</Badge>{actor.role === "owner" && <button className="secondary" onClick={() => setDepositOpen(true)}>Deposit cash to bank</button>}</div>
           </div>
           <Table
             headers={["Opening cash", "Cash received", "Cash paid out", "Expected cash in hand"]}
@@ -146,6 +151,7 @@ export function DailyClosingView({
           <span>For this date: {money(recordedProfit.revenue)} − {money(recordedProfit.cogs)} − {money(recordedProfit.expenses)} − {money(recordedProfit.damage)} = {money(recordedProfit.net)}.</span>
         </InfoTip>
       </div>
+      <div className="closing-history-head"><div><h3>Closing history</h3><p>Closed and reopened days remain in this register for audit.</p></div><Field label="Status"><GlassSelect value={closingStatus} onValueChange={setClosingStatus}><option>All</option><option>Closed</option><option>Reopened</option></GlassSelect></Field></div>
       <Table
         headers={[
           "Recorded net sales",
@@ -376,6 +382,7 @@ export function DailyClosingView({
           </details>
         ))}
 
+      {depositOpen && <Modal title="Deposit drawer cash" close={() => setDepositOpen(false)}><BankVoucherForm s={s} voucher={{ id: uid(), number: nextBankVoucherNumber(s), date, kind: "Payment", accountId: "", toAccountId: "", counterAccountId: "", amount: 0, reference: "Cash deposit", notes: "Drawer cash deposited to bank", status: "draft", createdAt: Date.now() }} commit={(next, message) => { commit(next, message); setDepositOpen(false); }} /></Modal>}
       {reopening && (
         <ReasonDialog
           title="Reopen daily close"

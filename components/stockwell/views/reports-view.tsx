@@ -32,6 +32,8 @@ type Props = {
   reportResult: {
     columns: string[];
     rows: unknown[][];
+    customerIds?: string[];
+    contactSummary?: { business: number; payments: number; outstanding: number };
   };
 };
 export function ReportsView({
@@ -72,6 +74,7 @@ export function ReportsView({
                 "Stock aging report",
                 "Daily cash sheet",
                 "Expense report",
+                "Customer business report",
                 "Customer ledger",
                 "Supplier ledger",
                 "Receivables report",
@@ -91,7 +94,7 @@ export function ReportsView({
               ))}
             </GlassSelect>
           </Field>
-          {["Customer ledger", "Supplier ledger"].includes(report) && (
+          {["Customer business report", "Customer ledger", "Supplier ledger"].includes(report) && (
             <Field
               label={report === "Customer ledger" ? "Customer" : "Supplier"}
             >
@@ -154,13 +157,13 @@ export function ReportsView({
         </div>
         <Table
           headers={reportResult.columns}
-          rows={reportResult.rows.map((r) =>
-            r.map((v) =>
-              typeof v === "number"
-                ? v.toLocaleString("en-PK", {
-                    maximumFractionDigits: 2,
-                  })
-                : String(v),
+          rows={reportResult.rows.map((r, rowIndex) =>
+            r.map((v, columnIndex) =>
+              reportResult.columns[columnIndex] === "Customer" && reportResult.customerIds?.[rowIndex]
+                ? <button className="link" onClick={() => { setReport("Customer ledger"); setReportContact(reportResult.customerIds![rowIndex]); }}>{String(v)}</button>
+                : typeof v === "number"
+                  ? v.toLocaleString("en-PK", { maximumFractionDigits: 2 })
+                  : String(v),
             ),
           )}
         />
