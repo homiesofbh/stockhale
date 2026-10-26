@@ -1,28 +1,28 @@
 "use client";
 
-import { useState } from "react";
+import { useState, type FormEvent } from "react";
 import { BankVoucherForm } from "../forms/bank-voucher-form";
 import { GlassSelect } from "../glass-select";
 import { Modal } from "../ui";
 import {
   cashStatement,
   closeDay,
-  reopenDay,
   type Actor,
 } from "@/lib/stockwell/operations";
 import { bankStatement, nextBankVoucherNumber } from "@/lib/stockwell/bank-vouchers";
 import { money, profit, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, InfoTip, Table } from "../ui";
-import { ReasonDialog } from "../reason-dialog";
 
 export function DailyClosingView({
   s,
   actor,
   commit,
+  reopenWithOwnerPassword,
 }: {
   s: Store;
   actor: Actor;
   commit: (s: Store, message: string) => void;
+  reopenWithOwnerPassword: (closingId: string, reason: string, password: string) => Promise<unknown>;
 }) {
   const formatClosingDate = (date: string) => {
     const [year, month, day] = date.split("-").map(Number);
@@ -36,6 +36,8 @@ export function DailyClosingView({
   const [date, setDate] = useState(today());
   const [error, setError] = useState("");
   const [reopening, setReopening] = useState("");
+  const [reopenError, setReopenError] = useState("");
+  const [reopenBusy, setReopenBusy] = useState(false);
   const [counted, setCounted] = useState("");
   const [unknownReason, setUnknownReason] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
@@ -101,7 +103,7 @@ export function DailyClosingView({
               </div>
               <p>Only physical cash belongs in the counted cash field below.</p>
             </div>
-            <div className="journal-register-actions"><Badge tone="green">Drawer reconciliation</Badge>{actor.role === "owner" && <button className="secondary" onClick={() => setDepositOpen(true)}>Deposit cash to bank</button>}</div>
+            <div className="journal-register-actions"><Badge tone="green">Drawer reconciliation</Badge>{(actor.role === "owner" || actor.modules?.includes("Closing")) && <button className="secondary" onClick={() => setDepositOpen(true)}>Deposit cash to bank</button>}</div>
           </div>
           <Table
             headers={["Opening cash", "Cash received", "Cash paid out", "Expected cash in hand"]}
@@ -180,7 +182,7 @@ export function DailyClosingView({
         <span className="closing-variance-copy">Need help understanding the count? Select the info icon to expand the explanation.</span>
       </div>
 
-      {actor.role === "owner" && !activeClose && (
+      {(actor.role === "owner" || actor.modules?.includes("Closing")) && !activeClose && (
         <form
           className="daily-close-form mt-2"
           onSubmit={(e) => {
@@ -324,7 +326,7 @@ export function DailyClosingView({
               </small>
               {c.reopenReason && <small>Reopened: {c.reopenReason}</small>}
             </div>,
-            actor.role === "owner" && c.status === "closed" ? (
+            (actor.role === "owner" || actor.modules?.includes("Closing")) && c.status === "closed" ? (
               <button
                 key="reopen"
                 className="link"
@@ -382,19 +384,27 @@ export function DailyClosingView({
           </details>
         ))}
 
-      {depositOpen && <Modal title="Deposit drawer cash" close={() => setDepositOpen(false)}><BankVoucherForm s={s} voucher={{ id: uid(), number: nextBankVoucherNumber(s), date, kind: "Payment", accountId: "", toAccountId: "", counterAccountId: "", amount: 0, reference: "Cash deposit", notes: "Drawer cash deposited to bank", status: "draft", createdAt: Date.now() }} commit={(next, message) => { commit(next, message); setDepositOpen(false); }} /></Modal>}
+      {depositOpen && <Modal title="Deposit drawer cash" close={() => setDepositOpen(false)}><BankVoucherForm s={s} depositOnly voucher={{ id: uid(), number: nextBankVoucherNumber(s), date, kind: "Receipt", accountId: "", toAccountId: "", counterAccountId: "", amount: 0, reference: "Cash deposit", notes: "Drawer cash deposited to bank", status: "draft", createdAt: Date.now() }} commit={(next, message) => { commit(next, message); setDepositOpen(false); }} /></Modal>}
       {reopening && (
-        <ReasonDialog
-          title="Reopen daily close"
-          withDate={false}
-          close={() => setReopening("")}
-          confirm={(reason) =>
-            commit(
-              reopenDay(s, reopening, reason, actor),
-              "Closing reopened. Original closing figures retained."
-            )
-          }
-        />
+        <Modal title="Reopen daily close" close={() => { if (!reopenBusy) { setReopening(""); setReopenError(""); } }}>
+          <form onSubmit={async (e: FormEvent<HTMLFormElement>) => {
+            e.preventDefault();
+            const form = new FormData(e.currentTarget);
+            setReopenBusy(true); setReopenError("");
+            try {
+              await reopenWithOwnerPassword(reopening, String(form.get("reason") || ""), String(form.get("password") || ""));
+              setReopening("");
+            } catch (err) {
+              setReopenError(err instanceof Error ? err.message : "Could not reopen this day.");
+            } finally { setReopenBusy(false); }
+          }}>
+            <p>Enter a reason and verify the workspace owner’s password to reopen this day.</p>
+            <Field label="Reason"><textarea name="reason" required maxLength={2000} /></Field>
+            <Field label="Owner password"><input name="password" type="password" required maxLength={128} autoComplete="current-password" /></Field>
+            {reopenError && <p className="form-error" role="alert">{reopenError}</p>}
+            <div className="form-foot"><button className="primary" disabled={reopenBusy}>{reopenBusy ? "Reopening…" : "Reopen day"}</button></div>
+          </form>
+        </Modal>
       )}
     </section>
   );

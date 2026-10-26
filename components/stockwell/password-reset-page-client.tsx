@@ -1,6 +1,6 @@
 "use client";
 
-import { workspaceRequest } from "@/lib/stockwell/use-workspace";
+import { workspaceRequest } from "@/lib/stockwell/workspace-request";
 import Link from "next/link";
 import { useEffect, useState, type FormEvent } from "react";
 

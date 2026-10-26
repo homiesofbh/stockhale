@@ -2,7 +2,7 @@ import { balance, financialRows, isPosted, recordTrade, round, roundQty, stock, 
 import { chartAccounts } from "./accounts";
 import { bankStatement, saveBankVoucher } from "./bank-vouchers";
 import { saveJournal } from "./journals";
-export type Actor = { id: string; name?: string; role: "owner" | "member" };
+export type Actor = { id: string; name?: string; role: "owner" | "member"; modules?: string[] };
 export type TradeCorrection = { id: string; tradeId: string; kind: "Sale" | "Purchase"; date: string; reason: string; actorId: string; occurredAt: string; before: Trade; after: Trade };
 export type ChequeEvent = { id: string; paymentId: string; date: string; status: "cleared" | "bounced" | "cancelled"; accountId: string; reason: string; actorId: string; occurredAt: string };
 export const cashChequeSettlement = "cash";
@@ -132,7 +132,8 @@ export function cashFlow(s: Store, from = "", to = today()) {
   for (const row of financialRows(s).filter(r => (!from || r.date >= from) && (!to || r.date <= to))) {
     const bankAccount = (s.financialAccounts || []).find(a => a.id === row.financialAccountId);
     const bankLedger = chartAccounts(s).find(a => a.id === bankAccount?.ledgerAccountId);
-    const amount = round((cashAccount?.openingDate && row.date < cashAccount.openingDate ? 0 : row.cash) + (bankLedger?.openingDate && row.date < bankLedger.openingDate ? 0 : row.bank));
+    const bankOpeningDate = bankAccount?.openingBalance !== undefined ? bankAccount.openingDate : bankLedger?.openingDate;
+    const amount = round((cashAccount?.openingDate && row.date < cashAccount.openingDate ? 0 : row.cash) + (bankOpeningDate && row.date < bankOpeningDate ? 0 : row.bank));
     if (row.type === "Journal" || row.type.startsWith("Bank ")) { const key = `${row.date}:${row.reference}`; grouped.set(key, round((grouped.get(key) || 0) + amount)); }
     else flows.push(amount);
   }
@@ -142,7 +143,7 @@ export function cashFlow(s: Store, from = "", to = today()) {
   return { opening, openingAdjustment: adjustment, receipts, payments, net: round(receipts - payments), closing: round(opening + adjustment + receipts - payments) };
 }
 export function closeDay(s: Store, date: string, counted: number, explanation: string, actor: Actor): Store {
-  check(actor.role === "owner", "Only the owner can finalize a daily close.");
+  check(actor.role === "owner" || !!actor.modules?.includes("Closing"), "You do not have permission for Closing.");
   requireOpenDate(s, date);
   check(date <= today(), "Future dates cannot be closed.");
   check(Number.isFinite(counted) && counted >= 0 && round(counted) === counted, "Enter counted cash with at most two decimals.");
@@ -172,11 +173,14 @@ export function reverseVoucher(s: Store, type: "Journal" | "Bank", id: string, d
   if (type === "Journal") {
     const v = s.journals?.find(v => v.id === id && v.status === "posted");
     check(!!v && !s.journals?.some(r => r.reversalOf === id), "Select a posted journal that has not been reversed."); check(date >= v!.date && date <= today(), "Invalid reversal date.");
-    return saveJournal(s, { ...v!, id: uid(), number: "", date, reversalOf: id, reference: v!.number, notes: reason.trim(), lines: v!.lines.map(l => ({ ...l, id: uid(), debit: l.credit, credit: l.debit })) }, true);
+    return saveJournal(s, { ...v!, id: uid(), number: "", date, reversalOf: id, reference: v!.number, notes: reason.trim(), lines: v!.lines.map(l => {
+      const linked = (s.financialAccounts || []).filter(bank => bank.ledgerAccountId === l.accountId && (!bank.createdAt || bank.createdAt <= v!.postedAt!));
+      return { ...l, financialAccountId: l.financialAccountId || (linked.length === 1 ? linked[0].id : undefined), id: uid(), debit: l.credit, credit: l.debit };
+    }) }, true);
   }
   const v = s.bankVouchers?.find(v => v.id === id && v.status === "posted");
   check(!!v && !s.bankVouchers?.some(r => r.reversalOf === id), "Select a posted bank voucher that has not been reversed."); check(date >= v!.date && date <= today(), "Invalid reversal date.");
-  return saveBankVoucher(s, { ...v!, id: uid(), number: "", date, reversalOf: id, reference: v!.number, notes: reason.trim(), kind: v!.kind === "Receipt" ? "Payment" : v!.kind === "Payment" ? "Receipt" : "Transfer", ...(v!.kind === "Transfer" ? { accountId: v!.toAccountId, toAccountId: v!.accountId } : {}) }, true);
+  return saveBankVoucher(s, { ...v!, id: uid(), number: "", date, reversalOf: id, reference: v!.number, notes: reason.trim(), kind: v!.kind === "Receipt" ? "Payment" : v!.kind === "Payment" ? "Receipt" : "Transfer", ...(v!.kind === "Transfer" ? { accountId: v!.toAccountId, toAccountId: v!.accountId, ledgerAccountId: v!.toLedgerAccountId || s.financialAccounts?.find(a => a.id === v!.toAccountId)?.ledgerAccountId, toLedgerAccountId: v!.ledgerAccountId || s.financialAccounts?.find(a => a.id === v!.accountId)?.ledgerAccountId } : {}) }, true);
 }
 
 export function updateDraft(s: Store, kind: "Sale" | "Purchase", replacement: Trade): Store {

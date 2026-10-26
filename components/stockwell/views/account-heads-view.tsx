@@ -8,7 +8,8 @@ import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib
 import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
 import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
-import { money, round, type Store } from "@/lib/stockwell/model";
+import { money, round, today, type Store } from "@/lib/stockwell/model";
+import { bankBalanceSummary, sharedBankLedger } from "@/lib/stockwell/bank-vouchers";
 // Parse record dates in UTC so week boundaries do not shift with device timezone.
 function transactionWeek(date: string) {
   const day = new Date(`${date}T00:00:00Z`);
@@ -45,6 +46,8 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   const activeWeek = weeks[weekIndex];
   const weeklyTransactions = transactions.filter(r => transactionWeek(r.date) === activeWeek);
   const accounts = chartAccounts(s);
+  const bankSummary = bankBalanceSummary(s);
+  const sharedBank = sharedBankLedger(s);
   const sorted = [...accounts].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
   const visible = new Set(sorted.filter(a => matches(a.code, accountPath(accounts, a), a.type, a.description)).map(a => a.id));
   // Retain parents as context when a search only matches a child.
@@ -69,7 +72,8 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   function renderAccount(account: Account, ancestors: string[] = []) {
     if (!visible.has(account.id) || ancestors.includes(account.id)) return null;
     const children = sorted.filter(a => a.parentId === account.id && visible.has(a.id));
-    const journalBalance = journalAccountBalance(s, account);
+    const journalBalance = journalAccountBalance(s, account, today());
+    const isBankLedger = account.id === sharedBank?.id || (s.financialAccounts || []).some(bank => bank.ledgerAccountId === account.id);
     const accountTransactions = accounting.filter(r => r.head === account.name && inRange(r.date));
     const count = accountTransactions.length;
     const transactionTotal = round(accountTransactions.reduce((sum, row) => sum + row.amount, 0));
@@ -81,7 +85,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
         <dl className="chart-account-balance"><div><dt>Opening balance</dt><dd>{money(account.openingBalance)}</dd></div><div><dt>Nature</dt><dd>{account.nature}</dd></div></dl>
         <p className="chart-account-date">{account.openingDate ? `As of ${account.openingDate}` : "No opening date recorded"}</p>
         <p className="chart-account-activity">Net transaction amount <b>{money(transactionTotal)}</b><small>Selected period · includes sales, purchases, expenses and posted entries</small></p>
-        <p className="chart-account-journal-balance">Opening + posted vouchers <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
+        <p className="chart-account-journal-balance">{isBankLedger ? "Current bank ledger balance" : "Opening + posted vouchers"} <b>{money(Math.abs(journalBalance))} {journalBalance < 0 ? "Cr" : "Dr"}</b></p>
         {account.description && <p className="chart-account-description">{account.description}</p>}
         <div className="chart-account-footer"><span>{count} {count === 1 ? "transaction" : "transactions"}</span>{actor.role === "owner" && <button className="link" onClick={() => setEditing(account)} aria-label={`Edit ${account.name}`}>Edit account</button>}</div>
       </article>
@@ -90,6 +94,11 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   }
   return (
     <>
+      <section className="card" aria-label="Bank and wallet balances">
+        <div className="section-head"><div><span>ASSETS · BANK AND WALLETS</span><h2>Total Bank Balance</h2><strong>{money(bankSummary.total)}</strong></div><Badge>{bankSummary.balances.length} accounts</Badge></div>
+        <Table headers={["Bank / wallet", "Type", "Current balance"]} rows={bankSummary.balances.map(account => [account.name, `${account.type}${account.active === false ? " · Inactive" : ""}`, money(account.balance)])} empty="No bank or wallet accounts yet" />
+        {bankSummary.unassigned !== 0 && <p>Unassigned bank entries: <strong>{money(bankSummary.unassigned)}</strong></p>}
+      </section>
       <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
         <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
         {visible.size ? <>

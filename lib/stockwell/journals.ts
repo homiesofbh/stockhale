@@ -1,8 +1,8 @@
-import { bankVoucherLines, validateBanks } from "./bank-vouchers";
+import { bankVoucherLines, validateBanks, sharedBankLedger, bankStatement, bankBalanceSummary } from "./bank-vouchers";
 import { chartAccounts, type Account } from "./accounts";
 import { round, type Store } from "./model";
 
-export type JournalLine = { id: string; accountId: string; debit: number; credit: number; description: string };
+export type JournalLine = { id: string; accountId: string; debit: number; credit: number; description: string; financialAccountId?: string };
 export type JournalVoucher = {
   reversalOf?: string;
   id: string;
@@ -47,6 +47,10 @@ export function validateJournals(s: Store, before?: Store) {
       check(typeof line.id === "string" && !!line.id && !lineIds.has(line.id), "Journal line IDs must be unique."); lineIds.add(line.id);
       const account = accounts.find(a => a.id === line.accountId);
       check(!!account, "Select an existing account for every journal line.");
+      if (line.financialAccountId !== undefined) {
+        const bank = s.financialAccounts?.find(a => a.id === line.financialAccountId);
+        check(typeof line.financialAccountId === "string" && !!bank && bank.ledgerAccountId === line.accountId, "Invalid bank sub-ledger reference.");
+      }
       check(validAmount(line.debit) && validAmount(line.credit) && !(line.debit > 0 && line.credit > 0), "Each line must have a debit or credit, with at most two decimal places.");
       check(typeof line.description === "string" && line.description.length <= 500, "Line description is too long.");
       if (voucher.status === "posted") {
@@ -83,7 +87,11 @@ export function saveJournal(s: Store, voucher: JournalVoucher, post = false): St
   const previous = s.journals?.find(v => v.id === voucher.id);
   check(!previous || previous.status === "draft", "Posted journals cannot be edited.");
   const journal: JournalVoucher = {
-    ...voucher, number: previous?.number || nextJournalNumber(s), createdAt: previous?.createdAt || Date.now(),
+    ...voucher, lines: voucher.lines.map(line => {
+      if (line.financialAccountId) return { ...line };
+      const linked = (s.financialAccounts || []).filter(bank => bank.ledgerAccountId === line.accountId);
+      return linked.length === 1 ? { ...line, financialAccountId: linked[0].id } : { ...line };
+    }), number: previous?.number || nextJournalNumber(s), createdAt: previous?.createdAt || Date.now(),
     status: post ? "posted" : "draft", postedAt: post ? new Date().toISOString() : undefined,
   };
   const next = { ...s, journals: previous ? s.journals!.map(v => v.id === journal.id ? journal : v) : [...(s.journals || []), journal] };
@@ -92,8 +100,17 @@ export function saveJournal(s: Store, voucher: JournalVoucher, post = false): St
   return next;
 }
 
-/** Journal balances are debit-positive; a negative value is a credit balance. */
+/** Ledger balances are debit-positive; a negative value is a credit balance. */
 export function journalAccountBalance(s: Store, account: Account, through = "") {
+  const linkedBanks = (s.financialAccounts || []).filter(bank => bank.ledgerAccountId === account.id);
+  const isSharedBank = account.id === sharedBankLedger(s)?.id;
+  if (linkedBanks.length || isSharedBank) {
+    // The bank sub-ledgers include every settled operational movement and voucher.
+    // Reusing them prevents counting vouchers twice or omitting bill settlements.
+    const balances = linkedBanks.reduce((sum, bank) => sum + cents(bankStatement(s, bank, "", through).closing), 0);
+    const unassigned = isSharedBank ? cents(bankBalanceSummary(s, through).unassigned) : 0;
+    return (balances + unassigned) / 100;
+  }
   const opening = (!through || !account.openingDate || account.openingDate <= through)
     ? cents(account.openingBalance) * (account.nature === "Debit" ? 1 : -1) : 0;
   const bankLines = (s.bankVouchers || []).filter(v => v.status === "posted" && (!through || v.date <= through)).flatMap(v => bankVoucherLines(s, v));

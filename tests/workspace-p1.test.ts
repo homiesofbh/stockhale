@@ -26,8 +26,9 @@ test("P1 API controls and recoverable backup/restore", async t => {
   try {
     await migrate();
     owner = (await server.authenticate({ action: "signup", email: "p1-owner@example.test", password: "p1-owner-test-password", name: "Owner", storeName: "P1 Test Shop" }, request())).user;
-    const invite = await server.mutate(owner, { action: "invite", email: "p1-clerk@example.test", modules: ["Inventory", "Billing", "Purchases", "Payments", "Expenses", "Reports", "Accounts Heads"] });
-    clerk = (await server.authenticate({ action: "team-signup", email: "p1-clerk@example.test", password: "p1-clerk-test-password", name: "Clerk", invite: invite.invite }, request())).user;
+    const inviteResult = await server.mutate(owner, { action: "invite", email: "p1-clerk@example.test", modules: ["Inventory", "Billing", "Purchases", "Payments", "Expenses", "Reports", "Accounts Heads"] });
+    assert.ok("invite" in inviteResult && typeof inviteResult.invite === "string");
+    clerk = (await server.authenticate({ action: "team-signup", email: "p1-clerk@example.test", password: "p1-clerk-test-password", name: "Clerk", invite: inviteResult.invite }, request())).user;
     const w = await server.snapshot(owner); identity = w.id;
     const stocked = saveProduct(w.store, { id: "product", name: "Cloth", sku: "CLOTH", barcode: "", category: "General", cost: 5, price: 10, low: 0 }, 20);
     await sync(owner, stocked, "Inventory");
@@ -79,7 +80,8 @@ test("P1 API controls and recoverable backup/restore", async t => {
     await t.test("complete backup exceeds the UI audit limit; restore is owner-only and creates recovery points", async () => {
       await query(`INSERT INTO events(id,workspace,actor,module,action,records,"occurredAt","receivedAt","emailStatus") SELECT 'qa-p1-'||n::text,$1,'QA','Billing','QA event','{}',$2,$2,'sent' FROM generate_series(1,325) n`, [identity, new Date().toISOString()]);
       const snapshot = await server.snapshot(owner); assert.equal(snapshot.audit.length, 300);
-      const { backup } = await server.mutate(owner, { action: "backup" }); assert.ok(backup); assert.ok(backup.audit.length > 325);
+      const backupResult = await server.mutate(owner, { action: "backup" });
+      assert.ok("backup" in backupResult && backupResult.backup); const backup = backupResult.backup; assert.ok(backup.audit.length > 325);
       await validateRecoveryBackup(backup, identity);
       await assert.rejects(server.mutate(clerk, { action: "backup" }), /owner/);
       await assert.rejects(server.mutate(clerk, { action: "restore", revision: snapshot.revision, backup, confirmation: snapshot.name, reason: "Test" }), /owner/);
@@ -93,12 +95,14 @@ test("P1 API controls and recoverable backup/restore", async t => {
       const restored = await server.snapshot(owner);
       assert.equal(restored.store.expenses.length, backup.store.expenses.length);
       assert.equal(restored.revision, revision + 1);
-      const full = (await server.mutate(owner, { action: "backup" })).backup; assert.ok(full);
+      const fullResult = await server.mutate(owner, { action: "backup" });
+      assert.ok("backup" in fullResult && fullResult.backup); const full = fullResult.backup;
       assert.ok(full.audit.length > backup.audit.length);
       assert.ok(full.audit.some((a: any) => a.id === "qa-p1-1" && a.emailStatus === "sent"));
       const point = full.audit.find((event: any) => event.action === "Pre-restore safety snapshot");
       assert.ok(point); assert.equal(JSON.parse(point.records).store.expenses.length, expense.expenses.length);
-      const recovered = (await server.mutate(owner, { action: "backup-recovery", eventId: point.id })).backup; assert.ok(recovered);
+      const recoveredResult = await server.mutate(owner, { action: "backup-recovery", eventId: point.id });
+      assert.ok("backup" in recoveredResult && recoveredResult.backup); const recovered = recoveredResult.backup;
       assert.equal(recovered.store.expenses.length, expense.expenses.length);
       await validateRecoveryBackup(recovered, identity);
     });

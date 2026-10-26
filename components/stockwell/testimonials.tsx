@@ -1,22 +1,44 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { workspaceRequest } from "@/lib/stockwell/use-workspace";
+import { workspaceRequest } from "@/lib/stockwell/workspace-request";
 
 type Testimonial = { id: string; name: string; business: string; quote: string; rating: number };
+
+// Share only the in-flight request. Later mounts still see newly approved reviews.
+let publicRequest: Promise<Testimonial[]> | undefined;
+function loadTestimonials() {
+  if (!publicRequest) {
+    publicRequest = fetch("/api/workspace?testimonials=public", {
+      cache: "no-store",
+      signal: AbortSignal.timeout(45_000),
+    }).then(async response => {
+      if (!response.ok) throw new Error("Could not load testimonials.");
+      const value = await response.json();
+      return (value.testimonials || []) as Testimonial[];
+    }).finally(() => { publicRequest = undefined; });
+  }
+  return publicRequest;
+}
 
 export function TestimonialSection() {
   const [items, setItems] = useState<Testimonial[]>([]);
   const [showForm, setShowForm] = useState(false);
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  useEffect(() => { fetch("/api/workspace?testimonials=public", { cache: "no-store" }).then(r => r.json()).then(v => setItems(v.testimonials || [])).catch(() => {}); }, []);
+  useEffect(() => {
+    let active = true;
+    void loadTestimonials().then(items => { if (active) setItems(items); }).catch(() => {});
+    return () => { active = false; };
+  }, []);
   async function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault(); setBusy(true); setNotice("");
+    event.preventDefault();
+    const element = event.currentTarget;
+    setBusy(true); setNotice("");
     try {
-      const form = new FormData(event.currentTarget);
+      const form = new FormData(element);
       await workspaceRequest({ action: "testimonial-submit", name: form.get("name"), business: form.get("business"), quote: form.get("quote"), rating: Number(form.get("rating")) });
-      event.currentTarget.reset(); setShowForm(false); setNotice("Thanks. Your testimonial is awaiting admin review.");
+      element.reset(); setShowForm(false); setNotice("Thanks. Your testimonial is awaiting admin review.");
     } catch (error) { setNotice(error instanceof Error ? error.message : "Could not submit testimonial."); }
     finally { setBusy(false); }
   }

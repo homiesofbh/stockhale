@@ -4,25 +4,8 @@ import { verifyChange, changesBetween, modules, canAccessModule, cacheKey, recov
 import { normalizeStore, type Store } from "./model";
 import { configureServiceWorker } from "./service-worker-client";
 import { CACHE_VERSION, migrateCache } from "./cache-migrations";
-export async function workspaceRequest(body?: unknown) {
-  const res = await fetch("/api/workspace", {
-    method: body ? "POST" : "GET",
-    headers: body ? { "Content-Type": "application/json" } : undefined,
-    body: body ? JSON.stringify(body) : undefined,
-    cache: "no-store",
-    // A hung request (captive portal, dead Wi-Fi) would pin busy=true and stall
-    // sync forever. Safe to abort: the server dedupes sync changes by id.
-    signal: AbortSignal.timeout(20_000),
-  });
-  const value = await res.json();
-  if (!res.ok)
-    throw Object.assign(new Error(value.error || "Server unavailable"), {
-      status: res.status,
-      reason: value.reason,
-      serverRevision: value.serverRevision,
-    });
-  return value;
-}
+import { workspaceRequest } from "./workspace-request";
+export { workspaceRequest } from "./workspace-request";
 function failureStatus(status: number | undefined, message: string) {
   if (status === 409) return "Conflict · pending changes preserved";
   if (status === 403) return message === "Invalid request origin." ? "Request blocked · check the site address" : "Permission changed · pending changes preserved";
@@ -329,7 +312,11 @@ export function useWorkspace() {
       setSyncStatus(storageFailure ? "Device storage full · sync paused" : "Device cache needs recovery · sync paused");
       setReady(true);
     }
-    if (!cacheLoadBlocked.current) void sync();
+    // Give the authenticated dashboard cache a chance to paint before loading
+    // audit/team details. Pending changes and first loads still start immediately.
+    const startupTimer = window.setTimeout(() => {
+      if (!cacheLoadBlocked.current) void sync();
+    }, current.current && !current.current.queue.length ? 250 : 0);
     const timer = setInterval(() => {
       if (!document.hidden) void sync();
     }, 15000);
@@ -371,6 +358,7 @@ export function useWorkspace() {
       // Workspace records still persist locally if offline asset setup fails.
     });
     return () => {
+      window.clearTimeout(startupTimer);
       clearInterval(timer);
       window.removeEventListener("online", online);
       window.removeEventListener("offline", offline);

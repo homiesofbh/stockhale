@@ -1,7 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
 const path = require("node:path");
-const { scannerKey, isScannerBurst } = require(path.join(process.env.STOCKWELL_TEST_DIR, "scanner.js"));
+const { scannerKey } = require(path.join(process.env.STOCKWELL_TEST_DIR, "scanner.js"));
 const { findProductByCode, saveProduct, emptyStore, recordTrade, recordReturn, stock } = require(process.env.STOCKWELL_MODEL);
 function scans(keys) {
   let buffer = "";
@@ -14,14 +14,13 @@ function scans(keys) {
   }
   return codes;
 }
-test("automatic detection requires a sustained rapid scan outside the barcode field", () => {
-  assert.equal(isScannerBurst("123", 12, false), false);
-  assert.equal(isScannerBurst("001234", 30, false), true);
-  assert.equal(isScannerBurst("ABC-123", 42, false), true);
-  assert.equal(isScannerBurst("001234", 300, false), false);
-  assert.equal(isScannerBurst("ABC", 120, true), false);
-  assert.equal(isScannerBurst("ABC", 12, true), true);
-  assert.equal(isScannerBurst("001234", -1, false), false);
+test("explicit scanner input ignores control keys and preserves printable codes", () => {
+  for (const key of ["Shift", "Escape", "ArrowDown", "\n", "\u0000"]) {
+    assert.equal(scannerKey("001234", key), null);
+  }
+  assert.deepEqual(scannerKey("00123", "4"), { buffer: "001234" });
+  assert.deepEqual(scannerKey("", "Enter"), { buffer: "", code: "" });
+  assert.deepEqual(scannerKey("", "Backspace"), { buffer: "" });
 });
 test("Enter and Tab terminate repeated scans without dropping leading zeroes", () => {
   assert.deepEqual(scans([..."001234", "Enter", ..."001234", "Tab", "Enter"]), ["001234", "001234"]);

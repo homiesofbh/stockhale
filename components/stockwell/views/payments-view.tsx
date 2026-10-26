@@ -5,8 +5,7 @@ import type { Actor } from "@/lib/stockwell/operations";
 import { BankVouchersView } from "./bank-vouchers-view";
 import { Badge, Field, Modal, Stat, Table } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { chartAccounts } from "@/lib/stockwell/accounts";
-import { saveFinancialAccount } from "@/lib/stockwell/bank-vouchers";
+import { saveFinancialAccount, sharedBankLedger } from "@/lib/stockwell/bank-vouchers";
 import { financialRows, money, round, today, uid, type Store } from "@/lib/stockwell/model";
 type Props = {
   actor: Actor;
@@ -41,6 +40,8 @@ export function PaymentsView({
   const [accountName, setAccountName] = useState("");
   const [accountNumberInput, setAccountNumberInput] = useState("");
   const [accountType, setAccountType] = useState<"Bank" | "Wallet">("Bank");
+  const [accountOpeningBalance, setAccountOpeningBalance] = useState("0");
+  const [accountOpeningDate, setAccountOpeningDate] = useState("");
   const [accountError, setAccountError] = useState("");
   const [historyAccountId, setHistoryAccountId] = useState("");
   const [accountHistoryFrom, setAccountHistoryFrom] = useState("");
@@ -67,7 +68,7 @@ export function PaymentsView({
     else ledgerWithdrawals += entry.amount;
   }
   const partnerLedgerRows = partnerLedgerEntries.slice().reverse();
-  const availableLedgersFor = (accountId: string) => chartAccounts(s).filter(item => item.type === "Asset" && !chartAccounts(s).some(child => child.parentId === item.id) && !(s.financialAccounts || []).some(other => other.id !== accountId && other.ledgerAccountId === item.id));
+  const sharedLedger = sharedBankLedger(s);
   const trades = [...s.invoices, ...s.purchases];
   const bankHistory = financialRows(s)
     .filter((row) => row.financialAccountId && row.bank !== 0)
@@ -244,7 +245,7 @@ export function PaymentsView({
         <Table headers={["Date", "Partner", "Movement", "Amount", "Cash / bank account", "Notes"]} rows={(s.partners || []).filter(entry => inRange(entry.date) && matches(entry.partner, entry.kind, entry.method, entry.notes)).slice().sort((a, b) => b.date.localeCompare(a.date)).map(entry => [entry.date, entry.partner, <Badge tone={entry.kind === "Contribution" ? "green" : "amber"}>{entry.kind}</Badge>, money(entry.amount), entry.method, entry.notes || "—"])} empty="No partner capital movements in this period" />
       </section>
       <section className="card mt-8">
-        <div className="section-head"><div><h2>Bank and wallet accounts</h2><p>Add accounts, link each to its Asset ledger, and review their balances and transaction history here.</p></div></div>
+        <div className="section-head"><div><h2>Bank and wallet accounts</h2><p>All accounts share the Bank asset ledger while keeping separate balances and transaction histories.</p></div></div>
         {accountError && <p className="form-error" role="alert">{accountError}</p>}
         {actor.role === "owner" && <form className="form-grid account-form" onSubmit={event => {
           event.preventDefault();
@@ -252,22 +253,23 @@ export function PaymentsView({
           if (!name) return;
           if ((s.financialAccounts || []).some(account => account.name.toLowerCase() === name.toLowerCase())) { setAccountError("That payment account already exists."); return; }
           try {
-            commit(saveFinancialAccount(s, { id: uid(), name, accountNumber: accountNumberInput.trim() || undefined, type: accountType, active: true }), "Payment account added.");
-            setAccountName(""); setAccountNumberInput(""); setAccountError("");
+            const openingBalance = Number(accountOpeningBalance || 0);
+            if (!Number.isFinite(openingBalance) || openingBalance < 0 || round(openingBalance) !== openingBalance || openingBalance > 0 && !accountOpeningDate) { setAccountError("Enter a valid opening balance and its date."); return; }
+            commit(saveFinancialAccount(s, { id: uid(), name, accountNumber: accountNumberInput.trim() || undefined, type: accountType, active: true, openingBalance, openingDate: accountOpeningDate }), "Payment account added.");
+            setAccountName(""); setAccountNumberInput(""); setAccountOpeningBalance("0"); setAccountOpeningDate(""); setAccountError("");
           } catch (error) { setAccountError(error instanceof Error ? error.message : "Could not add account."); }
         }}>
           <Field label="Account name"><input value={accountName} onChange={event => setAccountName(event.target.value)} placeholder="e.g. HBL Business Account" maxLength={120} required /></Field>
           <Field label="Account number (optional)"><input value={accountNumberInput} onChange={event => setAccountNumberInput(event.target.value)} placeholder="e.g. IBAN or account number" maxLength={80} /></Field>
           <Field label="Account type"><GlassSelect value={accountType} onValueChange={value => setAccountType(value as "Bank" | "Wallet")}><option>Bank</option><option>Wallet</option></GlassSelect></Field>
+          <Field label="Opening balance"><input type="number" min="0" step="0.01" value={accountOpeningBalance} onChange={event => setAccountOpeningBalance(event.target.value)} /></Field>
+          <Field label="Opening balance date"><input type="date" value={accountOpeningDate} onChange={event => setAccountOpeningDate(event.target.value)} /></Field>
           <button className="primary" type="submit">Add account</button>
         </form>}
         <div className="permission-grid account-list">{(s.financialAccounts || []).map(account => <div key={account.id}>
           <b>{account.name} · {account.type}{account.accountNumber ? ` · ${account.accountNumber}` : ""}</b>
           <button type="button" className="link" onClick={() => setHistoryAccountId(account.id)}>View account history</button>
-          <Field label="Asset ledger account"><div><GlassSelect disabled={actor.role !== "owner"} value={account.ledgerAccountId || ""} onValueChange={value => {
-            try { commit(saveFinancialAccount(s, { ...account, ledgerAccountId: value }), `${account.name} ledger link updated.`); setAccountError(""); }
-            catch (error) { setAccountError(error instanceof Error ? error.message : "Could not update account."); }
-          }}><option value="">Select ledger account</option>{availableLedgersFor(account.id).map(item => <option key={item.id} value={item.id}>{item.code} · {item.name}</option>)}</GlassSelect>{availableLedgersFor(account.id).length === 0 ? <small className="field-help">No available Asset ledger accounts. Create an Asset account in Accounts Heads, then return here to link it.</small> : <small className="field-help">Each Asset ledger can be linked to one bank or wallet. Choose a different ledger if another account already uses it.</small>}</div></Field>
+          <Field label="Shared Asset ledger"><div><input value={sharedLedger ? `${sharedLedger.code} · ${sharedLedger.name}` : "Bank asset head not configured"} readOnly /><small className="field-help">New accounts use the shared Bank ledger. Each account keeps its opening balance and statement.</small></div></Field>
           {actor.role === "owner" && <button type="button" className="link" onClick={() => { try { commit(saveFinancialAccount(s, { ...account, active: account.active === false }), `${account.name} ${account.active === false ? "reactivated" : "deactivated"}.`); setAccountError(""); } catch (error) { setAccountError(error instanceof Error ? error.message : "Could not update account."); } }}>{account.active === false ? "Reactivate" : "Deactivate"}</button>}
         </div>)}</div>
       </section>

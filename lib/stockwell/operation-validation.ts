@@ -173,13 +173,22 @@ export function validateOperations(before: Store, after: Store, module: string, 
     const old = before[key]?.find(a => a.id === v.id);
     if (!old || !same(old, v)) {
       requireOpenDate(before, v.date);
+      if (module === "Closing" && key === "bankVouchers") {
+        const bankVoucher = v as NonNullable<Store["bankVouchers"]>[number];
+        const cash = chartAccounts(after).find(account => account.name === "Cash" && account.type === "Asset");
+        check(!old && bankVoucher.kind === "Receipt" && !bankVoucher.reversalOf && bankVoucher.toAccountId === "" && !!cash && !chartAccounts(after).some(child => child.parentId === cash.id) && bankVoucher.counterAccountId === cash.id, "Closing access may only record a new bank receipt from the Cash asset account.");
+      }
       if (v.reversalOf) {
         check(actor.role === "owner" && !!v.notes.trim(), "Only the owner can reverse vouchers, with a reason.");
         const original = before[key]?.find(a => a.id === v.reversalOf && a.status === "posted");
         check(!!original && v.status === "posted" && v.date >= original.date && v.date <= today() && !(before[key] || []).some(a => a.reversalOf === original.id) && (after[key] || []).filter(a => a.reversalOf === original.id).length === 1, "Invalid or duplicate reversal.");
         const oldLines = key === "journals" ? (original as any).lines : bankVoucherLines(before, original as any);
         const newLines = key === "journals" ? (v as any).lines : bankVoucherLines(after, v as any);
-        check(same(oldLines.map((l: any) => ({ accountId: l.accountId, debit: l.credit, credit: l.debit })).sort((a: any, b: any) => a.accountId.localeCompare(b.accountId)), newLines.map((l: any) => ({ accountId: l.accountId, debit: l.debit, credit: l.credit })).sort((a: any, b: any) => a.accountId.localeCompare(b.accountId))), "Reversal must exactly reverse the original entries.");
+        const canonicalLines = (lines: any[], store: Store, postedAt: string, reverse: boolean) => lines.map((line: any) => {
+          const linked = (store.financialAccounts || []).filter(bank => bank.ledgerAccountId === line.accountId && (!bank.createdAt || bank.createdAt <= postedAt));
+          return { accountId: line.accountId, financialAccountId: line.financialAccountId || (linked.length === 1 ? linked[0].id : ""), debit: reverse ? line.credit : line.debit, credit: reverse ? line.debit : line.credit };
+        }).sort((a, b) => a.accountId.localeCompare(b.accountId) || a.financialAccountId.localeCompare(b.financialAccountId) || a.debit - b.debit || a.credit - b.credit);
+        check(same(canonicalLines(oldLines, before, original!.postedAt!, true), canonicalLines(newLines, after, v.postedAt!, false)), "Reversal must exactly reverse the original entries.");
       }
     }
   }
@@ -187,7 +196,7 @@ export function validateOperations(before: Store, after: Store, module: string, 
     const next = after.dailyCloses?.find(c => c.id === old.id);
     check(!!next, "Closing records cannot be deleted.");
     if (!same(old, next)) {
-      check(actor.role === "owner" && old.status === "closed" && next!.status === "reopened" && next!.reopenedBy === actor.id && !!next!.reopenReason?.trim() && Number.isFinite(Date.parse(next!.reopenedAt || "")), "Only the owner can reopen a closing, with a reason.");
+      check(actor.role === "owner" && old.status === "closed" && next!.status === "reopened" && !!next!.reopenedBy && !!next!.reopenReason?.trim() && Number.isFinite(Date.parse(next!.reopenedAt || "")), "Only the owner can reopen a closing, with a reason.");
       check(same(without(old, ["status"]), without(next, ["status", "reopenedAt", "reopenedBy", "reopenReason"])), "Saved closing figures cannot change.");
       check(!before.dailyCloses?.some(c => c.status === "closed" && c.date > old.date), "Reopen later closings first.");
     }
@@ -201,9 +210,9 @@ export function validateOperations(before: Store, after: Store, module: string, 
   if (before.dailyCloses?.some(c => c.status === "closed")) for (const bank of before.financialAccounts || []) {
     check(!!after.financialAccounts?.some(next => next.id === bank.id && (next.ledgerAccountId || "") === (bank.ledgerAccountId || "")), "Reopen closed periods before changing bank ledger links.");
   }
-  for (const bank of additions(before.financialAccounts || [], after.financialAccounts || [])) if (bank.ledgerAccountId) {
+  for (const bank of additions(before.financialAccounts || [], after.financialAccounts || [])) if (bank.ledgerAccountId || bank.openingBalance) {
     const ledger = chartAccounts(after).find(a => a.id === bank.ledgerAccountId);
-    requireOpenDate(before, ledger?.openingDate || today());
+    requireOpenDate(before, bank.openingDate || ledger?.openingDate || today());
   }
   if (before.dailyCloses?.some(c => c.status === "closed")) for (const account of chartAccounts(before)) {
     const next = chartAccounts(after).find(a => a.id === account.id);

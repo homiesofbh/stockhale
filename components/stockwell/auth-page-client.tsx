@@ -1,5 +1,6 @@
 "use client";
-import { workspaceRequest } from "@/lib/stockwell/use-workspace";
+import { workspaceRequest } from "@/lib/stockwell/workspace-request";
+import { CACHE_VERSION, migrateCache } from "@/lib/stockwell/cache-migrations";
 import { cacheKey } from "@/lib/stockwell/workspace";
 import { useEffect, useState, type FormEvent } from "react";
 export function AuthPageClient({
@@ -41,7 +42,7 @@ export function AuthPageClient({
         action: teamSignup ? "team-signup" : signup ? "signup" : "signin",
       });
       const existing = localStorage.getItem(cacheKey(w.id));
-      const cached = existing ? JSON.parse(existing) : null;
+      const cached = existing ? migrateCache(JSON.parse(existing)) : null;
       if (cached?.queue?.length && cached.workspace.member.id !== w.member.id)
         throw new Error(
           "Pending records belong to another user. Sign in as that user to sync them first."
@@ -53,11 +54,11 @@ export function AuthPageClient({
         cacheKey(w.id),
         JSON.stringify(
           cached?.queue?.length
-            ? { ...cached, workspace: { ...workspace, store: cached.workspace.store } }
-            : { workspace, revision: workspace.revision, queue: [] }
+            ? { ...cached, workspace: { ...workspace, store: cached.workspace.store, revision: cached.revision } }
+            : { version: CACHE_VERSION, workspace, revision: workspace.revision, queue: [] }
         )
       );
-      localStorage.setItem("stockwell.active", w.id);
+      localStorage.setItem("stockhale.active", w.id);
       location.assign("/workspace");
     } catch (e) {
       setError(e instanceof Error ? e.message : "Could not sign in");

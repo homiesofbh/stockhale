@@ -76,7 +76,7 @@ export type Trade = {
   chequeBank?: string;
   chequeDate?: string;
 };
-export type FinancialAccount = { id: string; name: string; type: "Bank" | "Wallet"; accountNumber?: string; ledgerAccountId?: string; active?: boolean };
+export type FinancialAccount = { createdAt?: string; id: string; name: string; type: "Bank" | "Wallet"; accountNumber?: string; ledgerAccountId?: string; openingBalance?: number; openingDate?: string; active?: boolean };
 export type Movement = {
   id: string;
   productId: string;
@@ -830,20 +830,25 @@ export function financialRows(s: Store): FinancialRow[] {
       0,
     ),
   );
-  const postLines = (date: string, reference: string, type: string, lines: JournalVoucher["lines"]) => {
+  const postLines = (date: string, reference: string, type: string, lines: JournalVoucher["lines"], postedAt?: string) => {
     lines.forEach(line => {
       const account = s.accounts?.find(a => a.id === line.accountId);
-      const bank = s.financialAccounts?.find(a => a.ledgerAccountId === line.accountId);
+      const legacyHead = line.accountId.startsWith("legacy:") ? line.accountId.slice("legacy:".length) : "";
+      const head = account?.name || (s.heads.includes(legacyHead) ? legacyHead : "Unknown account");
+      const linkedBanks = (s.financialAccounts || []).filter(a => a.ledgerAccountId === line.accountId && (!a.createdAt || !!postedAt && a.createdAt <= postedAt));
+      const bank = line.financialAccountId
+        ? s.financialAccounts?.find(a => a.id === line.financialAccountId)
+        : linkedBanks.length === 1 ? linkedBanks[0] : undefined;
       const amount = round(line.debit - line.credit);
       rows.push({
-        date, reference, type, head: account?.name || "Unknown account", method: bank?.name || "Journal adjustment",
+        date, reference, type, head, method: bank?.name || "Journal adjustment",
         amount, debit: line.debit, credit: line.credit,
-        cash: !bank && account?.name === "Cash" && account.type === "Asset" ? amount : 0,
-        bank: bank ? amount : 0, financialAccountId: bank?.id, contactId: "",
+        cash: !bank && (account?.name === "Cash" && account.type === "Asset" || !account && legacyHead === "Cash" && s.heads.includes("Cash")) ? amount : 0,
+        bank: bank || linkedBanks.length || head === "Bank" ? amount : 0, financialAccountId: bank?.id, contactId: "",
       });
     });
   };
-  (s.journals || []).filter(v => v.status === "posted").forEach(v => postLines(v.date, v.number, "Journal", v.lines));
+  (s.journals || []).filter(v => v.status === "posted").forEach(v => postLines(v.date, v.number, "Journal", v.lines, v.postedAt));
   (s.bankVouchers || []).filter(v => v.status === "posted").forEach(v => postLines(v.date, v.number, `Bank ${v.kind.toLowerCase()}`, bankVoucherLines(s, v)));
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }

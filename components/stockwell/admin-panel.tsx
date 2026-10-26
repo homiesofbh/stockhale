@@ -2,7 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, RefreshCw, Search, Users } from "lucide-react";
-import { workspaceRequest } from "@/lib/stockwell/use-workspace";
+import { workspaceRequest } from "@/lib/stockwell/workspace-request";
 
 /* -------------------------------------------------------------------------- */
 /* Types                                                                      */

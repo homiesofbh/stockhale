@@ -43,9 +43,6 @@ export type Member = {
  */
 export function canAccessModule(member: Member, module: string) {
   if (module === "Settings" || module === "Notifications") return member.role === "owner";
-  // Closing can lock a day and prevent new or corrected entries before that date.
-  // Keep it owner-only even though other granted modules are member-accessible.
-  if (module === "Closing") return member.role === "owner";
   return modules.includes(module as (typeof modules)[number]) &&
     (member.role === "owner" || member.modules.includes(module));
 }
@@ -84,6 +81,7 @@ export type Workspace = {
   id: string;
   name: string;
   image: string;
+  timeZone: string;
   revision: number;
   store: Store;
   member: Member;
@@ -169,11 +167,11 @@ export const collectionModules: Record<string, string[]> = {
   heads: ["Accounts Heads"],
   accounts: ["Accounts Heads"],
   journals: ["Accounts Heads"],
-  bankVouchers: ["Payments"],
   corrections: ["Billing", "Purchases"],
   walkInLinks: ["Billing"],
   chequeEvents: ["Payments"],
   dailyCloses: ["Reports", "Closing"],
+  bankVouchers: ["Payments", "Closing"],
   financialAccounts: ["Accounts Heads", "Payments", "Billing", "Purchases", "Expenses"],
   expenseCategories: ["Expenses"],
   purchases: ["Purchases"],

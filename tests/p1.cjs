@@ -47,7 +47,7 @@ function linked(s) {
  return b.saveFinancialAccount(s, { id: 'hbl', name: 'HBL', type: 'Bank', ledgerAccountId: 'ledger' });
 }
 test('draft bills have no stock, cash, balance or profit effect; posting applies once', () => {
- const s = fixture(), draft = m.recordTrade(s, 'Sale', bill({ status: 'draft', paid: 20 }));
+ const s = fixture(), draft = m.recordTrade(s, 'Sale', bill({ date: day, status: 'draft', paid: 20 }));
  assert.equal(m.stock(draft, 'p'), 20); assert.equal(m.balance(draft, draft.invoices[0]), 0);
  assert.equal(m.financialRows(draft).length, 0); assert.equal(m.profit(draft).revenue, 0);
  assert.equal(r.createReportData(draft, opts('Receivables report')).rows.length, 0);
@@ -68,16 +68,16 @@ test('purchase drafts preserve costs; posting updates only the cost and stock', 
 });
 test('walk-ins match unique normalized phone; names alone and anonymous visits remain separate', () => {
  const s = fixture();
- const matched = m.recordTrade(s, 'Sale', bill({ contactId: '', paid: 20, walkInName: 'Buyer', walkInPhone: '+92300123' }));
+ const matched = m.recordTrade(s, 'Sale', bill({ date: day, contactId: '', paid: 20, walkInName: 'Buyer', walkInPhone: '+92300123' }));
  assert.equal(matched.customers.length, 1); assert.equal(matched.invoices[0].contactId, 'customer');
- const separate = m.recordTrade(s, 'Sale', bill({ contactId: '', paid: 20, walkInName: 'Buyer' }));
+ const separate = m.recordTrade(s, 'Sale', bill({ date: day, contactId: '', paid: 20, walkInName: 'Buyer' }));
  assert.equal(separate.customers.length, 2); assert.notEqual(separate.invoices[0].contactId, 'customer');
  w.verifyChange(s, separate, 'Billing', context(clerk));
- const anonymous = m.recordTrade(s, 'Sale', bill({ contactId: '', paid: 20 }));
+ const anonymous = m.recordTrade(s, 'Sale', bill({ date: day, contactId: '', paid: 20 }));
  w.verifyChange(s, anonymous, 'Billing', context(clerk));
  assert.equal(anonymous.customers[1].name, `Walk-in ${anonymous.invoices[0].number}`);
  const ambiguous = structuredClone(s); ambiguous.customers.push({ ...s.customers[0], id: 'duplicate' });
- assert.throws(() => m.recordTrade(ambiguous, 'Sale', bill({ contactId: '', paid: 20, walkInPhone: '+92300123' })), /multiple/);
+ assert.throws(() => m.recordTrade(ambiguous, 'Sale', bill({ date: day, contactId: '', paid: 20, walkInPhone: '+92300123' })), /multiple/);
 });
 test('owner corrections update stock and preserve historical reports and audit snapshots', () => {
  const s = posted(), original = s.invoices[0];
@@ -160,7 +160,7 @@ test('cash flow excludes bank transfers while bank statements retain both sides'
 test('daily close saves counted cash and variance; closed dates lock entries until owner reopening', () => {
  const s = m.recordTrade(fixture(), 'Sale', bill({ date: day, paid: 20 }));
  assert.throws(() => o.closeDay(s, day, 19, '', owner), /Explain/);
- assert.throws(() => o.closeDay(s, day, 20, '', clerk), /owner/);
+ assert.throws(() => o.closeDay(s, day, 20, '', clerk), /permission/);
  const closed = o.closeDay(s, day, 19, 'Drawer short', owner);
  w.verifyChange(s, closed, 'Reports', context(owner)); assert.equal(closed.dailyCloses[0].variance, -1);
  assert.throws(() => m.recordTrade(closed, 'Sale', bill({ id: 'new', date: day })), /closed/);
@@ -260,7 +260,7 @@ test('future bills may be planned as drafts but cannot affect stock before their
 });
 
 test('new sale costs come from the product at posting and forged line costs are rejected', () => {
- const base = fixture(), created = m.recordTrade(base, 'Sale', bill({ lines: [{ productId: 'p', qty: 2, price: 10, cost: 0 }] }));
+ const base = fixture(), created = m.recordTrade(base, 'Sale', bill({ date: day, lines: [{ productId: 'p', qty: 2, price: 10, cost: 0 }] }));
  assert.equal(created.invoices[0].lines[0].cost, 5);
  const forged = structuredClone(created); forged.invoices[0].lines[0].cost = 0;
  assert.throws(() => w.verifyChange(base, forged, 'Billing', context(clerk)), /posting calculations/);

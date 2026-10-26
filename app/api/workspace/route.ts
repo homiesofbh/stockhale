@@ -123,7 +123,8 @@ export async function POST(request: Request) {
         return Response.json(await resetPassword(payload, request), { headers });
       if (["signin", "signup", "team-signup"].includes(payload.action)) {
         const { user, headers: authHeaders } = await authenticate(payload, request);
-        return Response.json(await snapshot(user), {
+        const overview = await snapshot(user, { details: false });
+        return Response.json(overview, {
           headers: sessionHeaders(authHeaders),
         });
       }

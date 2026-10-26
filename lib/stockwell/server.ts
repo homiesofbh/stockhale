@@ -3,12 +3,14 @@ import { validateStore } from "./operation-validation";
 import { validateBanks } from "./bank-vouchers";
 import { validateAccounts } from "./accounts";
 import { validateJournals } from "./journals";
-import { createHash, randomBytes, randomUUID } from "node:crypto";
+import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
+import { verifyPassword } from "better-auth/crypto";
 import { isIP } from "node:net";
 import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
 import { emptyStore, normalizeStore } from "./model";
 import { modules, verifyChange, prepareSyncChange, type Member } from "./workspace";
+import { reopenDay } from "./operations";
 export { db } from "./database";
 type Row = Record<string, any>;
 const row = async (sql: string, ...args: unknown[]) =>
@@ -46,6 +48,12 @@ function required(value: unknown, max = 200) {
   if (typeof value !== "string" || !value.trim() || value.length > max)
     throw new Error("Required field is missing or too long.");
   return value.trim();
+}
+function validTimeZone(value: unknown) {
+  if (typeof value !== "string" || value.length > 100) throw new Error("Choose a valid time zone.");
+  try { new Intl.DateTimeFormat("en", { timeZone: value }).format(); }
+  catch { throw new Error("Choose a valid time zone."); }
+  return value;
 }
 function email(value: unknown) {
   const s = required(value).toLowerCase();
@@ -123,12 +131,12 @@ export async function recordAudit(user: Row, module: string, action: string, rec
   const w = await workspace(user);
   await event(w, user, module, action, records);
 }
-export async function snapshot(user: Row) {
+export async function snapshot(user: Row, options: { details?: boolean } = {}) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const w = await workspace(user);
     const access = trialAccess(w);
-    if (!access.locked) return readSnapshot(user);
+    if (!access.locked) return readSnapshot(user, w, options.details !== false);
     return {
       ...access, id: w.id, name: w.name, image: "", revision: 0,
       store: emptyStore(), member: await member(w, user), members: [], audit: [],
@@ -320,18 +328,19 @@ export async function reviewTestimonial(user: Row, body: Row) {
   if (!result.rowCount) throw Object.assign(new Error("This testimonial is no longer pending."), { status: 409 });
   return { ok: true };
 }
-async function readSnapshot(user: Row) {
-  const w = await workspace(user),
-    m = await member(w, user);
+async function readSnapshot(user: Row, existingWorkspace?: Row, details = true) {
+  const w = existingWorkspace || await workspace(user);
+  const m = await member(w, user);
   return {
     id: w.id,
     name: w.name,
     image: w.image,
+    timeZone: w.time_zone || "UTC",
     revision: w.revision,
     store: normalizeStore(JSON.parse(w.store)),
     member: m,
     members:
-      m.role === "owner"
+      details && m.role === "owner"
         ? (await all(
             'SELECT users.id,users.name,users.email,members.modules FROM users JOIN members ON members."user"=users.id WHERE members.workspace=$1',
             w.id,
@@ -344,7 +353,7 @@ async function readSnapshot(user: Row) {
           }))
         : [],
     audit:
-      m.role === "owner"
+      details && m.role === "owner"
         ? await all(
             'SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC LIMIT 300',
             w.id,
@@ -534,6 +543,34 @@ export async function mutate(user: Row, body: Row) {
       ]);
       return { accepted };
     }
+    if (body.action === "reopen-day") {
+      const m = await member(w, user);
+      if (m.role !== "owner" && !m.modules.includes("Closing"))
+        throw Object.assign(new Error("You do not have permission for Closing."), { status: 403 });
+      const password = required(body.password, 128);
+      await consumeLimit(`reopen-owner:${digest(w.owner)}:${digest(user.id)}`, 5, 900_000);
+      const account = await row(
+        'SELECT password FROM auth_accounts WHERE "userId"=$1 AND "providerId"=$2 LIMIT 1',
+        w.owner,
+        "credential",
+      );
+      if (!account?.password) throw new Error("The workspace owner has no password credential.");
+      const hash = String(account.password);
+      const legacy = /^stockwell-legacy:([a-f0-9]{32}):([a-f0-9]{128})$/.exec(hash);
+      const matches = legacy
+        ? timingSafeEqual(scryptSync(password, legacy[1], 64), Buffer.from(legacy[2], "hex"))
+        : await verifyPassword({ hash, password });
+      if (!matches) throw new Error("Owner password is incorrect.");
+      const reason = required(body.reason, 2000);
+      const before = normalizeStore(JSON.parse(w.store));
+      const after = reopenDay(before, required(body.closingId), reason, { id: w.owner, role: "owner" });
+      const occurredAt = new Date().toISOString();
+      const records = verifyChange(before, after, "Closing", { actor: { id: w.owner, role: "owner", modules: [] }, occurredAt, receivedAt: occurredAt });
+      const updated = await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2 AND revision=$3", [JSON.stringify(after), w.id, w.revision]);
+      if (!updated.rowCount) throw Object.assign(new Error("Workspace changed. Reload and try again."), { status: 409 });
+      await event(w, user, "Closing", "Daily close reopened with workspace owner password approval", records, randomUUID(), occurredAt);
+      return readSnapshot(user);
+    }
     owner(w, user);
     if (body.action === "backup" || body.action === "backup-recovery") {
       const audit = await all('SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC,id DESC', w.id);
@@ -607,6 +644,7 @@ export async function mutate(user: Row, body: Row) {
     } else if (body.action === "settings") {
       const name = required(body.name);
       const image = body.image || "";
+      const timeZone = body.timeZone === undefined ? (w.time_zone || "UTC") : validTimeZone(body.timeZone);
       if (
         typeof image !== "string" ||
         image.length > 700000 ||
@@ -614,9 +652,10 @@ export async function mutate(user: Row, body: Row) {
           !/^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/.test(image))
       )
         throw new Error("Choose a PNG, JPEG or WebP image under 500 KB.");
-      await query("UPDATE workspaces SET name=$1,image=$2 WHERE id=$3", [
+      await query("UPDATE workspaces SET name=$1,image=$2,time_zone=$3 WHERE id=$4", [
         name,
         image,
+        timeZone,
         w.id,
       ]);
       await event(
@@ -624,7 +663,7 @@ export async function mutate(user: Row, body: Row) {
         user,
         "Settings",
         "Store profile updated",
-        `Store name: ${name}; image ${image ? "set" : "removed"}`,
+        `Store name: ${name}; image ${image ? "set" : "removed"}; daily digest time zone: ${timeZone}`,
       );
     } else if (["invite", "add-member"].includes(body.action)) {
       const mail = email(body.email);
@@ -690,68 +729,94 @@ export async function logout(request: Request) {
   });
   return result.headers;
 }
+function localDateAt(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+  const part = (type: string) => parts.find((item) => item.type === type)?.value || "00";
+  return `${part("year")}-${part("month")}-${part("day")}`;
+}
 let delivering = false;
 export async function deliverEmails() {
   if (!process.env.RESEND_API_KEY || !process.env.RESEND_FROM)
     return;
+  if (delivering) return;
+  delivering = true;
+  try {
+    // Non-digest messages (currently plan reminders) retain immediate delivery.
+    for (const e of await all(
+      `WITH due AS (
+         SELECT id FROM events WHERE "emailStatus" <> 'sent' AND "nextAttempt" <= $1
+           AND action='Plan renewal reminder' ORDER BY "receivedAt" LIMIT 10 FOR UPDATE SKIP LOCKED
+       ), claimed AS (
+         UPDATE events SET "nextAttempt"=$2 FROM due WHERE events.id=due.id RETURNING events.*
+       )
+       SELECT claimed.*, users.email, workspaces.name FROM claimed
+       JOIN workspaces ON claimed.workspace=workspaces.id JOIN users ON workspaces.owner=users.id`,
+      Date.now(), Date.now() + 120000,
+    )) {
+      try {
+        const response = await fetch("https://api.resend.com/emails", {
+          method: "POST", headers: { Authorization: `Bearer ${process.env.RESEND_API_KEY}`, "Content-Type": "application/json", "Idempotency-Key": `stockwell/${e.id}` },
+          body: JSON.stringify({ from: process.env.RESEND_FROM, to: [e.email], subject: `${e.name}: ${e.action}`, text: `${e.actor}\n${e.module}: ${e.action}\nRecords: ${e.records}\nAction time: ${e.occurredAt}\nSynced: ${e.receivedAt}` }),
+          signal: AbortSignal.timeout(8000),
+        });
+        if (!response.ok) throw new Error("Email provider rejected delivery");
+        await query('UPDATE events SET "emailStatus"=\'sent\' WHERE id=$1', [e.id]);
+      } catch {
+        await query('UPDATE events SET "emailStatus"=\'retrying\',attempts=attempts+1,"nextAttempt"=$1 WHERE id=$2', [Date.now() + Math.min(3600000, 30000 * 2 ** Math.min(e.attempts, 7)), e.id]);
+      }
+    }
 
-  for (const e of await all(
-    `WITH due AS (
-       SELECT id FROM events
-       WHERE "emailStatus" <> $1
-         AND "nextAttempt" <= $2
-         AND action <> 'Pre-restore safety snapshot'
-       ORDER BY "receivedAt"
-       LIMIT 10
-       FOR UPDATE SKIP LOCKED
-     ), claimed AS (
-       UPDATE events
-       SET "nextAttempt"=$3
-       FROM due
-       WHERE events.id=due.id
-       RETURNING events.*
-     )
-     SELECT claimed.*, users.email, workspaces.name
-     FROM claimed
-     JOIN workspaces ON claimed.workspace=workspaces.id
-     JOIN users ON workspaces.owner=users.id`,
-    "sent",
-    Date.now(),
-    Date.now() + 120000,
-  )) {
-    try {
-      const response = await fetch("https://api.resend.com/emails", {
+    const workspaces = await all(
+      `SELECT w.id,w.name,w.owner,w.time_zone,w."digestDate",u.email
+       FROM workspaces w JOIN users u ON w.owner=u.id
+       WHERE w."digestLease" <= $1 AND EXISTS (SELECT 1 FROM events e WHERE e.workspace=w.id AND e."emailStatus" <> 'sent' AND e."nextAttempt" <= $1 AND e.action NOT IN ('Plan renewal reminder','Pre-restore safety snapshot'))
+       ORDER BY w.id LIMIT 20`,
+      Date.now(),
+    );
+    for (const w of workspaces) {
+      const claimed = await row('UPDATE workspaces SET "digestLease"=$1 WHERE id=$2 AND "digestLease" <= $3 RETURNING id', Date.now() + 120000, w.id, Date.now());
+      if (!claimed) continue;
+      const today = localDateAt(new Date(), w.time_zone || "UTC");
+      const dueDate = w.digestDate ? String(w.digestDate).slice(0, 10) : null;
+      if (dueDate && dueDate >= today) {
+        await query('UPDATE workspaces SET "digestLease"=0 WHERE id=$1', [w.id]);
+        continue;
+      }
+      const events = await all(
+        `SELECT id,actor,module,action,records,"occurredAt","receivedAt",attempts FROM events
+         WHERE workspace=$1 AND "emailStatus" <> 'sent' AND "nextAttempt" <= $2 AND action NOT IN ('Plan renewal reminder','Pre-restore safety snapshot')
+         ORDER BY "receivedAt",id LIMIT 500`, w.id, Date.now(),
+      );
+      if (!events.length) { await query('UPDATE workspaces SET "digestLease"=0 WHERE id=$1', [w.id]); continue; }
+      const ids = events.map((e) => e.id);
+      const digestKey = `stockwell/digest/${w.id}/${dueDate || today}`;
+      try {
+        const rows = events.map((e) => `• ${e.actor}\n  ${e.module}: ${e.action}\n  Records: ${e.records}\n  Action time: ${e.occurredAt}\n  Synced: ${e.receivedAt}`).join("\n\n");
+        const response = await fetch("https://api.resend.com/emails", {
         method: "POST",
         headers: {
           Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
           "Content-Type": "application/json",
-          "Idempotency-Key": `stockwell/${e.id}`,
+          "Idempotency-Key": digestKey,
         },
         body: JSON.stringify({
           from: process.env.RESEND_FROM,
-          to: [e.email],
-          subject: `${e.name}: ${e.action}`,
-          text: `${e.actor}\n${e.module}: ${e.action}\nRecords: ${e.records}\nAction time: ${e.occurredAt}\nSynced: ${e.receivedAt}`,
+          to: [w.email],
+          subject: `${w.name}: daily activity summary (${dueDate || today})`,
+          text: `Activity for ${dueDate || today} (${w.time_zone || "UTC"})\n\n${rows}`,
         }),
         signal: AbortSignal.timeout(8000),
       });
-
-      if (!response.ok)
-        throw new Error("Email provider rejected delivery");
-
-      await query(
-        'UPDATE events SET "emailStatus"=\'sent\' WHERE id=$1',
-        [e.id],
-      );
-    } catch {
-      await query(
-        'UPDATE events SET "emailStatus"=\'retrying\',attempts=attempts+1,"nextAttempt"=$1 WHERE id=$2',
-        [
-          Date.now() +
-            Math.min(3600000, 30000 * 2 ** Math.min(e.attempts, 7)),
-          e.id,
-        ],
-      );
+        if (!response.ok) throw new Error("Email provider rejected delivery");
+        await query('UPDATE events SET "emailStatus"=\'sent\' WHERE id=ANY($1::text[])', [ids]);
+        await query('UPDATE workspaces SET "digestDate"=$1,"digestLease"=0 WHERE id=$2', [today, w.id]);
+      } catch {
+        const attempts = Math.max(...events.map((e) => Number(e.attempts || 0)));
+        await query('UPDATE events SET "emailStatus"=\'retrying\',attempts=attempts+1,"nextAttempt"=$1 WHERE id=ANY($2::text[])', [Date.now() + Math.min(3600000, 30000 * 2 ** Math.min(attempts, 7)), ids]);
+        await query('UPDATE workspaces SET "digestLease"=0 WHERE id=$1', [w.id]);
+      }
     }
+  } finally {
+    delivering = false;
   }
 }

@@ -715,6 +715,7 @@ export function WorkspaceApp() {
                         <ReportsView
                           actor={account.member}
                           commit={commit}
+                          reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })}
                           report={report}
                           setReport={setReport}
                           setReportContact={setReportContact}
@@ -725,7 +726,7 @@ export function WorkspaceApp() {
                           reportResult={reportResult}
                         />
                       )}
-                      {module === "Closing" && <DailyClosingView s={s} actor={account.member} commit={commit} />}
+                      {module === "Closing" && <DailyClosingView s={s} actor={account.member} commit={commit} reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })} />}
                     </>
                   )}
                 </div>

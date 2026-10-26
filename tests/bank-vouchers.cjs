@@ -71,7 +71,7 @@ test("posting validates links, distinct transfer accounts, amounts, and dates", 
   const { s, voucher } = fixture();
   for (const patch of [{ amount: 0 }, { amount: -1 }, { amount: 0.001 }, { date: "2026-02-30" }, { date: "2026-09-30" }, { accountId: "missing" }, { counterAccountId: "ledger2" }]) assert.throws(() => b.saveBankVoucher(s, { ...voucher, ...patch }, true));
   assert.throws(() => b.saveBankVoucher(s, { ...voucher, kind: "Transfer", toAccountId: "bank1", counterAccountId: "" }, true), /different/);
-  assert.throws(() => b.saveBankVoucher(s, { ...voucher, accountId: "jazzcash" }, true), /Link/);
+  assert.throws(() => b.saveBankVoucher(s, { ...voucher, accountId: "jazzcash" }, true), /existing bank or wallet/);
   assert.throws(() => b.saveFinancialAccount(s, { id: "other", name: "Other bank", type: "Bank", ledgerAccountId: "ledger1" }), /own ledger/);
 });
 test("manual journals against linked bank accounts affect separate balances", () => {

@@ -21,6 +21,7 @@ export function WorkspaceSettings({
 }) {
   const [name, setName] = useState(workspace.name),
     [image, setImage] = useState(workspace.image),
+    [timeZone, setTimeZone] = useState(workspace.timeZone || Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC"),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
     [invite, setInvite] = useState(""),
@@ -81,7 +82,7 @@ export function WorkspaceSettings({
           <form
             onSubmit={(e) => {
               e.preventDefault();
-              void run({ action: "settings", name, image });
+              void run({ action: "settings", name, image, timeZone });
             }}
           >
             <label className="field">
@@ -110,6 +111,14 @@ export function WorkspaceSettings({
                   reader.readAsDataURL(file);
                 }}
               />
+            </label>
+            <label className="field">
+              <span>Daily activity digest time zone</span>
+              <input list="workspace-time-zones" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} required />
+              <datalist id="workspace-time-zones">
+                {Intl.supportedValuesOf("timeZone").map((zone) => <option key={zone} value={zone} />)}
+              </datalist>
+              <small>The activity summary is sent after midnight in this time zone. Choose your store’s local time zone.</small>
             </label>
             {image && (
               <div className="store-image-preview">
@@ -260,7 +269,7 @@ export function WorkspaceSettings({
         <h2>Email notifications</h2>
         <p>
           {workspace.emailConfigured
-            ? "Resend is configured. Record changes notify the workspace owner."
+            ? `Resend is configured. Record changes are grouped into one daily email after midnight (${timeZone}).`
             : "Resend is not configured yet. Set RESEND_API_KEY and RESEND_FROM on the server. Alerts are kept in the email outbox."}
         </p>
         <button

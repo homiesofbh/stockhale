@@ -22,6 +22,7 @@ function printReport(report: string, columns: string[], rows: unknown[][], from:
 type Props = {
   actor: Actor;
   commit: (s: Store, message: string) => void;
+  reopenWithOwnerPassword: (closingId: string, reason: string, password: string) => Promise<unknown>;
   report: string;
   setReport: Dispatch<SetStateAction<string>>;
   setReportContact: Dispatch<SetStateAction<string>>;
@@ -37,7 +38,7 @@ type Props = {
   };
 };
 export function ReportsView({
-  actor, commit,
+  actor, commit, reopenWithOwnerPassword,
   report,
   setReport,
   setReportContact,
@@ -168,7 +169,7 @@ export function ReportsView({
           )}
         />
       </section>
-      <DailyClosingView s={s} actor={actor} commit={commit} />
+      <DailyClosingView s={s} actor={actor} commit={commit} reopenWithOwnerPassword={reopenWithOwnerPassword} />
     </>
   );
 }
