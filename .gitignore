@@ -388,6 +388,7 @@ lib/stockwell/*
 !lib/stockwell/attachment-client.ts
 !lib/stockwell/cache-migrations.ts
 !lib/stockwell/request-body.ts
+!lib/stockwell/workspace-request.ts
 .neon
 
 AGENTS.md
