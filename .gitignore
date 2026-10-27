@@ -69,6 +69,7 @@ web_modules/
 .env
 .env.*
 !.env.example
+client_secret_*.apps.googleusercontent.com.json
 
 # parcel-bundler cache (https://parceljs.org/)
 .cache
@@ -389,9 +390,18 @@ lib/stockwell/*
 !lib/stockwell/cache-migrations.ts
 !lib/stockwell/request-body.ts
 !lib/stockwell/workspace-request.ts
+
+# Public SEO source and the downloadable stocktake template.
+!lib/seo/
+!lib/seo/*.ts
+!public/downloads/
+public/downloads/*
+!public/downloads/stockhale-stocktake.xlsx
 .neon
 
 AGENTS.md
 CLAUDE.md
 
 .codex/
+
+client_secret_260886969054-64ota1kpc4qorlvf40fhjhic7meg8mb7.apps.googleusercontent.com.json

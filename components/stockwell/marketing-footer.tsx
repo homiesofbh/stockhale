@@ -39,21 +39,27 @@ export function MarketingFooter() {
           <div>
             <b>Explore</b>
             <Link href="/#features">Platform</Link>
-            <Link href="/how-to-use">How to use</Link>
+            <Link href="/inventory-management">Retail inventory</Link>
+            <Link href="/billing-inventory">Billing + stock</Link>
+            <Link href="/customer-supplier-accounts">Customer + supplier accounts</Link>
+            <Link href="/daily-cash-closing">Daily cash closing</Link>
             <Link href="/#who-its-for">Who it’s for</Link>
-            <Link href="/about-us">About us</Link>
-            <Link href="/pricing">Pricing</Link>
-            <Link href="/contact-us">Contact</Link>
           </div>
           <div>
             <b>Get started</b>
+            <Link href="/how-to-use">How to use</Link>
+            <Link href="/guides">Retail guides</Link>
+            <Link href="/templates">Templates</Link>
+            <Link href="/pricing">Pricing</Link>
             <Link href="/sign-up">
               Create an account <ArrowUpRight size={13} aria-hidden="true" />
             </Link>
             <Link href="/sign-in">Log in</Link>
           </div>
           <div>
-            <b>Legal</b>
+            <b>Company</b>
+            <Link href="/about-us">About us</Link>
+            <Link href="/contact-us">Contact</Link>
             <Link href="/privacy-policy">Privacy policy</Link>
             <Link href="/terms-and-conditions">Terms &amp; conditions</Link>
           </div>

@@ -1,28 +1,27 @@
 import { LandingPage } from "@/components/stockwell/landing-page";
+import { createSeoMetadata } from "@/lib/seo/metadata";
 import { headers } from "next/headers";
+import {
+  PageStructuredData,
+  SoftwareApplicationStructuredData,
+} from "@/components/seo/structured-data";
 
-const softwareApplicationJsonLd = {
-  "@context": "https://schema.org",
-  "@type": "SoftwareApplication",
-  name: "StockHale",
-  url: "https://stockhale.app",
-  applicationCategory: "BusinessApplication",
-  operatingSystem: "Web",
+const seo = {
+  path: "/",
+  title: "Retail Inventory Software for Independent Stores | StockHale",
   description:
-    "Manage retail inventory, purchases, billing, accounts, and reports in one workspace built for independent stores.",
+    "Bring stock, purchases, billing, accounts, and reports together in one workspace built for independent retail. See how StockHale fits your store.",
 };
+
+export const metadata = createSeoMetadata(seo);
 
 export default async function Page() {
   const h = await headers();
   const country = (h.get("cf-ipcountry") || h.get("x-vercel-ip-country") || "US").toUpperCase();
   return (
     <>
-      <script
-        type="application/ld+json"
-        dangerouslySetInnerHTML={{
-          __html: JSON.stringify(softwareApplicationJsonLd).replace(/</g, "\\u003c"),
-        }}
-      />
+      <PageStructuredData {...seo} />
+      <SoftwareApplicationStructuredData description={seo.description} />
       <LandingPage country={country} />
     </>
   );

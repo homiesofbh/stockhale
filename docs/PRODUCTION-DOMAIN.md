@@ -19,8 +19,9 @@ Use only the hosting provider serving production; do not run both as active writ
   and Root directory to the repository root. A plain `pnpm run build` does not
   produce the OpenNext adapter output required for Worker deployment.
 - Ensure the domain has an active TLS certificate and serves HTTPS.
-- Set the Worker variable `BETTER_AUTH_URL` to `https://stockhale.app` and
-  `STOCKHALE_RUNTIME` to `cloudflare`.
+- Set the Worker variables `NEXT_PUBLIC_SITE_URL` and `BETTER_AUTH_URL` to
+  `https://stockhale.app`, and `STOCKHALE_RUNTIME` to `cloudflare`. The site URL
+  drives canonicals, Open Graph/Twitter URLs, JSON-LD, `robots.txt`, and `sitemap.xml`.
 - Store `BETTER_AUTH_SECRET` as a Worker **secret**, not a plain variable. A
   plaintext value was removed from `wrangler.jsonc`. If that value was used or
   shared, replace it with a fresh random value of at least 32 characters. Rotation
@@ -35,8 +36,9 @@ Use only the hosting provider serving production; do not run both as active writ
 
 - Add `stockhale.app` to the production project's **Settings → Domains** and
   apply the exact DNS records shown there; do not guess record values.
-- Set **Settings → Environment Variables → Production → BETTER_AUTH_URL** to
-  `https://stockhale.app`. Preserve the production database and secure auth secret.
+- Set **Settings → Environment Variables → Production → NEXT_PUBLIC_SITE_URL**
+  and **BETTER_AUTH_URL** to `https://stockhale.app`. Preserve the production
+  database and secure auth secret.
 - Redirect the old production hostname to the new origin; configure www as a
   redirect if desired. Apply environment changes through a later authorized
   production redeployment.

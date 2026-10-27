@@ -32,6 +32,7 @@
 		}
 	],
 	"vars": {
+		"NEXT_PUBLIC_SITE_URL": "https://stockhale.app",
 		"BETTER_AUTH_URL": "https://stockhale.app",
 		"STOCKHALE_TRUSTED_CLIENT_IP_HEADER": "cf-connecting-ip",
 		"DISABLE_PUBLIC_SIGNUP": "false",

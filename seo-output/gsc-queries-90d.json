@@ -1,0 +1,31 @@
+{
+  "property": "sc-domain:stockhale.app",
+  "rows": [
+    {
+      "keys": [
+        "stockall solutions"
+      ],
+      "clicks": 0,
+      "impressions": 1,
+      "ctr": 0,
+      "position": 40,
+      "query": "stockall solutions"
+    }
+  ],
+  "totals": {
+    "clicks": 0,
+    "impressions": 1,
+    "ctr": 0,
+    "position": 40
+  },
+  "totals_source": "dimensionless_aggregate",
+  "totals_complete": true,
+  "quick_wins": [],
+  "warnings": [],
+  "row_count": 1,
+  "error": null,
+  "date_range": {
+    "start": "2026-07-29",
+    "end": "2026-10-24"
+  }
+}

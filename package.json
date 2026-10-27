@@ -15,6 +15,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv ./cloudflare-env.d.ts",
     "test": "node tests/run.cjs",
+    "test:seo": "node scripts/seo-smoke.mjs",
     "typecheck": "tsc --noEmit",
     "db:migrate": "tsx scripts/migrate.ts",
     "db:import-sqlite": "tsx scripts/import-sqlite.ts",

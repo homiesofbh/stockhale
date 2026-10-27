@@ -1,35 +1,32 @@
 import type { Metadata } from "next";
 import Script from "next/script";
+import { preconnect } from "react-dom";
+import { SiteStructuredData } from "@/components/seo/structured-data";
+import { siteOrigin } from "@/lib/seo/site-url";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://stockhale.app"),
+  metadataBase: new URL(siteOrigin),
   applicationName: "StockHale",
   icons: {
     icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
     apple: [{ url: "/apple-icon.png", type: "image/png" }],
   },
-  openGraph: {
-    title: "Retail Inventory Software for Independent Stores | StockHale",
-    description:
-      "Bring stock, purchases, billing, accounts, and reports together in one workspace built for independent retail. See how StockHale fits your store.",
-    url: "https://stockhale.app",
-    siteName: "StockHale",
-    type: "website",
-  },
-  title: "Retail Inventory Software for Independent Stores | StockHale",
+  title: "StockHale",
   description:
-    "Bring stock, purchases, billing, accounts, and reports together in one workspace built for independent retail. See how StockHale fits your store.",
-  alternates: { canonical: "/" },
-  robots: { index: true, follow: true },
+    "Retail inventory, purchases, billing, accounts, and reports for independent stores.",
 };
 
 export default function RootLayout({
   children,
 }: Readonly<{ children: React.ReactNode }>) {
+  preconnect("https://images.unsplash.com", { crossOrigin: "anonymous" });
   return (
     <html lang="en">
-      <body>{children}</body>
+      <body>
+        <SiteStructuredData />
+        {children}
+      </body>
       <Script id="google-analytics" strategy="afterInteractive">
         {`window.dataLayer = window.dataLayer || [];
 window.gtag = function gtag(){window.dataLayer.push(arguments);};

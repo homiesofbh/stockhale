@@ -85,9 +85,9 @@ export function InvoicePreview({
           <span className="brand-mark">
             <Boxes size={24} />
           </span>
-          <h2>
+          <div className="invoice-brand-name">
             StockHale<span>.</span>
-          </h2>
+          </div>
         </div>
         <div className="invoice-title">
           <h1>

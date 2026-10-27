@@ -4,7 +4,7 @@ import { getAuth } from "@/lib/stockwell/auth";
 import { withDatabase } from "@/lib/stockwell/database";
 import { WorkspaceApp } from "@/components/stockwell/workspace-app";
 
-export const metadata = { title: "Workspace | StockHale", robots: { index: false, follow: false } };
+export const metadata = { title: "Workspace | StockHale", description: "Manage your StockHale store workspace.", robots: { index: false, follow: false } };
 export const dynamic = "force-dynamic";
 
 export default async function Page() {

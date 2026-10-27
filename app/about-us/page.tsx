@@ -1,3 +1,7 @@
 import { AboutPage } from "@/components/stockwell/marketing-pages";
-export const metadata = { title: "About StockHale: Retail Software for Independent Stores", description: "Learn how StockHale brings inventory, purchases, billing, payments, accounts, and reports together for independent retailers.", alternates: { canonical: "/about-us" } };
-export default function Page() { return <AboutPage/>; }
+import { PageStructuredData } from "@/components/seo/structured-data";
+import { createSeoMetadata } from "@/lib/seo/metadata";
+
+const seo = { path: "/about-us", title: "About StockHale: Retail Software for Independent Stores", description: "Learn how StockHale brings inventory, purchases, billing, payments, accounts, and reports together for independent retailers." };
+export const metadata = createSeoMetadata(seo);
+export default function Page() { return <><PageStructuredData {...seo}/><AboutPage/></>; }

@@ -112,11 +112,11 @@ function Hero() {
               <StockArt />
               <div className="hx-feature-copy">
                 <span>INVENTORY, SORTED</span>
-                <h3>
+                <h2>
                   A place for
                   <br />
                   every product.
-                </h3>
+                </h2>
                 <p>Know what’s in. See what’s moving.</p>
               </div>
               <ArrowUpRight className="hx-feature-arrow" size={20} />
@@ -264,6 +264,7 @@ export function LandingPage({ country = "US" }: { country?: string }) {
                   </span>
                 </div>
               </div>
+              <Link className="feature-card-link" href="/inventory-management">Explore retail inventory management <ArrowRight size={15} /></Link>
             </article>
             <article className="feature-card feature-sales">
               <div className="feature-card-top">
@@ -306,6 +307,7 @@ export function LandingPage({ country = "US" }: { country?: string }) {
                   <span>TODAY</span>
                 </div>
               </div>
+              <Link className="feature-card-link" href="/billing-inventory">See how billing connects to stock <ArrowRight size={15} /></Link>
             </article>
             <article className="feature-card feature-insight">
               <div className="feature-card-top">
@@ -439,7 +441,7 @@ export function LandingPage({ country = "US" }: { country?: string }) {
             <p>Use a previously loaded workspace to keep recording while offline. Changes stay on the device and sync when connectivity returns; first sign-in and team administration require internet.</p>
           </div>
           <div className="offline-flow" aria-label="Offline workspace flow"><div><span>01</span><b>Load your workspace</b><small>Sign in while connected</small></div><ArrowRight /><div><span>02</span><b>Keep recording</b><small>Previously loaded records stay available</small></div><ArrowRight /><div><span>03</span><b>Reconnect to sync</b><small>Queued updates are sent when online</small></div></div>
-          <div className="proof-links"><Link href="/how-to-use">Follow a typical workflow <ArrowRight size={15} /></Link><Link href="/sign-up">Open your own workspace <ArrowUpRight size={15} /></Link></div>
+          <div className="proof-links"><Link href="/how-to-use">Follow a typical workflow <ArrowRight size={15} /></Link><Link href="/guides">Explore retail guides <ArrowRight size={15} /></Link><Link href="/templates/stocktake-sheet">Get the stocktake sheet <ArrowRight size={15} /></Link><Link href="/sign-up">Open your own workspace <ArrowUpRight size={15} /></Link></div>
         </section>
         <section className="promise-section">
           <div className="promise-left">

@@ -1,4 +1,5 @@
 import type { MetadataRoute } from "next";
+import { absoluteSiteUrl } from "@/lib/seo/site-url";
 
 export default function robots(): MetadataRoute.Robots {
   return {
@@ -6,6 +7,6 @@ export default function robots(): MetadataRoute.Robots {
       { userAgent: "*", allow: "/", disallow: ["/workspace", "/api/"] },
       { userAgent: "Googlebot", allow: "/", disallow: ["/workspace", "/api/"] },
     ],
-    sitemap: "https://stockhale.app/sitemap.xml",
+    sitemap: absoluteSiteUrl("/sitemap.xml"),
   };
 }
