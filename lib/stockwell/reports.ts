@@ -1,5 +1,5 @@
 import { cashFlow, cashStatement, chequeSettlements, paymentAt, tradeAt } from "./operations";
-import { bankStatement } from "./bank-vouchers";
+import { bankBalanceSummary, bankStatement } from "./bank-vouchers";
 import { chartAccounts } from "./accounts";
 import { journalAccountBalance } from "./journals";
 import {
@@ -31,9 +31,9 @@ export type ReportData = { columns: string[]; rows: unknown[][]; customerIds?: s
 
 export function createReportData(
   s: Store,
-  options: RecordFilters & { report: string; reportContact: string },
+  options: RecordFilters & { report: string; reportContact: string; reportProduct?: string },
 ): ReportData {
-  const { report, reportContact, from, to, query } = options;
+  const { report, reportContact, reportProduct = "", from, to, query } = options;
   // The start date selects bills; all settlements through the end date count,
   // including those before the start date. Status filtering uses that same snapshot.
   const asOf: Store = to ? {
@@ -88,7 +88,7 @@ export function createReportData(
     const supplier =
       report === "Purchase report" || report === "Payables report";
     let list = (supplier ? purchases : invoices).filter(isPosted);
-    if (report === "Cash-sale report") list = list.filter(t => t.method === "Cash");
+    if (report === "Cash-sale report") list = list.filter(t => t.method === "Cash" && balance(asOf, t) === 0);
     if (report === "Credit-sale report") list = list.filter(t => balance(asOf, t) > 0);
     if (report === "Receivables report" || report === "Payables report")
       list = list.filter((t) => balance(asOf, t) !== 0);
@@ -117,14 +117,14 @@ export function createReportData(
         "Original total",
         "Return credit",
         "Paid",
-        "Balance",
+        ...(report === "Cash-sale report" ? [] : ["Balance"]),
       ],
-      rows: [...tradeRows, ...advanceRows, ...forwardedChequeRows],
+      rows: [...tradeRows, ...advanceRows, ...forwardedChequeRows].map(row => report === "Cash-sale report" ? row.slice(0, 9) : row),
     };
   }
   if (report === "Payment report") {
-    const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.tradeId, p.amount, p.method, p.chequeStatus || "—", p.notes]);
-    return { columns: ["Date", "Kind", "Transaction", "Amount", "Method", "Cheque status", "Notes"], rows };
+    const rows = s.payments.filter(p => inRange(p.date) && matches(p.date, p.kind, p.method, p.head, p.notes, p.chequeNumber, p.chequeBank)).map(p => [p.date, p.kind, p.amount, p.method, p.chequeStatus || "—", p.notes]);
+    return { columns: ["Date", "Kind", "Amount", "Method", "Cheque status", "Notes"], rows };
   }
   if (report === "Partner capital report") {
     const partners = Array.from(new Set((s.partners || []).map(entry => entry.partner))).sort((a, b) => a.localeCompare(b));
@@ -180,8 +180,49 @@ export function createReportData(
     const p = profit(s, from, to);
     return { columns: ["Measure", "Amount (PKR)"], rows: [["Revenue", p.revenue], ["Cost of goods sold", p.cogs], ["Operating expenses", p.expenses], ["Damaged stock", p.damage], ["Net income", p.net]] };
   }
+  if (report === "Profit & Loss Report" || report === "Profit summary") {
+    const p = profit(s, from, to);
+    return { columns: ["Measure", "Amount (PKR)"], rows: [["Sales revenue", p.revenue], ["Other income", p.otherIncome], ["Cost of goods sold", p.cogs], ["Operating expenses", p.expenses], ["Other expenses", p.otherExpenses], ["Damaged stock", p.damage], ["Net income", p.net]] };
+  }
+  if (report === "Cash Flow / Fund Movement Report") {
+    const through = to || today();
+    const cash = cashStatement(s, from, through);
+    const bankAccounts = (s.financialAccounts || []).map(account => ({ account, statement: bankStatement(s, account, from, through) }));
+    const movements = accounting.filter(row => inRange(row.date));
+    const unassignedMovements = movements.filter(row => !row.financialAccountId && row.bank !== 0);
+    const unassignedClosing = bankBalanceSummary(s, through).unassigned;
+    const unassignedReceipts = round(unassignedMovements.reduce((sum, row) => sum + Math.max(0, row.bank), 0));
+    const unassignedPayments = round(unassignedMovements.reduce((sum, row) => sum + Math.max(0, -row.bank), 0));
+    const unassignedOpening = round(unassignedClosing - unassignedReceipts + unassignedPayments);
+    const rowValues = (label: string, cashValue: number, bankValues: number[], unassignedValue: number) => [label, round(cashValue), ...bankValues.map(round), round(unassignedValue)];
+    const expenses = movements.filter(row => row.type === "Expense");
+    const withdrawals = movements.filter(row => row.type === "Partner withdrawal");
+    const cashExpenses = round(-expenses.reduce((sum, row) => sum + Math.min(0, row.cash), 0));
+    const cashWithdrawals = round(-withdrawals.reduce((sum, row) => sum + Math.min(0, row.cash), 0));
+    const accountExpense = (id: string) => round(-expenses.filter(row => row.financialAccountId === id).reduce((sum, row) => sum + Math.min(0, row.bank), 0));
+    const accountWithdrawal = (id: string) => round(-withdrawals.filter(row => row.financialAccountId === id).reduce((sum, row) => sum + Math.min(0, row.bank), 0));
+    const unassignedExpenses = round(-expenses.filter(row => !row.financialAccountId).reduce((sum, row) => sum + Math.min(0, row.bank), 0));
+    const unassignedWithdrawals = round(-withdrawals.filter(row => !row.financialAccountId).reduce((sum, row) => sum + Math.min(0, row.bank), 0));
+    const rows = [
+      rowValues("Opening balances", cash.opening + cash.openingAdjustment, bankAccounts.map(({ statement }) => statement.opening + statement.openingAdjustment), unassignedOpening),
+      rowValues("Money received", cash.receipts, bankAccounts.map(({ statement }) => statement.receipts), unassignedReceipts),
+      rowValues("Business expenses paid", cashExpenses, bankAccounts.map(({ account }) => accountExpense(account.id)), unassignedExpenses),
+      rowValues("Investor withdrawals", cashWithdrawals, bankAccounts.map(({ account }) => accountWithdrawal(account.id)), unassignedWithdrawals),
+      rowValues("Other payments and fund movements", round(cash.payments - cashExpenses - cashWithdrawals), bankAccounts.map(({ account, statement }) => round(statement.payments - accountExpense(account.id) - accountWithdrawal(account.id))), round(unassignedPayments - unassignedExpenses - unassignedWithdrawals)),
+      rowValues("Closing balances", cash.closing, bankAccounts.map(({ statement }) => statement.closing), unassignedClosing),
+    ].filter(row => matches(row[0]));
+    return {
+      columns: ["Movement", "Cash in drawer", ...bankAccounts.map(({ account }) => `${account.name} (${account.type})`), "Unassigned bank / wallet"],
+      rows,
+    };
+  }
   if (report === "Balance sheet") {
-    const rows = chartAccounts(s).filter(a => ["Asset", "Liability", "Equity"].includes(a.type)).map(a => [a.code, a.name, a.type, journalAccountBalance(s, a, to || today())]).filter(r => Number(r[3]));
+    const rows = chartAccounts(s).filter(a => ["Asset", "Liability", "Equity"].includes(a.type)).map(a => {
+      const ledgerBalance = journalAccountBalance(s, a, to || today());
+      const balance = a.name === "Cash" && a.type === "Asset" ? cashStatement(s, "", to || today()).closing : ledgerBalance;
+      const naturalBalance = a.nature === "Credit" ? -balance : balance;
+      return [a.code, a.name, a.type, naturalBalance];
+    }).filter(r => Number(r[3]));
     return { columns: ["Code", "Account", "Type", "Balance"], rows };
   }
   if (report === "Unposted bills") return { columns: ["Reference", "Date", "Type", "Contact", "Total"], rows: [...asOf.invoices, ...asOf.purchases].filter(t => t.status === "draft" && inRange(t.date) && matches(t.number, cName(t.contactId, t.number.startsWith("PUR"), t), t.walkInName, t.walkInCompany, t.walkInPhone)).map(t => [t.number, t.date, t.number.startsWith("PUR") ? "Purchase" : "Sale", cName(t.contactId, t.number.startsWith("PUR"), t), total(t)]) };
@@ -222,7 +263,7 @@ export function createReportData(
         "Maximum-stock threshold",
       ],
       rows: s.products
-        .filter((p) => matches(p.name, p.sku, p.category))
+        .filter((p) => (!reportProduct || p.id === reportProduct) && matches(p.name, p.sku, p.category))
         .map((p) => [
           p.sku,
           p.name,
@@ -245,6 +286,7 @@ export function createReportData(
       const balances = new Map<string, number>();
       const rows = [...s.movements]
         .filter(m => !to || m.date <= to)
+        .filter(m => !reportProduct || m.productId === reportProduct)
         .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id))
         .flatMap(m => {
           const balance = roundQty((balances.get(m.productId) || 0) + m.qty);
@@ -265,7 +307,7 @@ export function createReportData(
     }; })();
   if (report === "Stock aging report") {
     const through = to || today();
-    const rows = s.products.filter(p => matches(p.name, p.sku, p.category)).map(p => {
+    const rows = s.products.filter(p => (!reportProduct || p.id === reportProduct) && matches(p.name, p.sku, p.category)).map(p => {
       const movements = s.movements.filter(m => m.productId === p.id && m.date <= through && m.qty > 0).sort((a, b) => a.date.localeCompare(b.date));
       const qty = stock(s, p.id);
       const oldest = movements[0]?.date || "";
@@ -306,8 +348,10 @@ export function createReportData(
       columns: ["Measure", "Amount (PKR)"],
       rows: [
         ["Net sales excluding tax", p.revenue],
+        ["Other income", p.otherIncome],
         ["Cost of goods sold", p.cogs],
         ["Expenses", p.expenses],
+        ["Other expenses", p.otherExpenses],
         ["Damaged stock cost", p.damage],
         ["Net profit", p.net],
       ],

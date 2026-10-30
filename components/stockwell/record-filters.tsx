@@ -101,8 +101,9 @@ export function RecordFilters({
             onValueChange={(e) => setStatus(e)}
           >
             <option>All</option>
-            <option>Low stock</option>
-            <option>In stock</option>
+            <option>In Stock</option>
+            <option>Low Stock</option>
+            <option>Out of stock</option>
           </GlassSelect>
         </>
       )}

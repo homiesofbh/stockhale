@@ -30,8 +30,10 @@ type Props = {
   setDashboardPeriod: Dispatch<SetStateAction<string>>;
   dashboardProfit: {
     revenue: number;
+    otherIncome: number;
     cogs: number;
     expenses: number;
+    otherExpenses: number;
     damage: number;
     net: number;
   };
@@ -55,8 +57,10 @@ type Props = {
   payables: number;
   allProfit: {
     revenue: number;
+    otherIncome: number;
     cogs: number;
     expenses: number;
+    otherExpenses: number;
     damage: number;
     net: number;
   };
@@ -333,7 +337,7 @@ export function DashboardView({
         <Stat
           label="Profit overview"
           value={money(allProfit.net)}
-          detail={`${money(allProfit.expenses)} in expenses`}
+          detail={`${money(allProfit.expenses + allProfit.otherExpenses)} in expenses · ${money(allProfit.otherIncome)} other income`}
         />
       </div>
       <div className="dashboard-grid">

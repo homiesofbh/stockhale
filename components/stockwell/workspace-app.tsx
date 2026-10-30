@@ -102,6 +102,9 @@ export function WorkspaceApp() {
   const [quickProduct, setQuickProduct] = useState("");
   const [report, setReport] = useState("Billing report");
   const [reportContact, setReportContact] = useState("");
+  const [reportProduct, setReportProduct] = useState("");
+  const storeRef = useRef(s);
+  storeRef.current = s;
   const [lines, setLines] = useState<Line[]>([]);
   const [scan, setScan] = useState("");
   const [discount, setDiscount] = useState(0);
@@ -179,6 +182,9 @@ export function WorkspaceApp() {
     if (invoice && !canAccess(invoice.number.startsWith("PUR") ? "Purchases" : "Billing") &&
       (invoice.number.startsWith("PUR") || !canAccess("Sales"))) setInvoice(null);
   }, [account, requestedModule]);
+  useEffect(() => {
+    if (account?.member.role === "member" && requestedModule === "Dashboard" && canAccessModule(account.member, "Billing")) setModule("Billing");
+  }, [account?.member.id, account?.member.role, requestedModule]);
   useEffect(() => {
     const timer = setTimeout(() => setNotice(""), 4500);
     return () => clearTimeout(timer);
@@ -264,7 +270,7 @@ export function WorkspaceApp() {
   const bank = round((s.financialAccounts || []).reduce((n, a) => n + bankStatement(s, a).closing, 0) + accounting.filter(r => !r.financialAccountId).reduce((n, r) => n + r.bank, 0));
   const receivables = s.customers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Customer", c.id), 0), s.invoices.filter(t => !s.customers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
   const payables = s.suppliers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Supplier", c.id), 0), s.purchases.filter(t => !s.suppliers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
-  const lowStock = s.products.filter((p) => stock(s, p.id) <= p.low);
+  const lowStock = s.products.filter((p) => stock(s, p.id) > 0 && stock(s, p.id) <= p.low);
   const inventoryValue = s.products.reduce(
     (n, p) => n + stock(s, p.id) * p.cost,
     0,
@@ -354,6 +360,7 @@ export function WorkspaceApp() {
         {t.number}
         <small>{t.date}</small>
       </button>,
+      t.createdByName || account?.members.find(member => member.id === t.createdBy)?.name || "Not recorded",
       t.contactId ? cName(t.contactId, supplier) : [t.walkInName, t.walkInCompany].filter(Boolean).join(" · ") || "Walk-in customer",
       t.lines.map((l) => l.qty).join(", "),
       t.lines.map((l) => l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece").join(", "),
@@ -377,6 +384,7 @@ export function WorkspaceApp() {
     ]);
   const basicHeaders = [
     "Invoice",
+    "Prepared by",
     "Customer",
     "Quantity",
     "UOM",
@@ -390,6 +398,7 @@ export function WorkspaceApp() {
     ...filters,
     report,
     reportContact,
+    reportProduct,
   });
   useEffect(() => {
     setPdfError("");
@@ -624,9 +633,8 @@ export function WorkspaceApp() {
                       {module === "Inventory" && (
                         <InventoryView
                           s={s}
-                          lowStock={lowStock}
                           open={open}
-                          matches={matches}
+                          query={query}
                           category={category}
                           status={status}
                           setEditProduct={setEditProduct}
@@ -653,6 +661,9 @@ export function WorkspaceApp() {
                           s={s}
                           invoices={invoices}
                           pName={pName}
+                          setInvoice={setInvoice}
+                          setPaper={setPaper}
+                          preparedBy={(id, name) => name || account.members.find(member => member.id === id)?.name || "Not recorded"}
                         />
                       )}
                       {module === "Accounts Heads" && (
@@ -673,6 +684,7 @@ export function WorkspaceApp() {
                           category={category}
                           open={open}
                           owner={account.member.role === "owner"}
+                          memberName={(id, name) => name || account.members.find(member => member.id === id)?.name || "Not recorded"}
                           commit={commit}
                         />
                       )}
@@ -709,6 +721,7 @@ export function WorkspaceApp() {
                           inRange={inRange}
                           matches={matches}
                           pName={pName}
+                          setInvoice={(trade) => { setInvoice(trade); setPaper("A4"); }}
                         />
                       )}
                       {module === "Reports" && (
@@ -720,6 +733,8 @@ export function WorkspaceApp() {
                           setReport={setReport}
                           setReportContact={setReportContact}
                           reportContact={reportContact}
+                          reportProduct={reportProduct}
+                          setReportProduct={setReportProduct}
                           from={from}
                           to={to}
                           s={s}
@@ -761,7 +776,7 @@ export function WorkspaceApp() {
               {error}
             </div>
           )}
-          {modal === "Product details" && detailProduct && <ProductDetailView s={s} product={detailProduct} />}
+          {modal === "Product details" && detailProduct && <ProductDetailView s={s} product={detailProduct} openStockReport={canAccess("Reports") ? () => { setReport("Stock movement report"); setReportProduct(detailProduct.id); setModule("Reports"); setModal(""); } : undefined} />}
           {modal === "Product" && (
             <ProductForm
               commitInline={(next, message) => commitInline(next, message, "Inventory")}
@@ -851,8 +866,9 @@ export function WorkspaceApp() {
               s={s}
               modal={modal}
               isOwner={account.member.role === "owner"}
-              commit={(next, message) => {
-                commit(next, message);
+              creator={{ id: account.member.id, name: account.member.name }}
+              commit={async (next, message) => {
+                await commit(next, message);
                 if (modal === "Bill") { setQuery(""); setFrom(""); setTo(""); }
               }}
               setInvoice={setInvoice}
@@ -872,16 +888,19 @@ export function WorkspaceApp() {
               billTotal={billTotal}
               setModal={setModal}
               canAddSupplier={canAccess("Suppliers")}
-              canAddProduct={canAccess("Inventory")}
+              canAddProduct={canAccess("Purchases")}
               saveProductCategory={(next, message) => commitInline(next, message, "Inventory")}
-              addProduct={(next, productId) => {
+              addProduct={async (product, opening) => {
                 if (storageError) throw new Error(storageError);
-                workspace.commit(next, "Inventory", "Product added from purchase form.");
-                const product = next.products.find(item => item.id === productId)!;
+                const { saveProduct } = await import("@/lib/stockwell/model");
+                const next = saveProduct(storeRef.current, product, opening);
+                await workspace.commit(next, "Purchases", "Product saved and added to purchase.");
+                storeRef.current = next;
                 setS(next);
-                setLines(current => [...current, { productId, unit: product.unit || "piece", qty: 1, price: product.cost, cost: product.cost }]);
+                setLines(current => [...current, { productId: product.id, unit: product.unit || "piece", qty: 1, price: product.cost, cost: product.cost }]);
                 setNotice("Product saved and added to purchase.");
                 setError("");
+                return next;
               }}
               canAddCustomer={canAccess("Customers")}
               canChangeHead={account.member.role === "owner"}
@@ -956,6 +975,7 @@ export function WorkspaceApp() {
           s={s}
           paymentStatus={paymentStatus}
           pName={pName}
+          preparedBy={invoice.createdByName || account.members.find(member => member.id === invoice.createdBy)?.name || "Not recorded"}
         />
       )}
     </>

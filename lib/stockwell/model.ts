@@ -2,7 +2,7 @@ import { cashChequeSettlement, chequeSettlements, requireOpenDate, type ChequeEv
 import { bankVoucherLines } from "./bank-vouchers";
 import type { BankVoucher } from "./bank-vouchers";
 import type { JournalVoucher } from "./journals";
-import type { Account } from "./accounts";
+import { chartAccounts, type Account } from "./accounts";
 export type Product = {
   id: string;
   name: string;
@@ -48,12 +48,16 @@ export type Line = {
   packageCount?: number;
   packageSize?: number;
 };
+export type FinancialBalanceSnapshot = { cash: number; bank: number; bankAccounts?: { id: string; name: string; balance: number }[] };
 export type Trade = {
   status?: "draft" | "posted" | "void";
   postedAt?: string;
   costBefore?: Record<string, number>;
   replacementOf?: string;
   createdAt?: number;
+  createdBy?: string;
+  createdByName?: string;
+  balanceAfter?: FinancialBalanceSnapshot;
   id: string;
   number: string;
   previousNumbers?: string[];
@@ -79,6 +83,7 @@ export type Trade = {
 export type FinancialAccount = { createdAt?: string; id: string; name: string; type: "Bank" | "Wallet"; accountNumber?: string; ledgerAccountId?: string; openingBalance?: number; openingDate?: string; active?: boolean };
 export type Movement = {
   id: string;
+  createdAt?: number;
   productId: string;
   qty: number;
   date: string;
@@ -90,6 +95,8 @@ export type Movement = {
   packageSize?: number;
 };
 export type PartnerEntry = {
+  createdAt?: number;
+  balanceAfter?: FinancialBalanceSnapshot;
   id: string;
   date: string;
   partner: string;
@@ -101,6 +108,7 @@ export type PartnerEntry = {
 };
 export type Payment = {
   createdAt?: number;
+  balanceAfter?: FinancialBalanceSnapshot;
   id: string;
   date: string;
   kind: "Customer" | "Supplier";
@@ -133,6 +141,8 @@ export type CrossCheque = {
 };
 export type Expense = {
   createdAt?: string;
+  createdBy?: string;
+  createdByName?: string;
   id: string;
   date: string;
   category: string;
@@ -193,6 +203,8 @@ export type Store = {
 };
 export const today = (date = new Date()) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
 export const isPosted = (t: Trade) => t.status !== "draft" && t.status !== "void";
+export const compareTradeNumbersNewestFirst = (a: Trade, b: Trade) =>
+  b.number.localeCompare(a.number, undefined, { numeric: true }) || b.date.localeCompare(a.date);
 export const uid = () => crypto.randomUUID();
 export const round = (n: number) =>
   Math.round((n + Number.EPSILON) * 100) / 100;
@@ -210,6 +222,14 @@ export function orderedUnits(units: string[] = standardUnits) {
     .map((unit, index) => ({ unit, index, priority: order.get(unit.trim().toLowerCase()) ?? standardUnits.length }))
     .sort((a, b) => a.priority - b.priority || a.index - b.index)
     .map(({ unit }) => unit);
+}
+export function availableUnits(units: string[] = [], productUnits: (string | undefined)[] = []) {
+  const unique = new Map<string, string>();
+  for (const unit of [...standardUnits, ...units, ...productUnits]) {
+    const value = unit?.trim();
+    if (value && !unique.has(value.toLocaleLowerCase())) unique.set(value.toLocaleLowerCase(), value);
+  }
+  return orderedUnits([...unique.values()]);
 }
 export const emptyStore = (): Store => ({
   version: 1,
@@ -411,6 +431,7 @@ export function saveProduct(s: Store, p: Product, opening = 0): Store {
             ...s.movements,
             {
               id: uid(),
+              createdAt: Date.now(),
               productId: p.id,
               qty: opening,
               date: today(),
@@ -446,6 +467,7 @@ export function adjustStock(
       ...s.movements,
       {
         id: uid(),
+        createdAt: Date.now(),
         productId,
         qty,
         date,
@@ -542,6 +564,7 @@ export function recordTrade(
   };
   const moves: Movement[] = trade.lines.map((l) => ({
     id: uid(),
+    createdAt: trade.createdAt,
     productId: l.productId,
     qty: l.qty * (kind === "Sale" ? -1 : 1),
     date: t.date,
@@ -665,6 +688,7 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
       !!t && isPosted(t) && qty > 0 && r.qty <= roundQty(qty - previous),
       "Return quantity exceeds the remaining quantity on the original transaction.",
     );
+    assert(!!t && r.date >= t.date, "Return date cannot be earlier than the original transaction date.");
     if (t)
       amount = Math.min(
         round(
@@ -695,6 +719,7 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
       ...s.movements,
       {
         id: uid(),
+        createdAt: entry.createdAt,
         productId: r.productId,
         qty: r.qty * direction,
         date: r.date,
@@ -853,11 +878,25 @@ export function financialRows(s: Store): FinancialRow[] {
   return rows.sort((a, b) => b.date.localeCompare(a.date));
 }
 export function profit(s: Store, from = "", to = "") {
+  const netSales = (trade: Trade) => subtotal(trade) - lineDiscount(trade) - trade.discount;
+  const accountsById = new Map(chartAccounts(s).map(account => [account.id, account]));
+  let otherIncome = 0, otherExpenses = 0;
+  const addLedgerLines = (lines: { accountId: string; debit: number; credit: number }[]) => {
+    for (const line of lines) {
+      const account = accountsById.get(line.accountId);
+      if (!account) continue;
+      const normalBalanceChange = account.nature === "Credit" ? line.credit - line.debit : line.debit - line.credit;
+      if (account.type === "Income") otherIncome += normalBalanceChange;
+      if (account.type === "Expense") otherExpenses += normalBalanceChange;
+    }
+  };
+  (s.journals || []).filter(v => v.status === "posted" && periodMatch(v.date, from, to)).forEach(v => addLedgerLines(v.lines));
+  (s.bankVouchers || []).filter(v => v.status === "posted" && periodMatch(v.date, from, to)).forEach(v => addLedgerLines(bankVoucherLines(s, v)));
   const invoices = s.invoices.map(t => s.corrections?.find(c => c.tradeId === t.id)?.before || t).filter(isPosted).filter((t) => periodMatch(t.date, from, to));
   const salesCorrections = (s.corrections || []).filter(c => c.kind === "Sale" && periodMatch(c.date, from, to));
-  const salesDelta = salesCorrections.reduce((n, c) => n + (isPosted(c.after) ? subtotal(c.after) - c.after.discount : 0) - (subtotal(c.before) - c.before.discount), 0);
+  const salesDelta = salesCorrections.reduce((n, c) => n + (isPosted(c.after) ? netSales(c.after) : 0) - netSales(c.before), 0);
   const costDelta = salesCorrections.reduce((n, c) => n + (isPosted(c.after) ? c.after.lines.reduce((x, l) => x + l.qty * l.cost, 0) : 0) - c.before.lines.reduce((x, l) => x + l.qty * l.cost, 0), 0);
-  const sales = invoices.reduce((n, t) => n + subtotal(t) - t.discount, 0);
+  const sales = invoices.reduce((n, t) => n + netSales(t), 0);
   const cogs = invoices.reduce(
     (n, t) => n + t.lines.reduce((a, l) => a + l.qty * l.cost, 0),
     0,
@@ -878,9 +917,11 @@ export function profit(s: Store, from = "", to = "") {
     .reduce((n, e) => n + e.amount, 0);
   return {
     revenue: round(sales + salesDelta - returnRevenue),
+    otherIncome: round(otherIncome),
     cogs: round(cogs + costDelta - returnCost),
     expenses: round(expenses),
+    otherExpenses: round(otherExpenses),
     damage: round(damage),
-    net: round(sales + salesDelta - returnRevenue - cogs - costDelta + returnCost - expenses - damage),
+    net: round(sales + salesDelta - returnRevenue + otherIncome - cogs - costDelta + returnCost - expenses - otherExpenses - damage),
   };
 }

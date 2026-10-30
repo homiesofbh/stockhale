@@ -2,6 +2,7 @@ import { jsPDF } from "jspdf";
 import {
   balance,
   isPosted,
+  lineDiscount,
   paid,
   returned,
   round,
@@ -43,6 +44,7 @@ export function invoiceText(s: Store, t: Trade) {
   return [
     t.number,
     t.date,
+    t.createdByName || "Not recorded",
     contact?.name || "",
     contact?.phone || "",
     contact?.email || "",
@@ -204,6 +206,7 @@ export function createInvoicePdf(
           ? "Partial"
           : "Unpaid";
   text(`Payment: ${status} / ${t.method}`, receipt ? 8 : 9);
+  text(`Prepared by: ${t.createdByName || "Not recorded"}`, receipt ? 7 : 8);
   y += 5;
   rule();
   const descriptionWidth = receipt ? contentWidth : 93;
@@ -288,8 +291,8 @@ export function createInvoicePdf(
   }
   const summary: [string, number][] = [
     ["Subtotal", subtotal(t)],
-    ["Discount", -t.discount],
-    [`Tax (${t.tax}%)`, round(((subtotal(t) - t.discount) * t.tax) / 100)],
+    ["Discount", -(lineDiscount(t) + t.discount)],
+    [`Tax (${t.tax}%)`, round(((subtotal(t) - lineDiscount(t) - t.discount) * t.tax) / 100)],
     ["Total (PKR)", total(t)],
     ["Return credit", -returned(s, t.id)],
     ["Paid", paid(s, t)],

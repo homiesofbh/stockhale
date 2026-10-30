@@ -1,6 +1,6 @@
-import { balance, financialRows, isPosted, recordTrade, round, roundQty, stock, today, total, uid, type Expense, type Payment, type Store, type Trade } from "./model";
+import { balance, financialRows, isPosted, recordTrade, round, roundQty, stock, today, total, uid, type Expense, type FinancialBalanceSnapshot, type Payment, type Store, type Trade } from "./model";
 import { chartAccounts } from "./accounts";
-import { bankStatement, saveBankVoucher } from "./bank-vouchers";
+import { bankBalanceSummary, bankStatement, saveBankVoucher } from "./bank-vouchers";
 import { saveJournal } from "./journals";
 export type Actor = { id: string; name?: string; role: "owner" | "member"; modules?: string[] };
 export type TradeCorrection = { id: string; tradeId: string; kind: "Sale" | "Purchase"; date: string; reason: string; actorId: string; occurredAt: string; before: Trade; after: Trade };
@@ -24,7 +24,7 @@ export function saveExpense(s: Store, expense: Expense, actor: Actor, occurredAt
   const old = s.expenses.find(e => e.id === expense.id);
   check(!old || actor.role === "owner", "Only the owner can correct an expense.");
   check(!old, "Recorded expenses are locked; enter a journal correction with a reason.");
-  return { ...s, expenses: [...s.expenses, { ...expense, createdAt: occurredAt }] };
+  return { ...s, expenses: [...s.expenses, { ...expense, createdAt: occurredAt, createdBy: actor.id, createdByName: actor.name || "" }] };
 }
 export function postTrade(s: Store, kind: "Sale" | "Purchase", id: string): Store {
   const key = kind === "Sale" ? "invoices" : "purchases", trade = s[key].find(t => t.id === id);
@@ -122,6 +122,14 @@ export function cashStatement(s: Store, from = "", to = today()) {
   const receipts = round(period.reduce((n, r) => n + Math.max(0, r.cash), 0)), payments = round(period.reduce((n, r) => n + Math.max(0, -r.cash), 0));
   const opening = round(base - adjustment + before);
   return { opening, openingAdjustment: adjustment, receipts, payments, closing: round(opening + adjustment + receipts - payments) };
+}
+export function financialBalanceSnapshot(s: Store): FinancialBalanceSnapshot {
+  const bankBalances = bankBalanceSummary(s);
+  return {
+    cash: cashStatement(s).closing,
+    bank: bankBalances.total,
+    bankAccounts: bankBalances.balances.map(account => ({ id: account.id, name: account.name, balance: account.balance })),
+  };
 }
 export function cashFlow(s: Store, from = "", to = today()) {
   const cashAccount = chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset");

@@ -2,6 +2,7 @@
 import { useState } from "react";
 import { ChequeRegister } from "./cheque-register";
 import type { Actor } from "@/lib/stockwell/operations";
+import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
 import { BankVouchersView } from "./bank-vouchers-view";
 import { Badge, Field, Modal, Stat, Table } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
@@ -94,11 +95,13 @@ export function PaymentsView({
     ...s.invoices
       .filter(t => t.status !== "draft" && t.status !== "void" && t.paid > 0)
       .map(t => ({
+        id: t.id,
         date: t.date,
         contact: t.contactId ? cName(t.contactId) : [t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer",
         reference: t.number,
         kind: "Customer",
         amount: t.paid,
+        balanceAfter: t.balanceAfter,
         method: t.method,
         cheque: "",
         chequeStatus: undefined as string | undefined,
@@ -107,22 +110,26 @@ export function PaymentsView({
     ...s.purchases
       .filter(t => t.status !== "draft" && t.status !== "void" && t.paid > 0)
       .map(t => ({
+        id: t.id,
         date: t.date, contact: cName(t.contactId, true), reference: t.number,
-        kind: "Supplier", amount: t.paid, method: t.method, cheque: "",
+        kind: "Supplier", amount: t.paid, balanceAfter: t.balanceAfter, method: t.method, cheque: "",
         chequeStatus: undefined as string | undefined, head: t.head,
       })),
     ...s.payments.map(p => ({
+      id: p.id,
       date: p.date, contact: cName(p.contactId, p.kind === "Supplier"),
       reference: p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "",
-      kind: p.kind, amount: p.amount,
+      kind: p.kind, amount: p.amount, balanceAfter: p.balanceAfter,
       method: p.chequeStatus ? `Cheque ${p.chequeStatus}` : p.method,
       cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}${p.clearedDate ? ` · cleared ${p.clearedDate}` : ""}` : "",
       chequeStatus: p.chequeStatus, head: p.head,
     })),
     ...(s.partners || []).map(entry => ({
+      id: entry.id,
       date: entry.date, contact: entry.partner, reference: entry.notes || "",
       kind: `Partner ${entry.kind}`,
       amount: entry.kind === "Contribution" ? entry.amount : -entry.amount,
+      balanceAfter: entry.balanceAfter,
       method: entry.method, cheque: "", chequeStatus: undefined as string | undefined,
       head: "Partner capital",
     })),
@@ -135,8 +142,14 @@ export function PaymentsView({
     currentPaymentHistoryPage * paymentHistoryPageSize,
     (currentPaymentHistoryPage + 1) * paymentHistoryPageSize,
   );
+  const paymentHistorySection = <section className="card mt-8">
+    <div className="section-head"><div><h2>Payment history</h2><p>Saved cash and bank balances immediately after each recorded transaction.</p></div></div>
+    <Table headers={["Date", "Contact", "Reference", "Type", "Amount", "Method", "Cash after", "Bank after", ...(s.financialAccounts || []).map(account => `${account.name} after`), "Account head", "Cheque details"]} rows={visiblePaymentHistory.map(payment => [payment.date, payment.contact, payment.reference, <Badge tone={payment.kind === "Customer" || payment.kind === "Partner Contribution" ? "green" : "amber"}>{payment.kind}</Badge>, money(payment.amount), payment.method, payment.balanceAfter ? money(payment.balanceAfter.cash) : "Not recorded", payment.balanceAfter ? money(payment.balanceAfter.bank) : "Not recorded", ...(s.financialAccounts || []).map(account => { const snapshot = payment.balanceAfter?.bankAccounts?.find(entry => entry.id === account.id); return !payment.balanceAfter?.bankAccounts ? "Not recorded" : snapshot ? money(snapshot.balance) : "Not configured"; }), payment.head || "—", payment.cheque || "—"])} />
+    {paymentHistoryPageCount > 1 && <nav className="account-week-pagination" aria-label="Payment history pages"><button className="secondary" disabled={currentPaymentHistoryPage === 0} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage - 1)}>← Previous</button><span aria-live="polite">Showing {currentPaymentHistoryPage * paymentHistoryPageSize + 1}–{Math.min((currentPaymentHistoryPage + 1) * paymentHistoryPageSize, paymentHistoryEntries.length)} of {paymentHistoryEntries.length} payments · Page {currentPaymentHistoryPage + 1} of {paymentHistoryPageCount}</span><button className="secondary" disabled={currentPaymentHistoryPage >= paymentHistoryPageCount - 1} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage + 1)}>Next →</button></nav>}
+  </section>;
   return (
     <>
+      {paymentHistorySection}
       <div className="stats-grid three">
         <Stat
           label="Customer receivables"
@@ -211,11 +224,15 @@ export function PaymentsView({
           if (!Number.isFinite(amount) || amount <= 0) { setPartnerError("Enter an amount greater than zero."); return; }
           const account = partnerAccounts.find(candidate => candidate.name === partnerMethod);
           const canonicalName = partnerNames.find(existing => existing.localeCompare(name, undefined, { sensitivity: "base" }) === 0) || name;
-          commit({
+          const recorded = {
             ...s,
             partnerNames: partnerNames.some(existing => existing.localeCompare(name, undefined, { sensitivity: "base" }) === 0) ? s.partnerNames || [] : [...(s.partnerNames || []), name],
-            partners: [...(s.partners || []), { id: uid(), date, partner: canonicalName, kind: partnerKind, amount: round(amount), method: partnerMethod, financialAccountId: account?.id, notes }],
-          }, `Partner ${partnerKind.toLowerCase()} recorded.`);
+            partners: [...(s.partners || []), { id: uid(), createdAt: Date.now(), date, partner: canonicalName, kind: partnerKind, amount: round(amount), method: partnerMethod, financialAccountId: account?.id, notes }],
+          };
+          const entry = recorded.partners.at(-1)!;
+          const snapshot = financialBalanceSnapshot(recorded);
+          const next = { ...recorded, partners: recorded.partners.map(item => item.id === entry.id ? { ...item, balanceAfter: snapshot } : item) };
+          commit(next, `Partner ${partnerKind.toLowerCase()} recorded.`);
           setPartner("");
           setPartnerError("");
           event.currentTarget.reset();

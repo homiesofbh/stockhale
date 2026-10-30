@@ -5,8 +5,8 @@ import { Field, Modal, Table } from "@/components/stockwell/ui";
 import { ProductForm } from "./product-form";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
+  availableUnits,
   money,
-  orderedUnits,
   recordTrade,
   round,
   stock,
@@ -18,6 +18,7 @@ import {
   type Store,
   type Trade,
 } from "@/lib/stockwell/model";
+import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useState, type FormEvent } from "react";
@@ -40,6 +41,7 @@ type Props = {
   s: Store;
   modal: "Purchase" | "Bill";
   isOwner: boolean;
+  creator: { id: string; name: string };
   commit: (next: Store, message: string) => void;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
   setPaper: Dispatch<SetStateAction<InvoicePaper>>;
@@ -63,7 +65,7 @@ type Props = {
   addCustomer: (customer: Contact) => void;
   canChangeHead: boolean;
   canAddProduct: boolean;
-  addProduct: (next: Store, productId: string) => void;
+  addProduct: (product: import("@/lib/stockwell/model").Product, opening: number) => void | Promise<Store | void>;
   saveProductCategory: (next: Store, message: string) => void;
 };
 export function TradeForm({
@@ -73,6 +75,7 @@ export function TradeForm({
   s,
   modal,
   isOwner,
+  creator,
   commit,
   setInvoice,
   setPaper,
@@ -102,6 +105,9 @@ export function TradeForm({
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
   const [productQuery, setProductQuery] = useState("");
+  const [savingProduct, setSavingProduct] = useState(false);
+  const [workingStore, setWorkingStore] = useState(s);
+  useEffect(() => { setWorkingStore(current => current.products.length > s.products.length ? current : s); }, [s]);
   const [addingProduct, setAddingProduct] = useState(false);
   const [productError, setProductError] = useState("");
   const [method, setMethod] = useState("Cash");
@@ -123,8 +129,15 @@ export function TradeForm({
       })
     : [];
   const productSearch = productQuery.trim().toLowerCase();
-  const selectableProducts = s.products.filter((p) => p.active !== false && (!productSearch || [p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.unit].filter(Boolean).join(" ").toLowerCase().includes(productSearch)));
+  const selectableProducts = workingStore.products.filter((p) => p.active !== false && (!productSearch || [p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.unit].filter(Boolean).join(" ").toLowerCase().includes(productSearch)));
+  const units = availableUnits(workingStore.units, workingStore.products.map(product => product.unit));
   const unpaidWalkIn = modal === "Bill" && !contact && paidAmount < billTotal;
+  const insufficientStock = modal === "Bill"
+    ? Array.from(lines.reduce((demand, line) => demand.set(line.productId, (demand.get(line.productId) || 0) + line.qty), new Map<string, number>()))
+        .filter(([productId, quantity]) => quantity > stock(workingStore, productId))
+        .map(([productId, quantity]) => ({ productId, quantity, available: stock(workingStore, productId) }))
+    : [];
+  const belowCost = modal === "Bill" && lines.some(line => line.price < line.cost);
   useEffect(() => setPaidAmount(billTotal), [billTotal]);
   function saveSupplier() {
     try {
@@ -169,6 +182,8 @@ export function TradeForm({
           const t: Trade = {
             status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
             id,
+            createdBy: creator.id,
+            createdByName: creator.name,
             number: "",
             reference: text(f, "reference"),
             attachments: attachment ? [attachment] : undefined,
@@ -188,12 +203,17 @@ export function TradeForm({
             walkInAddress: modal === "Bill" && !text(f, "contact") ? text(f, "walkInAddress") : "",
             walkInPhone: modal === "Bill" && !text(f, "contact") ? text(f, "walkInPhone") : "",
           };
-          const next = recordTrade(
-            s,
+          const recorded = recordTrade(
+            workingStore,
             modal === "Bill" ? "Sale" : "Purchase",
             t,
           );
-          commit(
+          const savedTrade = (modal === "Bill" ? recorded.invoices : recorded.purchases).at(-1)!;
+          const snapshot = financialBalanceSnapshot(recorded);
+          const next = modal === "Bill"
+            ? { ...recorded, invoices: recorded.invoices.map(item => item.id === savedTrade.id ? { ...item, balanceAfter: snapshot } : item) }
+            : { ...recorded, purchases: recorded.purchases.map(item => item.id === savedTrade.id ? { ...item, balanceAfter: snapshot } : item) };
+          await commit(
             next,
             t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? unpaidWalkIn ? "Unpaid bill recorded. Payment and remaining balance saved." : "Bill posted. Inventory and customer balance updated." : "Purchase posted. Inventory updated.",
           );
@@ -288,13 +308,13 @@ export function TradeForm({
       )}
       <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
       {modal === "Purchase" && canAddProduct && <button type="button" className="secondary-button" onClick={() => { setProductError(""); setAddingProduct(true); }}>+ Add product</button>}
-      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(s, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}</div>}</div></Field>
+      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(workingStore, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}</div>}</div></Field>
       <Field label="Or choose a product">
         <GlassSelect value="" onValueChange={(e) => { addLine(e); setProductQuery(""); }}>
           <option value="">Select product to add</option>
           {selectableProducts.map((p) => (
             <option value={p.id} key={p.id}>
-              {p.name} · {p.sku} · {stock(s, p.id)} in stock
+              {p.name} · {p.sku} · {stock(workingStore, p.id)} in stock
             </option>
           ))}
         </GlassSelect>
@@ -318,10 +338,10 @@ export function TradeForm({
               <>
                 {pName(l.productId)}
                 <small>
-                  {s.products.find((p) => p.id === l.productId)?.sku}
+                  {workingStore.products.find((p) => p.id === l.productId)?.sku}
                 </small>
               </>,
-              s.products.find((p) => p.id === l.productId)?.color || "—",
+              workingStore.products.find((p) => p.id === l.productId)?.color || "—",
               <input
                 aria-label={`Quantity for ${pName(l.productId)}`}
                 data-barcode-quantity={l.productId}
@@ -338,7 +358,7 @@ export function TradeForm({
                   )
                 }
               />,
-              <GlassSelect aria-label={`UOM for ${pName(l.productId)}`} value={l.unit || s.products.find((p) => p.id === l.productId)?.unit || "piece"} onValueChange={(value) => setLines(lines.map((x, n) => n === i ? { ...x, unit: value } : x))}>{orderedUnits(s.units).map(unit => <option key={unit}>{unit}</option>)}</GlassSelect>,
+              <GlassSelect aria-label={`UOM for ${pName(l.productId)}`} value={l.unit || workingStore.products.find((p) => p.id === l.productId)?.unit || "piece"} onValueChange={(value) => setLines(lines.map((x, n) => n === i ? { ...x, unit: value } : x))}>{units.map(unit => <option key={unit}>{unit}</option>)}</GlassSelect>,
               <input aria-label={`Number of rolls for ${pName(l.productId)}`} type="number" min="0" step="1" placeholder="Rolls" value={l.packageCount ?? ""} onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))} />,
               <input
                 aria-label={`Price for ${pName(l.productId)}`}
@@ -469,6 +489,8 @@ export function TradeForm({
         <strong>{money(Math.max(0, billTotal - paidAmount))} remaining</strong>
         <p className="field-help">Record this sale once with {money(paidAmount)} paid. The remaining amount stays on the bill for collection through Payments. Enter a customer name, company, or contact number above.</p>
       </div></div>}
+      {!!insufficientStock.length && <div className="form-error" role="alert">{insufficientStock.map(({ productId, quantity, available }) => <p key={productId}>Insufficient stock for {pName(productId)}: {available} available, {quantity} requested.</p>)}</div>}
+      {belowCost && <p className="form-error" role="status">Below-cost sale warning: at least one selling price is below its buying cost.</p>}
       <div className="bill-summary">
         <span>
           Subtotal <b>{money(subtotal({ lines }))}</b>
@@ -498,8 +520,8 @@ export function TradeForm({
         >
           Cancel
         </button>
-        <button className="secondary" value="draft" disabled={!lines.length || addingSupplier}>Save draft</button>
-        <button className="primary" value={unpaidWalkIn ? "unpaid" : "post"} disabled={!lines.length || addingSupplier || addingCustomer}>
+        <button className="secondary" value="draft" disabled={!lines.length || addingSupplier || addingCustomer || savingProduct}>Save draft</button>
+        <button className="primary" value={unpaidWalkIn ? "unpaid" : "post"} disabled={!lines.length || addingSupplier || addingCustomer || savingProduct || !!insufficientStock.length}>
           {unpaidWalkIn ? "Record unpaid bill" : `Post ${modal === "Bill" ? "bill" : "purchase"}`}
         </button>
       </div>
@@ -514,11 +536,19 @@ export function TradeForm({
           try { await fn(new FormData(event.currentTarget)); }
           catch (error) { setProductError(error instanceof Error ? error.message : "Could not save product."); }
         }}
-        commit={(next) => {
+        commit={async (next) => {
+          if (savingProduct) throw new Error("A product is already being saved.");
+          setSavingProduct(true);
           const product = next.products.find(item => !s.products.some(existing => existing.id === item.id));
-          if (!product) throw new Error("Could not identify the new product.");
-          addProduct(next, product.id);
-          setAddingProduct(false);
+          try {
+            if (!product) throw new Error("Could not identify the new product.");
+            const nextStore = await addProduct(product, next.movements.find(movement => movement.productId === product.id && movement.type === "Opening")?.qty || 0);
+            if (nextStore) {
+              setWorkingStore(nextStore);
+              setLines(current => [...current, { productId: product.id, unit: product.unit || "piece", qty: 1, price: modal === "Purchase" ? product.cost : product.price, cost: product.cost }]);
+            }
+            setAddingProduct(false);
+          } finally { setSavingProduct(false); }
         }} />
     </Modal>}
     </>

@@ -2,7 +2,7 @@
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { balance, findProductByCode, isPosted, money, paid, recordPayment, recordReturn, roundQty, subtotal, today, total, uid, type Store } from "@/lib/stockwell/model";
+import { balance, compareTradeNumbersNewestFirst, findProductByCode, isPosted, money, paid, recordPayment, recordReturn, roundQty, subtotal, today, total, uid, type Store } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
 
@@ -39,7 +39,7 @@ export function ReturnForm({
   const [tradeSearch, setTradeSearch] = useState("");
 
   const trades = returnKind === "Sales return" ? s.invoices : s.purchases;
-  const postedTrades = trades.filter(isPosted);
+  const postedTrades = trades.filter(isPosted).slice().sort(compareTradeNumbersNewestFirst);
   const selectedOriginal = trades.find((t) => t.id === selectedTrade);
   const eligible = s.products.filter((p) => {
     if (returnKind === "Damaged stock") return true;
@@ -164,7 +164,7 @@ export function ReturnForm({
           </GlassSelect>
         </Field>
         <Field label="Date">
-          <input type="date" name="date" required defaultValue={today()} />
+          <input type="date" name="date" required defaultValue={today()} min={returnKind === "Damaged stock" ? undefined : selectedOriginal?.date} />
         </Field>
         {returnKind !== "Damaged stock" && (
           <Field label="Original transaction">

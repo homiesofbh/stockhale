@@ -27,6 +27,8 @@ type Props = {
   setReport: Dispatch<SetStateAction<string>>;
   setReportContact: Dispatch<SetStateAction<string>>;
   reportContact: string;
+  reportProduct: string;
+  setReportProduct: Dispatch<SetStateAction<string>>;
   from: string;
   to: string;
   s: Store;
@@ -43,6 +45,8 @@ export function ReportsView({
   setReport,
   setReportContact,
   reportContact,
+  reportProduct,
+  setReportProduct,
   from,
   to,
   s,
@@ -63,7 +67,7 @@ export function ReportsView({
               {[
                 "Cash-in-hand report",
                 "Bank-balance report",
-                "Cash-flow report",
+                "Cash Flow / Fund Movement Report",
                 "Unposted bills",
                 "Billing report",
                 "Sales report",
@@ -85,16 +89,16 @@ export function ReportsView({
                 "Account aging report",
                 "Yearly summary",
                 "Trial balance",
-                "Income statement",
+                "Profit & Loss Report",
                 "Balance sheet",
                 "Accounts Head report",
-                "Profit summary",
                 "Date-wise transaction report",
               ].sort((a, b) => a.localeCompare(b, undefined, { sensitivity: "base" })).map((r) => (
                 <option key={r}>{r}</option>
               ))}
             </GlassSelect>
           </Field>
+          {report === "Stock movement report" && <Field label="Product stock history"><GlassSelect aria-label="Product stock history" value={reportProduct} onValueChange={setReportProduct}><option value="">All products</option>{s.products.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</GlassSelect></Field>}
           {["Customer business report", "Customer ledger", "Supplier ledger"].includes(report) && (
             <Field
               label={report === "Customer ledger" ? "Customer" : "Supplier"}

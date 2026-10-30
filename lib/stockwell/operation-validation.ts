@@ -8,7 +8,7 @@ export const same = (a: unknown, b: unknown) => JSON.stringify(clean(a)) === JSO
 const without = (value: any, keys: string[]) => Object.fromEntries(Object.entries(value).filter(([k]) => !keys.includes(k)));
 const additions = <T extends { id: string }>(before: T[], after: T[]) => after.filter(a => !before.some(b => b.id === a.id));
 function immutable<T extends { id: string }>(before: T[], after: T[], label: string) { for (const old of before) check(after.some(next => next.id === old.id && same(old, next)), `${label} cannot be changed or deleted.`); }
-const movementKey = (m: Store["movements"][number]) => JSON.stringify(clean(without(m, ["id"])));
+const movementKey = (m: Store["movements"][number]) => JSON.stringify(clean(without(m, ["id", "createdAt"])));
 export function validateStore(s: Store) {
   check(!!s && s.version === 1, "Unsupported store version.");
   for (const key of Object.keys(emptyStore())) if (key !== "version") check(Array.isArray((s as any)[key]), `Invalid collection: ${key}.`);
@@ -97,6 +97,18 @@ export function validateOperations(before: Store, after: Store, module: string, 
     check(same(computed.after, correction.after), "Invalid corrected bill.");
     expectedMovements.push(...replay.movements.slice(before.movements.length));
   }
+  const replayedOpenings: Store["movements"] = [];
+  if (module === "Purchases") {
+    for (const product of additions(before.products, after.products)) {
+      const openingMovement = additions(before.movements, after.movements).find(movement => movement.productId === product.id && movement.type === "Opening stock");
+      const opening = openingMovement?.qty || 0;
+      requireOpenDate(before, openingMovement?.date || today());
+      const replay = saveProduct({ ...before, products: expectedProducts }, product, opening);
+      expectedProducts = replay.products;
+      if (openingMovement) replayedOpenings.push(...replay.movements.filter(movement => movement.productId === product.id && movement.type === "Opening stock").map(movement => ({ ...movement, date: openingMovement.date, reference: openingMovement.reference, reason: openingMovement.reason })));
+    }
+  }
+  expectedMovements.push(...replayedOpenings);
   for (const key of ["invoices", "purchases"] as const) {
     const kind = key === "invoices" ? "Sale" : "Purchase";
     for (const old of before[key]) {
@@ -112,6 +124,7 @@ export function validateOperations(before: Store, after: Store, module: string, 
     for (const trade of after[key].filter(t => !before[key].some(old => old.id === t.id && same(old, t)) && !newLinks.some(link => link.tradeId === t.id) && !(after.corrections || []).some(c => c.tradeId === t.id && !before.corrections?.some(old => old.id === c.id)))) {
       requireOpenDate(before, trade.date);
       check(tradeDateAllowed(trade.date, actor, context.occurredAt, kind), kind === "Sale" ? "Staff can create sales only for today. Ask the owner to enter a historical sale." : "Staff can create purchases only for today or the previous two calendar days. Future dates are not allowed.");
+      check((!trade.createdBy || trade.createdBy === actor.id) && (!trade.createdByName || !actor.name || trade.createdByName === actor.name), "Bill creator must match the signed-in user.");
       const base = { ...before, customers: after.customers, [key]: before[key].filter(t => t.id !== trade.id) };
       const replay = recordTrade(base, kind, trade);
       const computed = replay[key].find(t => t.id === trade.id)!;
@@ -151,6 +164,7 @@ export function validateOperations(before: Store, after: Store, module: string, 
     paymentBase = { ...paymentBase, payments: [...paymentBase.payments, p] };
   }
   for (const expense of additions(before.expenses, after.expenses)) {
+    check((!expense.createdBy || expense.createdBy === actor.id) && (!expense.createdByName || !actor.name || expense.createdByName === actor.name), "Expense creator must match the signed-in user.");
     requireOpenDate(before, expense.date);
     check(expense.date <= today(new Date(received)), "Future expense dates are not allowed by the server.");
     check(expenseDateAllowed(expense.date, actor, context.occurredAt), "Expense date is outside your allowed creation-date window.");
@@ -166,7 +180,16 @@ export function validateOperations(before: Store, after: Store, module: string, 
   const addedMovements = additions(before.movements, after.movements);
   if (module === "Inventory") {
     addedMovements.forEach(m => { requireOpenDate(before, m.date); check(["Opening stock", "Stock in", "Stock out"].includes(m.type) && !!m.reason?.trim() && (m.type !== "Opening stock" || m.qty > 0 && !before.products.some(p => p.id === m.productId)), "Use a valid stock adjustment with a reason."); });
-  } else check(same(addedMovements.map(movementKey).sort(), expectedMovements.map(movementKey).sort()), "Stock movements do not match bills, returns, or corrections.");
+  } else {
+    const verifiedMovements = addedMovements;
+    check(same(verifiedMovements.map(movementKey).sort(), expectedMovements.map(movementKey).sort()), "Stock movements do not match bills, returns, or corrections.");
+    if (module === "Purchases") {
+      const openingMovements = addedMovements.filter(movement => movement.type === "Opening stock");
+      check(openingMovements.every(movement => additions(before.products, after.products).some(product => product.id === movement.productId)), "Opening stock from Purchases must belong to a newly added product.");
+      const replayedOpeningMovements = expectedMovements.filter(movement => movement.type === "Opening stock");
+      check(same(openingMovements.map(movementKey).sort(), replayedOpeningMovements.map(movementKey).sort()), "Opening stock must match the new product.");
+    }
+  }
   if (module === "Purchases") check(same(expectedProducts, after.products), "Purchase changes may update only the calculated product costs.");
   after.products.forEach(p => check(stock(after, p.id) >= 0, "This change would make stock negative."));
   for (const key of ["journals", "bankVouchers"] as const) for (const v of after[key] || []) {

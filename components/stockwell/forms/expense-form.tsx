@@ -48,7 +48,7 @@ export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor 
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
           const attachment = file ? await uploadAttachment(file, "expense", id) : undefined;
           commit(
-            saveExpense({ ...s, expenseCategories: categories }, { id, date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes"), attachments: attachment ? [attachment] : undefined }, actor),
+            saveExpense({ ...s, expenseCategories: categories }, { id, date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes"), attachments: attachment ? [attachment] : undefined, createdBy: actor.id, createdByName: actor.name }, actor),
             "Expense recorded.",
           );
         })

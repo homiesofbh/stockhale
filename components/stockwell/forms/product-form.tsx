@@ -4,8 +4,7 @@ import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { Field } from "@/components/stockwell/ui";
 import {
   saveProduct,
-  orderedUnits,
-  standardUnits,
+  availableUnits,
   uid,
   type Product,
   type Store,
@@ -13,12 +12,12 @@ import {
 import type { Dispatch, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
 type Props = {
-  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
+  submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   editProduct: Product | null;
   text: (f: FormData, key: string) => string;
   num: (f: FormData, key: string) => number;
-  commit: (next: Store, message: string) => void;
-  commitInline?: (next: Store, message: string) => void;
+  commit: (next: Store, message: string) => void | Promise<void>;
+  commitInline?: (next: Store, message: string) => void | Promise<void>;
   s: Store;
   setModal: Dispatch<SetStateAction<string>>;
 };
@@ -32,7 +31,7 @@ export function ProductForm({
   s,
   setModal,
 }: Props) {
-  const defaultUnits = orderedUnits(s.units || standardUnits);
+  const defaultUnits = availableUnits(s.units, s.products.map(product => product.unit));
   const [unit, setUnit] = useState(editProduct?.unit || "piece");
   const [customUnit, setCustomUnit] = useState("");
   const [barcode, setBarcode] = useState(editProduct?.barcode || "");
@@ -46,7 +45,7 @@ export function ProductForm({
   return (
     <form
       onSubmit={(e) =>
-        submit(e, (f) => {
+        submit(e, async (f) => {
           if (addingCategory) throw new Error("Add or cancel the new category before saving the product.");
           const p: Product = {
             id: editProduct?.id || uid(),
@@ -70,7 +69,7 @@ export function ProductForm({
           const next = saveProduct({ ...s, categories }, p, num(f, "opening"));
           const units = next.units || defaultUnits;
           const matchingUnit = units.find(existing => existing.trim().toLowerCase() === p.unit);
-          commit(
+          await commit(
             p.unit && !matchingUnit ? { ...next, units: [...units, p.unit] } : next,
             "Product saved.",
           );

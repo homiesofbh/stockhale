@@ -4,6 +4,7 @@ import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   balance,
   isPosted,
+  lineDiscount,
   paid,
   returned,
   round,
@@ -26,6 +27,7 @@ type Props = {
   s: Store;
   paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid" | "Draft" | "Voided";
   pName: (id: string) => string;
+  preparedBy: string;
 };
 export function InvoicePreview({
   setInvoice,
@@ -39,6 +41,7 @@ export function InvoicePreview({
   s,
   paymentStatus,
   pName,
+  preparedBy,
 }: Props) {
   return (
     <div className="invoice-overlay">
@@ -149,11 +152,11 @@ export function InvoicePreview({
         <div className="invoice-totals">
           {[
             ["Subtotal", subtotal(invoice)],
-            ["Discount", -invoice.discount],
+            ["Discount", -(lineDiscount(invoice) + invoice.discount)],
             [
               `Tax (${invoice.tax}%)`,
               round(
-                ((subtotal(invoice) - invoice.discount) * invoice.tax) / 100,
+                ((subtotal(invoice) - lineDiscount(invoice) - invoice.discount) * invoice.tax) / 100,
               ),
             ],
             ["Total (PKR)", total(invoice)],
@@ -172,6 +175,7 @@ export function InvoicePreview({
         </div>
         <div className="invoice-thanks">
           Thank you for your business.
+          <small>Prepared by: {preparedBy}</small>
         </div>
       </article>
     </div>

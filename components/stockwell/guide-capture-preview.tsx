@@ -35,9 +35,9 @@ export function GuideCapturePreview({ screen }: { screen: string }) {
   return <main className="guide-capture-surface"><div className="guide-capture-label"><strong>STOCKHALE / PRODUCT VIEW</strong><span>FICTIONAL SAMPLE RECORDS</span></div>
     {screen === "opening-stock" && <section className="panel"><h1>Stock adjustment</h1><p className="muted">Enter the signed quantity change and keep the reason with the record.</p><AdjustmentForm s={s} text={(f, key) => String(f.get(key) || "")} num={(f, key) => Number(f.get(key))} submit={event => event.preventDefault()} commit={() => {}} /></section>}
     {screen === "stock-history" && <ProductDetailView s={s} product={s.products[0]} />}
-    {screen === "low-stock" && <InventoryView s={s} lowStock={s.products.filter(p => stock(s, p.id) <= p.low)} open={() => {}} matches={() => true} category="All" status="Low stock" setEditProduct={setEditProduct} selectProduct={() => {}} />}
-    {screen === "customer-accounts" && <section className="panel"><h1>Customer ledger</h1><ReportsView s={s} actor={{id:"guide-owner",role:"owner"}} commit={() => {}} reopenWithOwnerPassword={async () => ({})} report={report} setReport={setReport} reportContact={reportContact} setReportContact={setReportContact} from="" to="" reportResult={createReportData(s,{query:"",from:"",to:"",status:"All",paymentMethod:"All",report,reportContact})} /></section>}
+    {screen === "low-stock" && <InventoryView s={s} query="" open={() => {}} category="All" status="Low Stock" setEditProduct={setEditProduct} selectProduct={() => {}} />}
+    {screen === "customer-accounts" && <section className="panel"><h1>Customer ledger</h1><ReportsView s={s} actor={{id:"guide-owner",role:"owner"}} commit={() => {}} reopenWithOwnerPassword={async () => ({})} report={report} setReport={setReport} reportContact={reportContact} setReportContact={setReportContact} reportProduct="" setReportProduct={() => {}} from="" to="" reportResult={createReportData(s,{query:"",from:"",to:"",status:"All",paymentMethod:"All",report,reportContact})} /></section>}
     {screen === "daily-closing" && <DailyClosingView s={s} actor={{ id: "guide-owner", role: "owner" }} commit={() => {}} reopenWithOwnerPassword={async () => ({})} />}
-    {screen === "returns" && <ReturnsView s={s} inRange={() => true} matches={() => true} pName={id => s.products.find(p => p.id === id)?.name || ""} />}
+    {screen === "returns" && <ReturnsView s={s} inRange={() => true} matches={() => true} pName={id => s.products.find(p => p.id === id)?.name || ""} setInvoice={() => {}} />}
   </main>;
 }

@@ -2,13 +2,13 @@
 import { Badge, Empty } from "@/components/stockwell/ui";
 import { ProductPlaceholder } from "@/components/stockwell/product-placeholder";
 import { money, stock, type Product, type Store } from "@/lib/stockwell/model";
+import { filterInventory } from "@/lib/stockwell/record-selectors";
 import { ArrowDownLeft, ArrowUpRight, Barcode, Box, Package, Pencil, Warehouse } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
   s: Store;
-  lowStock: Product[];
   open: (name: string) => void;
-  matches: (...values: unknown[]) => boolean;
+  query: string;
   category: string;
   status: string;
   setEditProduct: Dispatch<SetStateAction<Product | null>>;
@@ -16,22 +16,22 @@ type Props = {
 };
 export function InventoryView({
   s,
-  lowStock,
   open,
-  matches,
+  query,
   category,
   status,
   setEditProduct,
   selectProduct,
 }: Props) {
-  const totalStockValue = s.products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0);
-  const totalStockUnits = s.products.reduce((total, product) => total + stock(s, product.id), 0);
-  const products = s.products.filter((p) => matches(p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.gsm ? `${p.gsm} GSM` : "") && (category === "All" || p.category === category) && (status === "All" || (status === "Low stock" ? stock(s, p.id) <= p.low : stock(s, p.id) > 0)));
+  const products = filterInventory(s, query, category, status);
+  const totalStockValue = products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0);
+  const totalStockUnits = products.reduce((total, product) => total + stock(s, product.id), 0);
+  const lowStock = products.filter(product => stock(s, product.id) > 0 && stock(s, product.id) <= product.low).length;
   return (
     <>
-      <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>Total value of stock</h2><p>Money currently held in inventory at cost price.</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
+      <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>{category !== "All" || status !== "All" || query.trim() ? "Stock value in view" : "Total value of stock"}</h2><p>Filtered products, valued at cost price.</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
       <div className="sub-actions inventory-actions">
-        <span>{products.length} products <span className="muted">/ {lowStock.length} low stock</span></span>
+        <span>{products.length} products <span className="muted">/ {lowStock} low stock</span></span>
         <div>
           <button className="secondary-button" onClick={() => open("Category")}>
             Categories
@@ -55,7 +55,7 @@ export function InventoryView({
           const quantity = stock(s, p.id);
           const productSuppliers = (p.supplierIds || []).map(id => s.suppliers.find(supplier => supplier.id === id)?.name).filter(Boolean);
           return <article className="inventory-product-card" key={p.id}>
-            <button className="inventory-product-visual" onClick={() => selectProduct(p)} aria-label={`View details for ${p.name}`}><ProductPlaceholder name={p.name} category={p.category} /><span className={`inventory-stock-pill${quantity <= p.low ? " low" : " healthy"}`}><i />{quantity <= p.low ? "Low stock" : "In stock"}</span></button>
+          <button className="inventory-product-visual" onClick={() => selectProduct(p)} aria-label={`View details for ${p.name}`}><ProductPlaceholder name={p.name} category={p.category} /><span className={`inventory-stock-pill${quantity === 0 || quantity <= p.low ? " low" : " healthy"}`}><i />{quantity === 0 ? "Out of stock" : quantity <= p.low ? "Low stock" : "In stock"}</span></button>
             <div className="inventory-product-body">
               <div className="inventory-product-overline"><span>{p.sku || "NO SKU"}</span>{p.barcode && <span><Barcode size={12} /> {p.barcode}</span>}</div>
               <button className="inventory-product-title" onClick={() => selectProduct(p)}>{p.name}</button>

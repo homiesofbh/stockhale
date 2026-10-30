@@ -1,14 +1,16 @@
 "use client";
 import { useState } from "react";
 import { Badge, Table } from "@/components/stockwell/ui";
-import { money, type Store } from "@/lib/stockwell/model";
+import { money, type Store, type Trade } from "@/lib/stockwell/model";
+import type { Dispatch, SetStateAction } from "react";
 type Props = {
   s: Store;
   inRange: (date: string) => boolean;
   matches: (...values: unknown[]) => boolean;
   pName: (id: string) => string;
+  setInvoice: Dispatch<SetStateAction<Trade | null>>;
 };
-export function ReturnsView({ s, inRange, matches, pName }: Props) {
+export function ReturnsView({ s, inRange, matches, pName, setInvoice }: Props) {
   const [q, setQ] = useState("");
   const trades = [...s.invoices, ...s.purchases];
   const rows = s.returns.filter((r) => {
@@ -20,7 +22,7 @@ export function ReturnsView({ s, inRange, matches, pName }: Props) {
     const trade = trades.find((t) => t.id === r.tradeId);
     const line = trade?.lines.find((l) => l.productId === r.productId);
     const unit = s.products.find((p) => p.id === r.productId)?.unit || "piece";
-    return [r.date, <Badge key="kind" tone={r.kind === "Damaged stock" ? "amber" : ""}>{r.kind}</Badge>, trade?.number || "—", pName(r.productId), r.qty, unit, line ? money(line.price) : "—", r.kind === "Damaged stock" ? "—" : money(r.amount), r.reason];
+    return [r.date, <Badge key="kind" tone={r.kind === "Damaged stock" ? "amber" : ""}>{r.kind}</Badge>, trade ? <button className="link" aria-label={`Open invoice ${trade.number}`} onClick={() => setInvoice(trade)}>{trade.number}</button> : "—", pName(r.productId), r.qty, unit, line ? money(line.price) : "—", r.kind === "Damaged stock" ? "—" : money(r.amount), r.reason];
   });
   return (
     <section className="card returns-view">

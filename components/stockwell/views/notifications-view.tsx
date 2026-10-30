@@ -1,10 +1,12 @@
 "use client";
-import { type Module } from "@/components/stockwell/navigation";
+import { descriptions, type Module } from "@/components/stockwell/navigation";
+import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Table } from "@/components/stockwell/ui";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import type { Workspace } from "@/lib/stockwell/workspace";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
+import { useState } from "react";
 type Props = {
   workspace: ReturnType<typeof useWorkspace>;
   account: Workspace;
@@ -19,6 +21,16 @@ export function NotificationsView({
   setModule,
   notificationReturn,
 }: Props) {
+  const [actorFilter, setActorFilter] = useState("All users");
+  const [moduleFilter, setModuleFilter] = useState("All modules");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const actors = Array.from(new Set(account.audit.map(event => event.actor))).sort();
+  const modules = Array.from(new Set(account.audit.map(event => event.module))).sort();
+  const entries = account.audit.filter(event => {
+    const date = event.occurredAt.slice(0, 10);
+    return (actorFilter === "All users" || event.actor === actorFilter) && (moduleFilter === "All modules" || event.module === moduleFilter) && (!from || date >= from) && (!to || date <= to);
+  });
   return (
     <section className="settings-page">
       <div className="page-heading">
@@ -46,12 +58,18 @@ export function NotificationsView({
           <X size={22} />
         </button>
       </div>
+      <div className="filters">
+        <GlassSelect aria-label="Filter activity by user" value={actorFilter} onValueChange={setActorFilter}><option>All users</option>{actors.map(actor => <option key={actor}>{actor}</option>)}</GlassSelect>
+        <GlassSelect aria-label="Filter activity by module" value={moduleFilter} onValueChange={setModuleFilter}><option>All modules</option>{modules.map(module => <option key={module}>{module}</option>)}</GlassSelect>
+        <label className="field"><span>From date</span><input type="date" value={from} max={to || undefined} onChange={event => setFrom(event.target.value)} /></label>
+        <label className="field"><span>To date</span><input type="date" value={to} min={from || undefined} onChange={event => setTo(event.target.value)} /></label>
+      </div>
       <Table
         headers={["Who", "Module", "Action", "When", "Email"]}
-        rows={account.audit.map((a) => [
+        rows={entries.map((a) => [
           a.actor,
           a.module,
-          a.action,
+          <div><span>{a.action} {a.module in descriptions && <button className="link" onClick={() => setModule(a.module as Module)}>View module</button>}</span><details><summary>View record changes</summary><pre className="audit-details">{a.records.length > 12000 ? `${a.records.slice(0, 12000)}… (details truncated)` : a.records}</pre></details></div>,
           <div key={a.id}>
             {new Date(a.occurredAt).toLocaleString()}
             <small>Synced {new Date(a.receivedAt).toLocaleString()}</small>

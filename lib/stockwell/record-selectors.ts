@@ -2,6 +2,7 @@ import {
   balance,
   paid,
   periodMatch,
+  stock,
   type Product,
   type Store,
   type Trade,
@@ -51,6 +52,17 @@ export function filterTrades(
       (filters.paymentMethod === "All" ||
         trade.method === filters.paymentMethod)
     );
+  });
+}
+
+export function filterInventory(store: Store, query: string, category: string, status: string) {
+  return store.products.filter(product => {
+    const quantity = stock(store, product.id);
+    const categoryMatches = category === "All" || product.category === category;
+    const statusMatches = status === "All" ||
+      (status === "Out of stock" ? quantity === 0 :
+        status === "Low Stock" || status === "Low stock" ? quantity > 0 && quantity <= product.low : quantity > product.low);
+    return categoryMatches && statusMatches && matchesQuery(query, product.name, product.sku, product.barcode, product.category, product.color, product.gsm, product.gsm ? `${product.gsm} GSM` : "");
   });
 }
 

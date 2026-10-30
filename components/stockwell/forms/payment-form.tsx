@@ -3,6 +3,7 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
   balance,
+  compareTradeNumbersNewestFirst,
   contactBalance,
   money,
   unappliedCreditBalance,
@@ -13,6 +14,7 @@ import {
   uid,
   type Store,
 } from "@/lib/stockwell/model";
+import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
 import type { Dispatch, SetStateAction } from "react";
 import { type FormEvent } from "react";
 import { useState } from "react";
@@ -96,6 +98,8 @@ export function PaymentForm({
             if (!destinationName) throw new Error("Select the supplier or enter the partner name receiving this cheque.");
             next = { ...next, crossCheques: [...(next.crossCheques || []), { id: uid(), sourcePaymentId: payment.id, date: payment.date, customerId: payment.contactId, destinationKind, destinationId, destinationName, amount: Math.abs(payment.amount), status: "pending", notes: text(f, "destinationNotes") }] };
           }
+          const snapshot = financialBalanceSnapshot(next);
+          next = { ...next, payments: next.payments.map(item => item.id === payment.id ? { ...item, balanceAfter: snapshot } : item) };
           commit(next, forwardCheque ? "Customer cheque recorded for submission." : "Payment recorded. Balance updated.");
         })
       }
@@ -131,7 +135,7 @@ export function PaymentForm({
                 </option>
               ),
             )}
-            {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
+            {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).slice().sort(compareTradeNumbersNewestFirst).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
           </GlassSelect>
         </Field>
         <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={advance} onChange={e => { setAdvance(e.target.checked); setSelectedTrade(""); }} /> {paymentKind === "Supplier" ? "Supplier advance (prepayment beyond current payable)" : "Advance payment (not linked to a bill yet)"}</label>
@@ -152,6 +156,8 @@ export function PaymentForm({
               .filter(
                 (t) => (selectedContact.startsWith("walkin:") ? `walkin:${t.id}` === selectedContact : t.contactId === selectedContact) && balance(s, t) !== 0,
               )
+              .slice()
+              .sort(compareTradeNumbersNewestFirst)
               .map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.number} · {money(Math.abs(balance(s, t)))}{" "}

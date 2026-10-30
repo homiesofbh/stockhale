@@ -147,26 +147,32 @@ export function DailyClosingView({
       <div className="closing-profit-heading">
         <h3>Recorded profit summary</h3>
         <InfoTip label="How recorded net profit is calculated">
-          <span>Net profit = net sales − cost of goods sold − recorded expenses − damaged stock cost.</span>
+          <span>Net profit = net sales + other income − cost of goods sold − recorded expenses − other expenses − damaged stock cost.</span>
           <span>Net sales subtract discounts and sales returns. Cost of goods sold uses the recorded cost of sold items, less the cost of returned items. Damage uses the recorded cost of damaged stock.</span>
+          <span>Other income and expenses include posted journal entries and bank vouchers categorized to income or expense heads.</span>
           <span>This summary uses recorded transactions for the selected date. It does not use the drawer count or unexplained cash difference.</span>
-          <span>For this date: {money(recordedProfit.revenue)} − {money(recordedProfit.cogs)} − {money(recordedProfit.expenses)} − {money(recordedProfit.damage)} = {money(recordedProfit.net)}.</span>
+          <span>For this date: {money(recordedProfit.revenue)} + {money(recordedProfit.otherIncome)} − {money(recordedProfit.cogs)} − {money(recordedProfit.expenses)} − {money(recordedProfit.otherExpenses)} − {money(recordedProfit.damage)} = {money(recordedProfit.net)}.</span>
         </InfoTip>
       </div>
+      {activeClose && <p className="form-hint" role="status">{formatClosingDate(activeClose.date)} is already closed. Reopen its history entry to make corrections.</p>}
       <div className="closing-history-head"><div><h3>Closing history</h3><p>Closed and reopened days remain in this register for audit.</p></div><Field label="Status"><GlassSelect value={closingStatus} onValueChange={setClosingStatus}><option>All</option><option>Closed</option><option>Reopened</option></GlassSelect></Field></div>
       <Table
         headers={[
           "Recorded net sales",
+          "Other income",
           "Cost of goods sold",
           "Recorded expenses",
+          "Other expenses",
           "Damaged stock cost",
           "Recorded net profit",
         ]}
         rows={[
           [
             money(recordedProfit.revenue),
+            money(recordedProfit.otherIncome),
             money(recordedProfit.cogs),
             money(recordedProfit.expenses),
+            money(recordedProfit.otherExpenses),
             money(recordedProfit.damage),
             money(recordedProfit.net),
           ],

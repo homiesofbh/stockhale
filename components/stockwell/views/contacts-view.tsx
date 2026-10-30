@@ -149,7 +149,7 @@ export function ContactsView({
               : "Bill balances are shown per bill. Unapplied credits reduce the net account balance above, but remain separate until matched to a bill."}</p>}
             <div className="contact-table-scroll">
               <Table
-                headers={module === "Suppliers" ? ["Purchase", "Supplier", "Quantity", "UOM", "Net total", "Status", "Paid", "Balance", ""] : basicHeaders}
+                headers={module === "Suppliers" ? ["Purchase", "Prepared by", "Supplier", "Quantity", "UOM", "Net total", "Status", "Paid", "Balance", ""] : basicHeaders}
                 rows={tradeRows((module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === detailContact.id), module === "Suppliers")}
               />
             </div>
