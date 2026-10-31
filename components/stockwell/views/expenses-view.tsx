@@ -17,7 +17,7 @@ export function ExpensesView({ s, inRange, matches, category, open, owner, membe
   const [error, setError] = useState("");
   const links = (attachments: any[] = [], expenseId = "") => <>{attachments.map(a => <span key={a.id}><button className="link" onClick={async () => { try { window.open(await attachmentDownloadUrl(a.key), "_blank", "noopener,noreferrer"); } catch (e) { setError(e instanceof Error ? e.message : "Could not open attachment."); } }}>{a.name}</button>{owner && <button className="link" onClick={async () => { if (!confirm("Delete this attachment?")) return; try { await deleteAttachment(a.key); commit({ ...s, expenses: s.expenses.map(e => e.id === expenseId ? { ...e, attachments: (e.attachments || []).filter(x => x.id !== a.id) } : e) }, "Attachment deleted."); } catch (e) { setError(e instanceof Error ? e.message : "Could not delete attachment."); } }}>Delete</button>}</span>)}</>;
   const visibleExpenses = s.expenses.filter(
-    (e) => inRange(e.date) && (category === "All" || e.category === category) && matches(e.category, e.notes, e.head),
+    (e) => inRange(e.date) && (category === "All" || e.category === category) && matches(e.id, e.category, e.notes, e.head),
   );
   const total = visibleExpenses.reduce((n, e) => n + e.amount, 0);
   return (

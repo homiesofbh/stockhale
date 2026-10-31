@@ -96,7 +96,7 @@ export function WorkspaceHeader({
         </span>
         STOCKHALE<span className="brand-dot">.</span>
       </a>
-      <span className="retail-pill">RETAIL</span>
+      <span className="retail-pill">{account.businessType === "manufacturer" ? "MANUFACTURING" : "RETAIL"}</span>
       <nav className="top-navigation" aria-label="Main navigation">
         {nav
           .filter(({ name }) => canAccess(name))

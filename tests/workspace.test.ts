@@ -86,6 +86,14 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         assert.equal((await route.GET(request(ownerCookie))).status, 200);
       },
     );
+    await t.test("owner selects manufacturer workspace type once after signup", async () => {
+      assert.equal((await server.snapshot(owner)).businessType, null);
+      const selected = await route.POST(request(ownerCookie, { action: "business-setup", businessType: "manufacturer" }));
+      assert.equal(selected.status, 200, await selected.clone().text());
+      assert.equal((await selected.json()).businessType, "manufacturer");
+      const changed = await route.POST(request(ownerCookie, { action: "business-setup", businessType: "retail" }));
+      assert.equal(changed.status, 400);
+    });
     await t.test(
       "wrong password rejected and signin succeeds with the existing form payload",
       async () => {

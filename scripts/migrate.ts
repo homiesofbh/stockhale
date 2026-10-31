@@ -1,5 +1,5 @@
 import { configureMigrationConnection } from "./env";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { getMigrations } from "better-auth/db/migration";
 import { getAuth } from "../lib/stockwell/auth";
 import { closeDatabase, transaction } from "../lib/stockwell/database";
@@ -14,7 +14,11 @@ export async function migrate() {
     await client.query(
       `CREATE TABLE IF NOT EXISTS stockwell_migrations (id TEXT PRIMARY KEY, applied_at TIMESTAMPTZ NOT NULL DEFAULT NOW())`,
     );
-    for (const name of ["001-workspace.sql", "002-attachment-quota.sql", "003-admin-subscriptions.sql", "004-trials.sql", "005-testimonials.sql", "006-workspace-country.sql", "007-plan-access-revocation.sql", "008-plan-dates.sql", "009-daily-activity-digest.sql"]) {
+    const migrationDirectory = new URL("../migrations/", import.meta.url);
+    const migrationFiles = (await readdir(migrationDirectory))
+      .filter(name => /^\d{3}-[a-z0-9-]+\.sql$/i.test(name))
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
+    for (const name of migrationFiles) {
       const applied = await client.query(
         "SELECT id FROM stockwell_migrations WHERE id=$1",
         [name],

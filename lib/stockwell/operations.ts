@@ -6,7 +6,7 @@ export type Actor = { id: string; name?: string; role: "owner" | "member"; modul
 export type TradeCorrection = { id: string; tradeId: string; kind: "Sale" | "Purchase"; date: string; reason: string; actorId: string; occurredAt: string; before: Trade; after: Trade };
 export type ChequeEvent = { id: string; paymentId: string; date: string; status: "cleared" | "bounced" | "cancelled"; accountId: string; reason: string; actorId: string; occurredAt: string };
 export const cashChequeSettlement = "cash";
-export type DailyClose = { actorName?: string; summary?: { sales: number; purchases: number; expenses: number; openingCash: number; cashReceipts: number; cashPayments: number; bankClosing: number; bankBalances: { id: string; name: string; closing: number }[] }; id: string; date: string; status: "closed" | "reopened"; expected: number; counted: number; variance: number; explanation: string; actorId: string; closedAt: string; reopenedAt?: string; reopenedBy?: string; reopenReason?: string };
+export type DailyClose = { actorName?: string; summary?: { sales: number; purchases: number; expenses: number; openingCash: number; cashReceipts: number; cashPayments: number; bankClosing: number; bankBalances: { id: string; name: string; closing: number }[]; production?: { runs: number; materialCost: number; outputs: { productId: string; quantity: number; value: number }[]; ingredients: { productId: string; quantity: number; cost: number }[] } }; id: string; date: string; status: "closed" | "reopened"; expected: number; counted: number; variance: number; explanation: string; actorId: string; closedAt: string; reopenedAt?: string; reopenedBy?: string; reopenReason?: string };
 export const check = (ok: boolean, message: string) => { if (!ok) throw new Error(message); };
 export function validDate(date: string) { return typeof date === "string" && /^\d{4}-\d{2}-\d{2}$/.test(date) && Number.isFinite(Date.parse(date)) && new Date(date).toISOString().slice(0, 10) === date; }
 export function previousDate(date: string, days = 1) { const d = new Date(`${date}T12:00:00Z`); d.setUTCDate(d.getUTCDate() - days); return d.toISOString().slice(0, 10); }
@@ -158,6 +158,16 @@ export function closeDay(s: Store, date: string, counted: number, explanation: s
   const expected = cashStatement(s, "", date).closing, variance = round(counted - expected);
   check(variance === 0 || !!explanation.trim(), "Explain the cash variance before closing.");
   const rows = financialRows(s).filter(r => r.date === date), cash = cashStatement(s, date, date);
+  const productionRuns = (s.productionRuns || []).filter(run => run.date === date);
+  const productionOutputs = new Map<string, { quantity: number; value: number }>(), productionInputs = new Map<string, { quantity: number; cost: number }>();
+  for (const run of productionRuns) {
+    const oldOutput = productionOutputs.get(run.outputProductId) || { quantity: 0, value: 0 };
+    productionOutputs.set(run.outputProductId, { quantity: roundQty(oldOutput.quantity + run.outputQuantity), value: round(oldOutput.value + run.outputQuantity * run.outputUnitCost) });
+    for (const ingredient of run.ingredients) {
+      const old = productionInputs.get(ingredient.productId) || { quantity: 0, cost: 0 };
+      productionInputs.set(ingredient.productId, { quantity: roundQty(old.quantity + ingredient.quantity), cost: round(old.cost + ingredient.quantity * ingredient.unitCost) });
+    }
+  }
   const summary = {
     sales: round(rows.filter(r => r.reference.startsWith("INV") && ["Sale", "Sales return", "Bill correction", "Bill correction reversal"].includes(r.type)).reduce((n, r) => n + r.amount, 0)),
     purchases: round(-rows.filter(r => r.reference.startsWith("PUR") && ["Purchase", "Purchase return", "Bill correction", "Bill correction reversal"].includes(r.type)).reduce((n, r) => n + r.amount, 0)),
@@ -165,6 +175,7 @@ export function closeDay(s: Store, date: string, counted: number, explanation: s
     openingCash: round(cash.opening + cash.openingAdjustment), cashReceipts: cash.receipts, cashPayments: cash.payments,
     bankClosing: round(cashFlow(s, "", date).closing - expected),
     bankBalances: (s.financialAccounts || []).map(a => ({ id: a.id, name: a.name, closing: bankStatement(s, a, "", date).closing })),
+    ...(productionRuns.length ? { production: { runs: productionRuns.length, materialCost: round(productionRuns.reduce((sum, run) => sum + run.materialCost, 0)), outputs: [...productionOutputs].map(([productId, value]) => ({ productId, ...value })), ingredients: [...productionInputs].map(([productId, value]) => ({ productId, ...value })) } } : {}),
   };
   const close: DailyClose = { id: uid(), date, status: "closed", expected, counted, variance, summary, explanation: explanation.trim(), actorId: actor.id, ...(actor.name ? { actorName: actor.name } : {}), closedAt: new Date().toISOString() };
   return { ...s, dailyCloses: [...(s.dailyCloses || []), close] };

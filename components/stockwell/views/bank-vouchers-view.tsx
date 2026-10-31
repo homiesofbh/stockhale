@@ -1,20 +1,26 @@
 "use client";
 import { ReasonDialog } from "../reason-dialog";
 import { reverseVoucher, type Actor } from "@/lib/stockwell/operations";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { bankStatement, bankVoucherLines, type BankVoucher } from "@/lib/stockwell/bank-vouchers";
 import { chartAccounts } from "@/lib/stockwell/accounts";
 import { financialRows, money, today, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, Modal, Table } from "@/components/stockwell/ui";
 import { BankVoucherForm } from "@/components/stockwell/forms/bank-voucher-form";
-export function BankVouchersView({ s, matches, inRange, commit, actor }: { actor: Actor; s: Store; matches: (...values: unknown[]) => boolean; inRange: (date: string) => boolean; commit: (s: Store, message: string) => void }) {
+export function BankVouchersView({ s, matches, inRange, commit, actor, query = "" }: { actor: Actor; s: Store; matches: (...values: unknown[]) => boolean; inRange: (date: string) => boolean; commit: (s: Store, message: string) => void; query?: string }) {
   const [reversing, setReversing] = useState("");
   const [editor, setEditor] = useState<BankVoucher | "new" | null>(null);
   const [details, setDetails] = useState<BankVoucher | null>(null);
   const [through, setThrough] = useState(today());
   const banks = s.financialAccounts || [], chart = chartAccounts(s);
   const name = (id: string) => banks.find(a => a.id === id)?.name || "—";
-  const vouchers = [...(s.bankVouchers || [])].filter(v => inRange(v.date) && matches(v.number, v.reference, v.notes, v.kind, v.status, name(v.accountId), name(v.toAccountId))).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  const vouchers = [...(s.bankVouchers || [])].filter(v => inRange(v.date) && matches(v.id, v.number, v.reference, v.notes, v.kind, v.status, name(v.accountId), name(v.toAccountId))).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
+  useEffect(() => {
+    const target = (s.bankVouchers || []).find(voucher => voucher.id === query);
+    if (!target) return;
+    if (target.status === "draft") setEditor(target);
+    else setDetails(target);
+  }, [query, s.bankVouchers]);
   const unassignedRows = financialRows(s).filter(r => r.bank !== 0 && !r.financialAccountId && (!through || r.date <= through));
   const unassigned = unassignedRows.reduce((n, r) => n + r.bank, 0);
   return <>

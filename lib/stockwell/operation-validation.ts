@@ -1,6 +1,7 @@
 import { chartAccounts } from "./accounts";
 import { balance, emptyStore, isPosted, recordPayment, recordReturn, recordTrade, saveProduct, saveContact, round, stock, today, total, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
+import { productionMovements, validateRecipe } from "./production";
 import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
 export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?: string; allowLateExpense?: boolean };
 const clean = (value: any): any => Array.isArray(value) ? value.map(clean) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, clean(value[k])])) : value;
@@ -49,6 +50,10 @@ export function validateStore(s: Store) {
   for (const e of s.expenses) check(validDate(e.date) && Number.isFinite(e.amount) && e.amount > 0 && round(e.amount) === e.amount && s.heads.includes(e.head) && s.expenseCategories.includes(e.category), "Invalid expense.");
   for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && s.products.some(p => p.id === r.productId) && (r.kind === "Damaged stock" || [...s.invoices, ...s.purchases].some(t => t.id === r.tradeId && isPosted(t))), "Invalid return.");
   for (const m of s.movements) check(validDate(m.date) && Number.isFinite(m.qty) && s.products.some(p => p.id === m.productId), "Invalid stock movement.");
+  for (const recipe of s.recipes || []) validateRecipe(s, recipe);
+  check(new Set((s.recipes || []).map(recipe => recipe.id)).size === (s.recipes || []).length, "Duplicate recipe IDs.");
+  check(new Set((s.productionRuns || []).map(run => run.id)).size === (s.productionRuns || []).length, "Duplicate production run IDs.");
+  for (const run of s.productionRuns || []) check(validDate(run.date) && !!run.recipeId && !!run.recipeName && !!run.reference && Number.isInteger(run.batches) && run.batches > 0 && Number.isFinite(run.outputQuantity) && run.outputQuantity > 0 && Number.isFinite(run.outputUnitCost) && run.outputUnitCost >= 0 && Number.isFinite(run.materialCost) && run.materialCost >= 0 && !!run.actorId && s.products.some(product => product.id === run.outputProductId) && Array.isArray(run.ingredients) && run.ingredients.length > 0 && run.ingredients.every(item => s.products.some(product => product.id === item.productId) && item.productId !== run.outputProductId && Number.isFinite(item.quantity) && item.quantity > 0 && Number.isFinite(item.unitCost) && item.unitCost >= 0), "Invalid production run.");
   for (const c of s.corrections || []) check(validDate(c.date) && !!c.reason?.trim() && c.before.id === c.tradeId && c.after.id === c.tradeId, "Invalid bill correction history.");
   for (const e of s.chequeEvents || []) check(validDate(e.date) && !!e.reason?.trim() && s.payments.some(p => p.id === e.paymentId && p.method === "Cheque"), "Invalid cheque history.");
   s.products.forEach(p => check(stock(s, p.id) >= 0, "Invalid backup: stock cannot be negative."));
@@ -83,8 +88,16 @@ export function validateOperations(before: Store, after: Store, module: string, 
   immutable(before.corrections || [], after.corrections || [], "Correction history");
   immutable(before.chequeEvents || [], after.chequeEvents || [], "Cheque history");
   immutable(before.movements, after.movements, "Stock movements");
+  immutable(before.productionRuns || [], after.productionRuns || [], "Production runs");
   immutable(before.returns, after.returns, "Returns");
   immutable(before.expenses, after.expenses, "Expenses");
+  for (const product of before.products) {
+    const next = after.products.find(candidate => candidate.id === product.id);
+    if (!next) continue;
+    const usedInManufacturing = (before.recipes || []).some(recipe => recipe.outputProductId === product.id || recipe.ingredients.some(ingredient => ingredient.productId === product.id)) ||
+      (before.productionRuns || []).some(run => run.outputProductId === product.id || run.ingredients.some(ingredient => ingredient.productId === product.id));
+    check(!usedInManufacturing || product.unit === next.unit, "A product measurement unit cannot change after it is used by a recipe or production run.");
+  }
   const expectedMovements: Store["movements"] = [];
   let expectedProducts = before.products;
   for (const correction of additions(before.corrections || [], after.corrections || [])) {
@@ -109,6 +122,29 @@ export function validateOperations(before: Store, after: Store, module: string, 
     }
   }
   expectedMovements.push(...replayedOpenings);
+  if (module === "Production") {
+    for (const recipe of after.recipes || []) validateRecipe(after, recipe);
+    for (const run of additions(before.productionRuns || [], after.productionRuns || [])) {
+      check(run.date === today(new Date(context.occurredAt)), "Production runs must use the business date when they are recorded so stock and material costs stay consistent.");
+      requireOpenDate(before, run.date);
+      const recipe = (after.recipes || []).find(candidate => candidate.id === run.recipeId);
+      check(!!recipe && run.actorId === actor.id && run.actorName === (actor.name || "") && validDate(run.date) && Number.isInteger(run.batches) && run.batches > 0, "Production run must match a saved recipe and the signed-in operator.");
+      const expectedIngredients = recipe!.ingredients.map(item => ({ productId: item.productId, quantity: item.quantity * run.batches, unitCost: expectedProducts.find(product => product.id === item.productId)?.cost }));
+      const materialCost = round(expectedIngredients.reduce((sum, item) => sum + item.quantity * (item.unitCost || 0), 0));
+      const outputQuantity = recipe!.outputQuantity * run.batches;
+      const outputUnitCost = round(materialCost / outputQuantity);
+      check(run.recipeName === recipe!.name && run.outputProductId === recipe!.outputProductId && run.outputQuantity === outputQuantity && same(run.ingredients, expectedIngredients) && run.materialCost === materialCost && run.outputUnitCost === outputUnitCost, "Production run does not match the saved recipe and current raw material costs.");
+      for (const ingredient of run.ingredients) check(stock(before, ingredient.productId) + expectedMovements.filter(movement => movement.productId === ingredient.productId).reduce((sum, movement) => sum + movement.qty, 0) >= ingredient.quantity, "Production cannot consume more raw material than is in stock.");
+      const priorMovements = expectedMovements.slice();
+      expectedMovements.push(...productionMovements(run));
+      const outputProduct = expectedProducts.find(product => product.id === run.outputProductId)!;
+      const outputStock = stock({ ...before, movements: [...before.movements, ...priorMovements] }, run.outputProductId);
+      const nextCost = round((outputStock * outputProduct.cost + outputQuantity * outputUnitCost) / (outputStock + outputQuantity));
+      expectedProducts = expectedProducts.map(product => product.id === run.outputProductId ? { ...product, cost: nextCost } : product);
+    }
+  } else {
+    check(same(before.recipes || [], after.recipes || []) && same(before.productionRuns || [], after.productionRuns || []), "Only the Production module can change recipes or production runs.");
+  }
   for (const key of ["invoices", "purchases"] as const) {
     const kind = key === "invoices" ? "Sale" : "Purchase";
     for (const old of before[key]) {
@@ -191,6 +227,7 @@ export function validateOperations(before: Store, after: Store, module: string, 
     }
   }
   if (module === "Purchases") check(same(expectedProducts, after.products), "Purchase changes may update only the calculated product costs.");
+  if (module === "Production") check(same(expectedProducts, after.products), "Production may update only finished-product costs calculated from the recipe.");
   after.products.forEach(p => check(stock(after, p.id) >= 0, "This change would make stock negative."));
   for (const key of ["journals", "bankVouchers"] as const) for (const v of after[key] || []) {
     const old = before[key]?.find(a => a.id === v.id);

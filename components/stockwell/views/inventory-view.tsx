@@ -7,6 +7,7 @@ import { ArrowDownLeft, ArrowUpRight, Barcode, Box, Package, Pencil, Warehouse }
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
   s: Store;
+  manufacturer: boolean;
   open: (name: string) => void;
   query: string;
   category: string;
@@ -16,6 +17,7 @@ type Props = {
 };
 export function InventoryView({
   s,
+  manufacturer,
   open,
   query,
   category,
@@ -27,9 +29,15 @@ export function InventoryView({
   const totalStockValue = products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0);
   const totalStockUnits = products.reduce((total, product) => total + stock(s, product.id), 0);
   const lowStock = products.filter(product => stock(s, product.id) > 0 && stock(s, product.id) <= product.low).length;
+  const recipeInputs = new Set(s.recipes.flatMap(recipe => recipe.ingredients.map(ingredient => ingredient.productId)));
+  const recipeOutputs = new Set(s.recipes.map(recipe => recipe.outputProductId));
+  const role = (productId: string) => {
+    const input = recipeInputs.has(productId), output = recipeOutputs.has(productId);
+    return input && output ? "Material & finished good" : output ? "Finished good" : input ? "Raw material" : "Not assigned to a recipe";
+  };
   return (
     <>
-      <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>{category !== "All" || status !== "All" || query.trim() ? "Stock value in view" : "Total value of stock"}</h2><p>Filtered products, valued at cost price.</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
+      <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>{category !== "All" || status !== "All" || query.trim() ? "Stock value in view" : "Total value of stock"}</h2><p>Filtered products, valued at cost price.{manufacturer ? " Production transfers materials into finished stock at recorded cost." : ""}</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
       <div className="sub-actions inventory-actions">
         <span>{products.length} products <span className="muted">/ {lowStock} low stock</span></span>
         <div>
@@ -60,6 +68,7 @@ export function InventoryView({
               <div className="inventory-product-overline"><span>{p.sku || "NO SKU"}</span>{p.barcode && <span><Barcode size={12} /> {p.barcode}</span>}</div>
               <button className="inventory-product-title" onClick={() => selectProduct(p)}>{p.name}</button>
               <div className="inventory-product-category">{p.category || "Uncategorized"}</div>
+              {manufacturer && <div className="inventory-product-category">{role(p.id)}</div>}
               <div className="inventory-product-stock"><div><strong>{quantity.toLocaleString("en-PK")}</strong><span>{p.unit || "piece"} in stock</span></div><span className="inventory-product-stock-icon"><Box size={16} /></span></div>
               <div className="inventory-product-prices"><div><small>SELLING PRICE</small><strong>{money(p.price)}</strong></div><div><small>COST PRICE</small><strong>{money(p.cost)}</strong></div></div>
               <div className="inventory-product-meta">{p.store && <span><Warehouse size={13} />{p.store}</span>}{p.packing && <span>{p.packing}</span>}{p.size && <span>{p.size}</span>}{p.color && <span>{p.color}</span>}{p.gsm && <span>{p.gsm} GSM</span>}{p.maximum != null && <span>Max {p.maximum}</span>}{productSuppliers.map(name => <span key={name}>Supplier: {name}</span>)}{p.variantOf && <span>Variant: {s.products.find(parent => parent.id === p.variantOf)?.name || "unknown"}</span>}</div>

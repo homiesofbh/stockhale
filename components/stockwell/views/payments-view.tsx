@@ -1,5 +1,5 @@
 "use client";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { ChequeRegister } from "./cheque-register";
 import type { Actor } from "@/lib/stockwell/operations";
 import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
@@ -19,6 +19,7 @@ type Props = {
   inRange: (date: string) => boolean;
   matches: (...values: unknown[]) => boolean;
   commit: (next: Store, message: string) => void;
+  query?: string;
 };
 export function PaymentsView({
   actor,
@@ -31,6 +32,7 @@ export function PaymentsView({
   inRange,
   matches,
   commit,
+  query = "",
 }: Props) {
   const [partner, setPartner] = useState("");
   const [partnerDraft, setPartnerDraft] = useState("");
@@ -50,6 +52,9 @@ export function PaymentsView({
   const [bankHistoryFrom, setBankHistoryFrom] = useState("");
   const [bankHistoryTo, setBankHistoryTo] = useState("");
   const [paymentHistoryPage, setPaymentHistoryPage] = useState(0);
+  useEffect(() => {
+    if ((s.financialAccounts || []).some(account => account.id === query)) setHistoryAccountId(query);
+  }, [query, s.financialAccounts]);
   const partnerNames = Array.from(new Set([...(s.partnerNames || []), ...(s.partners || []).map(entry => entry.partner)].map(name => name.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const partnerAccounts = (s.financialAccounts || []).filter(account => account.active !== false);
   const partnerLedgerEntries = (s.partners || [])
@@ -133,7 +138,7 @@ export function PaymentsView({
       method: entry.method, cheque: "", chequeStatus: undefined as string | undefined,
       head: "Partner capital",
     })),
-  ].filter(p => inRange(p.date) && matches(p.contact, p.reference, p.kind, p.head, p.cheque, p.method))
+  ].filter(p => inRange(p.date) && matches(p.id, p.contact, p.reference, p.kind, p.head, p.cheque, p.method))
     .sort((a, b) => b.date.localeCompare(a.date));
   const paymentHistoryPageSize = 15;
   const paymentHistoryPageCount = Math.ceil(paymentHistoryEntries.length / paymentHistoryPageSize);
@@ -168,7 +173,7 @@ export function PaymentsView({
           detail={`Bank ${money(bank)}`}
         />
       </div>
-      <ChequeRegister s={s} actor={actor} matches={matches} commit={commit} />
+      <ChequeRegister s={s} actor={actor} matches={matches} commit={commit} query={query} />
       {historyAccount && <Modal title={`${historyAccount.name} history`} close={() => setHistoryAccountId("")}>
         <p>Bill receipts, deposits, supplier payments, expenses, cheque settlements, and vouchers recorded against this account.</p>
         <div className="form-grid">
@@ -259,7 +264,7 @@ export function PaymentsView({
             <button className="primary" type="submit">Record {partnerKind.toLowerCase()}</button>
           </div>
         </form>
-        <Table headers={["Date", "Partner", "Movement", "Amount", "Cash / bank account", "Notes"]} rows={(s.partners || []).filter(entry => inRange(entry.date) && matches(entry.partner, entry.kind, entry.method, entry.notes)).slice().sort((a, b) => b.date.localeCompare(a.date)).map(entry => [entry.date, entry.partner, <Badge tone={entry.kind === "Contribution" ? "green" : "amber"}>{entry.kind}</Badge>, money(entry.amount), entry.method, entry.notes || "—"])} empty="No partner capital movements in this period" />
+        <Table headers={["Date", "Partner", "Movement", "Amount", "Cash / bank account", "Notes"]} rows={(s.partners || []).filter(entry => inRange(entry.date) && matches(entry.id, entry.partner, entry.kind, entry.method, entry.notes)).slice().sort((a, b) => b.date.localeCompare(a.date)).map(entry => [entry.date, entry.partner, <Badge tone={entry.kind === "Contribution" ? "green" : "amber"}>{entry.kind}</Badge>, money(entry.amount), entry.method, entry.notes || "—"])} empty="No partner capital movements in this period" />
       </section>
       <section className="card mt-8">
         <div className="section-head"><div><h2>Bank and wallet accounts</h2><p>All accounts share the Bank asset ledger while keeping separate balances and transaction histories.</p></div></div>
@@ -321,7 +326,7 @@ export function PaymentsView({
           ])}
         />
       </section>
-      <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} />
+      <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} query={query} />
       <section className="card mt-8">
         <div className="section-head">
           <h2>Payment history</h2>

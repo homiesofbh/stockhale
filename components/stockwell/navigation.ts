@@ -13,6 +13,7 @@ import {
   Undo2,
   Users,
   Wallet,
+  Factory,
 } from "lucide-react";
 export type Module =
   | "Dashboard"
@@ -28,6 +29,7 @@ export type Module =
   | "Returns & Damage"
   | "Reports"
   | "Closing"
+  | "Production"
   | "Settings"
   | "Notifications";
 export const nav: {
@@ -47,11 +49,12 @@ export const nav: {
   { name: "Returns & Damage", icon: Undo2 },
   { name: "Reports", icon: CircleDollarSign },
   { name: "Closing", icon: CalendarCheck },
+  { name: "Production", icon: Factory },
 ];
 export const descriptions: Record<Module, string> = {
-  Settings: "Manage your store and team.",
+  Settings: "Manage your business profile and team.",
   Notifications: "Admin notifications and activity history.",
-  Dashboard: "A clear view of your business, from shelf to sale.",
+  Dashboard: "A clear view of your inventory, production, and sales.",
   Inventory: "Every item, every movement. Keep your stock in balance.",
   Purchases: "Record incoming goods and manage supplier purchases.",
   Billing: "Build a bill, collect payment, and keep the queue moving.",
@@ -64,4 +67,5 @@ export const descriptions: Record<Module, string> = {
   "Returns & Damage": "Record returns and damage with a clear stock trail.",
   Reports: "Turn your daily records into a clearer business picture.",
   Closing: "Reconcile the cash drawer and close each business day safely.",
+  Production: "Turn ingredient stock into finished goods with recipes and batch records.",
 };

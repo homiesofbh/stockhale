@@ -4,6 +4,7 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Table } from "@/components/stockwell/ui";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import type { Workspace } from "@/lib/stockwell/workspace";
+import { getFirstRecordTarget } from "@/lib/stockwell/audit-target";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useState } from "react";
@@ -13,6 +14,7 @@ type Props = {
   setNotice: Dispatch<SetStateAction<string>>;
   setModule: Dispatch<SetStateAction<Module>>;
   notificationReturn: RefObject<Module>;
+  openRecord: (event: Workspace["audit"][number]) => void;
 };
 export function NotificationsView({
   workspace,
@@ -20,6 +22,7 @@ export function NotificationsView({
   setNotice,
   setModule,
   notificationReturn,
+  openRecord,
 }: Props) {
   const [actorFilter, setActorFilter] = useState("All users");
   const [moduleFilter, setModuleFilter] = useState("All modules");
@@ -69,7 +72,7 @@ export function NotificationsView({
         rows={entries.map((a) => [
           a.actor,
           a.module,
-          <div><span>{a.action} {a.module in descriptions && <button className="link" onClick={() => setModule(a.module as Module)}>View module</button>}</span><details><summary>View record changes</summary><pre className="audit-details">{a.records.length > 12000 ? `${a.records.slice(0, 12000)}… (details truncated)` : a.records}</pre></details></div>,
+          <div><span>{a.action} {a.module in descriptions && <button className="link" onClick={() => setModule(a.module as Module)}>View module</button>}</span>{getFirstRecordTarget(a.records, a.module) && <button className="link" onClick={() => openRecord(a)}>Open {getFirstRecordTarget(a.records, a.module)!.label}</button>}<details><summary>View record changes</summary><pre className="audit-details">{a.records.length > 12000 ? `${a.records.slice(0, 12000)}… (details truncated)` : a.records}</pre></details></div>,
           <div key={a.id}>
             {new Date(a.occurredAt).toLocaleString()}
             <small>Synced {new Date(a.receivedAt).toLocaleString()}</small>

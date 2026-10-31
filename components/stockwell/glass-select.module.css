@@ -25,7 +25,7 @@
   background-color: #ffffff33;
 }
 .trigger:focus-visible {
-  outline: 2px solid #867094;
+  outline: 2px solid var(--brand-accent);
   outline-offset: 3px;
 }
 .trigger[data-disabled] {
@@ -52,7 +52,7 @@
   box-shadow: inset 0 1px 0 #ffffffc7;
 }
 .search::placeholder { color: #82778d; }
-.search:focus { border-color: #8c73a1; box-shadow: 0 0 0 3px #8c73a129, inset 0 1px 0 #fff; }
+.search:focus { border-color: var(--brand-accent); box-shadow: 0 0 0 3px #70617f29, inset 0 1px 0 #fff; }
 .noResults { padding: 12px; color: #756184; font-size: 12px; }
 .icon {
   display: flex;

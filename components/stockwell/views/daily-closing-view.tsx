@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import { BankVoucherForm } from "../forms/bank-voucher-form";
 import { GlassSelect } from "../glass-select";
 import { Modal } from "../ui";
@@ -16,11 +16,13 @@ import { Badge, Field, InfoTip, Table } from "../ui";
 export function DailyClosingView({
   s,
   actor,
+  query = "",
   commit,
   reopenWithOwnerPassword,
 }: {
   s: Store;
   actor: Actor;
+  query?: string;
   commit: (s: Store, message: string) => void;
   reopenWithOwnerPassword: (closingId: string, reason: string, password: string) => Promise<unknown>;
 }) {
@@ -42,6 +44,10 @@ export function DailyClosingView({
   const [unknownReason, setUnknownReason] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [closingStatus, setClosingStatus] = useState("All");
+  useEffect(() => {
+    const target = (s.dailyCloses || []).find(item => item.id === query);
+    if (target) setDate(target.date);
+  }, [query, s.dailyCloses]);
 
   const cash = cashStatement(s, date, date);
   const activeClose = s.dailyCloses?.find(
@@ -54,6 +60,9 @@ export function DailyClosingView({
     closing: bankStatement(s, account, "", date).closing,
   }));
   const recordedProfit = profit(s, date, date);
+  const productionRuns = (s.productionRuns || []).filter(run => run.date === date);
+  const productName = (id: string) => s.products.find(product => product.id === id)?.name || "Unknown product";
+  const productUnit = (id: string) => s.products.find(product => product.id === id)?.unit || "piece";
   const variance =
     counted !== "" && Number.isFinite(Number(counted))
       ? round(Number(counted) - expected)
@@ -143,6 +152,8 @@ export function DailyClosingView({
           />
         </div>
       </div>
+
+      {(s.recipes.length > 0 || s.productionRuns.length > 0) && <section className="card production-close-summary"><div className="section-head"><div><h3>Production activity</h3><p>Inventory value transferred through manufacturing; this does not change drawer cash.</p></div><Badge>{productionRuns.length} run{productionRuns.length === 1 ? "" : "s"} today</Badge></div>{productionRuns.length ? <Table headers={["Reference", "Recipe", "Finished goods", "Materials used", "Material cost"]} rows={productionRuns.map(run => [run.reference, run.recipeName, `${run.outputQuantity} ${productUnit(run.outputProductId)} · ${productName(run.outputProductId)}`, run.ingredients.map(item => `${item.quantity} ${productUnit(item.productId)} ${productName(item.productId)}`).join(" · "), money(run.materialCost)])} /> : <p className="form-hint">No production recorded for this date.</p>}</section>}
 
       <div className="closing-profit-heading">
         <h3>Recorded profit summary</h3>
@@ -299,6 +310,7 @@ export function DailyClosingView({
           "Action",
         ]}
         rows={[...(s.dailyCloses || [])]
+          .filter(c => !query || c.id === query)
           .sort(
             (a, b) =>
               b.date.localeCompare(a.date) ||
@@ -347,14 +359,14 @@ export function DailyClosingView({
       />
 
       {[...(s.dailyCloses || [])]
-        .filter((c) => !!c.summary)
+        .filter((c) => !!c.summary && (!query || c.id === query))
         .sort(
           (a, b) =>
             b.date.localeCompare(a.date) ||
             b.closedAt.localeCompare(a.closedAt)
         )
         .map((c) => (
-          <details className="daily-close-form" key={c.id}>
+          <details className="daily-close-form" key={c.id} open={!!query && c.id === query}>
             <summary>
               <time dateTime={c.date}>{formatClosingDate(c.date)}</time> · saved closing summary ({c.status})
             </summary>
@@ -363,6 +375,8 @@ export function DailyClosingView({
                 "Net billed sales",
                 "Net purchases",
                 "Recorded expenses",
+                "Production runs",
+                "Material cost transferred",
                 "Opening cash",
                 "Cash receipts",
                 "Cash payments",
@@ -373,6 +387,8 @@ export function DailyClosingView({
                   money(c.summary!.sales),
                   money(c.summary!.purchases),
                   money(c.summary!.expenses),
+                  c.summary!.production?.runs || 0,
+                  money(c.summary!.production?.materialCost || 0),
                   money(c.summary!.openingCash),
                   money(c.summary!.cashReceipts),
                   money(c.summary!.cashPayments),
@@ -380,6 +396,7 @@ export function DailyClosingView({
                 ],
               ]}
             />
+            {!!c.summary!.production && <Table headers={["Production input / output", "Quantity", "Inventory value"]} rows={[...c.summary!.production.ingredients.map(item => [`Material · ${productName(item.productId)}`, -item.quantity, money(-item.cost)]), ...c.summary!.production.outputs.map(item => [`Finished · ${productName(item.productId)}`, item.quantity, money(item.value)])]} />}
             <Table
               headers={["Bank / wallet", "Saved closing balance"]}
               rows={c.summary!.bankBalances.map((a) => [

@@ -77,5 +77,5 @@ export function ResetPasswordPageClient() {
 }
 
 function AuthShell({ title, description, children }: { title: string; description: string; children: React.ReactNode }) {
-  return <main className="auth-shell"><section className="auth-intro"><Link className="brand" href="/">STOCKHALE.</Link><span className="eyebrow">ACCOUNT SECURITY</span><h1>{title}</h1><p>{description}</p></section><section className="auth-card"><h2>{title}</h2>{children}</section></main>;
+  return <main className="auth-shell"><section className="auth-intro"><Link className="brand marketing-brand" href="/"><span className="brand-mark"><span>S</span></span><span>STOCKHALE<span className="brand-dot">.</span></span></Link><span className="eyebrow">ACCOUNT SECURITY</span><h1>{title}</h1><p>{description}</p></section><section className="auth-card"><h2>{title}</h2>{children}</section></main>;
 }

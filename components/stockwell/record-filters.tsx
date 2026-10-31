@@ -19,7 +19,8 @@ type Props = {
     | "Returns & Damage"
     | "Reports"
     | "Settings"
-    | "Notifications";
+    | "Notifications"
+    | "Production";
   status: string;
   setStatus: Dispatch<SetStateAction<string>>;
   paymentMethod: string;

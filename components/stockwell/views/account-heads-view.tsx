@@ -49,7 +49,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
   const bankSummary = bankBalanceSummary(s);
   const sharedBank = sharedBankLedger(s);
   const sorted = [...accounts].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-  const visible = new Set(sorted.filter(a => matches(a.code, accountPath(accounts, a), a.type, a.description)).map(a => a.id));
+  const visible = new Set(sorted.filter(a => matches(a.id, a.code, accountPath(accounts, a), a.type, a.description)).map(a => a.id));
   // Retain parents as context when a search only matches a child.
   for (const account of sorted.filter(a => visible.has(a.id))) {
     let parentId = account.parentId;
@@ -60,7 +60,7 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
     }
   }
   const journals = [...(s.journals || [])].filter(v => inRange(v.date) && matches(
-    v.number, v.reference, v.notes, v.status,
+    v.id, v.number, v.reference, v.notes, v.status,
     ...v.lines.flatMap(l => [accounts.find(a => a.id === l.accountId)?.name, l.description]),
   )).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
   const roots = sorted.filter(a => !a.parentId || !accounts.some(parent => parent.id === a.parentId));

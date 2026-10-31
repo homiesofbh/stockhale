@@ -31,9 +31,9 @@ export type ReportData = { columns: string[]; rows: unknown[][]; customerIds?: s
 
 export function createReportData(
   s: Store,
-  options: RecordFilters & { report: string; reportContact: string; reportProduct?: string },
+  options: RecordFilters & { report: string; reportContact: string; reportProduct?: string; manufacturer?: boolean },
 ): ReportData {
-  const { report, reportContact, reportProduct = "", from, to, query } = options;
+  const { report, reportContact, reportProduct = "", from, to, query, manufacturer = false } = options;
   // The start date selects bills; all settlements through the end date count,
   // including those before the start date. Status filtering uses that same snapshot.
   const asOf: Store = to ? {
@@ -162,15 +162,21 @@ export function createReportData(
   if (report === "Yearly summary") {
     const years = new Set<string>();
     [...s.invoices, ...s.purchases, ...s.expenses, ...s.payments].forEach(r => years.add(r.date.slice(0, 4)));
+    (s.productionRuns || []).forEach(run => years.add(run.date.slice(0, 4)));
     const rows = [...years].sort().map(year => {
       const sales = s.invoices.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
       const purchases = s.purchases.filter(t => isPosted(t) && t.date.startsWith(year)).reduce((n, t) => n + total(t), 0);
       const expenses = s.expenses.filter(e => e.date.startsWith(year)).reduce((n, e) => n + e.amount, 0);
       const receipts = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Customer").reduce((n, p) => n + p.amount, 0);
       const payments = s.payments.filter(p => p.date.startsWith(year) && p.kind === "Supplier").reduce((n, p) => n + p.amount, 0);
-      return [year, round(sales), round(purchases), round(expenses), round(receipts), round(payments), round(receipts - payments)];
+      const summary: unknown[] = [year, round(sales), round(purchases), round(expenses), round(receipts), round(payments), round(receipts - payments)];
+      if (manufacturer) {
+        const runs = (s.productionRuns || []).filter(run => run.date.startsWith(year));
+        summary.push(runs.length, round(runs.reduce((sum, run) => sum + run.materialCost, 0)));
+      }
+      return summary;
     }).filter(row => matches(row[0]));
-    return { columns: ["Year", "Sales", "Purchases", "Expenses", "Customer receipts", "Supplier payments", "Net cash movement"], rows };
+    return { columns: ["Year", "Sales", "Purchases", "Expenses", "Customer receipts", "Supplier payments", "Net cash movement", ...(manufacturer ? ["Production runs", "Material cost transferred"] : [])], rows };
   }
   if (report === "Trial balance") {
     const rows = chartAccounts(s).map(a => { const balance = journalAccountBalance(s, a, to || today()); return [a.code, a.name, a.type, balance > 0 ? balance : 0, balance < 0 ? -balance : 0]; }).filter(r => Number(r[3]) || Number(r[4]));
@@ -281,6 +287,15 @@ export function createReportData(
           p.maximum ?? "",
         ]),
     };
+  if (report === "Production ledger" || report === "Production report") {
+    const rows = (s.productionRuns || []).filter(run => inRange(run.date) && (!reportProduct || run.outputProductId === reportProduct || run.ingredients.some(item => item.productId === reportProduct)) && matches(run.reference, run.recipeName, run.actorName, pName(run.outputProductId), ...run.ingredients.map(item => pName(item.productId))))
+      .slice().sort((a, b) => a.date.localeCompare(b.date) || a.reference.localeCompare(b.reference))
+      .flatMap(run => [
+        [run.date, run.reference, "Finished goods produced", pName(run.outputProductId), run.outputQuantity, s.products.find(product => product.id === run.outputProductId)?.unit || "piece", run.outputUnitCost, run.materialCost, run.recipeName, run.actorName],
+        ...run.ingredients.filter(item => !reportProduct || item.productId === reportProduct).map(item => [run.date, run.reference, "Raw material consumed", pName(item.productId), -item.quantity, s.products.find(product => product.id === item.productId)?.unit || "piece", item.unitCost, -round(item.quantity * item.unitCost), run.recipeName, run.actorName]),
+      ].filter(row => !reportProduct || row[3] === pName(reportProduct)));
+    return { columns: ["Date", "Reference", "Movement", "Product", "Quantity", "UOM", "Unit cost", "Inventory value", "Recipe", "Recorded by"], rows };
+  }
   if (report === "Stock movement report")
     return (() => {
       const balances = new Map<string, number>();

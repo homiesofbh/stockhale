@@ -174,6 +174,10 @@ export type ReturnRecord = {
   cost: number;
   reason: string;
 };
+export type RecipeIngredient = { productId: string; quantity: number };
+export type Recipe = { id: string; name: string; outputProductId: string; outputQuantity: number; ingredients: RecipeIngredient[] };
+export type ProductionRunIngredient = RecipeIngredient & { unitCost: number };
+export type ProductionRun = { id: string; recipeId: string; recipeName: string; date: string; reference: string; batches: number; outputProductId: string; outputQuantity: number; outputUnitCost: number; materialCost: number; ingredients: ProductionRunIngredient[]; actorId: string; actorName: string };
 export type Store = {
   version: 1;
   products: Product[];
@@ -200,6 +204,8 @@ export type Store = {
   partnerNames?: string[];
   partners?: PartnerEntry[];
   crossCheques?: CrossCheque[];
+  recipes: Recipe[];
+  productionRuns: ProductionRun[];
 };
 export const today = (date = new Date()) => date.toLocaleDateString("en-CA", { timeZone: "Asia/Karachi" });
 export const isPosted = (t: Trade) => t.status !== "draft" && t.status !== "void";
@@ -264,12 +270,21 @@ export const emptyStore = (): Store => ({
   partnerNames: [],
   partners: [],
   crossCheques: [],
+  recipes: [],
+  productionRuns: [],
 });
 export function normalizeStore(value: Store): Store {
   const defaults = emptyStore();
+  const products = value.products || [];
+  const productionRuns = (value.productionRuns || []).map(run => {
+    const ingredients = (run.ingredients || []).map(item => ({ ...item, unitCost: Number.isFinite((item as { unitCost?: number }).unitCost) ? (item as { unitCost: number }).unitCost : products.find(product => product.id === item.productId)?.cost || 0 }));
+    const materialCost = Number.isFinite((run as { materialCost?: number }).materialCost) ? run.materialCost : round(ingredients.reduce((sum, item) => sum + item.quantity * item.unitCost, 0));
+    return { ...run, ingredients, materialCost, outputUnitCost: Number.isFinite((run as { outputUnitCost?: number }).outputUnitCost) ? run.outputUnitCost : run.outputQuantity ? round(materialCost / run.outputQuantity) : 0 };
+  });
   return {
     ...defaults,
     ...value,
+    products,
     accounts: value.accounts || [],
     journals: value.journals || [],
     bankVouchers: value.bankVouchers || [],
@@ -284,6 +299,8 @@ export function normalizeStore(value: Store): Store {
     partnerNames: value.partnerNames || [],
     partners: value.partners || [],
     crossCheques: value.crossCheques || [],
+    recipes: value.recipes || [],
+    productionRuns,
   };
 }
 export const stock = (s: Store, id: string) =>

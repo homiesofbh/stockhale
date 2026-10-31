@@ -15,7 +15,7 @@ export function MovementsForm({ s, matches, pName }: Props) {
       <Table
         headers={["Date", "Time", "Product", "Type", "Quantity", "Reference", "Reason"]}
         rows={s.movements
-          .filter((m) => matches(pName(m.productId), m.reference, m.reason))
+          .filter((m) => matches(m.id, pName(m.productId), m.reference, m.reason))
           .slice()
           .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0) || b.id.localeCompare(a.id))
           .map((m) => [

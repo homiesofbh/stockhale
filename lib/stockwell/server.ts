@@ -138,7 +138,7 @@ export async function snapshot(user: Row, options: { details?: boolean } = {}) {
     const access = trialAccess(w);
     if (!access.locked) return readSnapshot(user, w, options.details !== false);
     return {
-      ...access, id: w.id, name: w.name, image: "", revision: 0,
+      ...access, id: w.id, name: w.name, businessType: w.business_type || null, image: "", revision: 0,
       store: emptyStore(), member: await member(w, user), members: [], audit: [],
       readEvent: "", emailConfigured: false,
     };
@@ -334,6 +334,7 @@ async function readSnapshot(user: Row, existingWorkspace?: Row, details = true) 
   return {
     id: w.id,
     name: w.name,
+    businessType: w.business_type || null,
     image: w.image,
     timeZone: w.time_zone || "UTC",
     revision: w.revision,
@@ -488,7 +489,7 @@ export async function resetPassword(body: Row, request: Request) {
 export async function mutate(user: Row, body: Row) {
   return transaction(async () => {
     const w = await workspace(user, true);
-    requireWorkspaceAccess(w);
+    if (body.action !== "business-setup") requireWorkspaceAccess(w);
     if (body.action === "sync") {
       const m = await member(w, user);
       if (!Array.isArray(body.changes) || body.changes.length > 100)
@@ -526,6 +527,8 @@ export async function mutate(user: Row, body: Row) {
             ),
             { status: 403 },
           );
+        if (c.module === "Production" && w.business_type !== "manufacturer")
+          throw Object.assign(new Error("Production is available only in manufacturer workspaces."), { status: 403 });
         required(c.id);
         required(c.action, 300);
         if (!Number.isFinite(Date.parse(c.occurredAt)))
@@ -665,6 +668,13 @@ export async function mutate(user: Row, body: Row) {
         "Store profile updated",
         `Store name: ${name}; image ${image ? "set" : "removed"}; daily digest time zone: ${timeZone}`,
       );
+    } else if (body.action === "business-setup") {
+      if (user.id !== w.owner) throw Object.assign(new Error("Only the workspace owner can complete business setup."), { status: 403 });
+      if (w.business_type) throw new Error("Business type has already been selected.");
+      if (body.businessType !== "retail" && body.businessType !== "manufacturer") throw new Error("Choose retail or manufacturer.");
+      await query("UPDATE workspaces SET business_type=$1 WHERE id=$2 AND business_type IS NULL", [body.businessType, w.id]);
+      await event(w, user, "Settings", "Business type selected", body.businessType === "manufacturer" ? "Manufacturer" : "Retail / other business");
+      return await readSnapshot(user, { ...w, business_type: body.businessType });
     } else if (["invite", "add-member"].includes(body.action)) {
       const mail = email(body.email);
       const allowed = validateModules(body.modules);

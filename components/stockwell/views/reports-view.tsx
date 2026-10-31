@@ -21,6 +21,7 @@ function printReport(report: string, columns: string[], rows: unknown[][], from:
 
 type Props = {
   actor: Actor;
+  manufacturer: boolean;
   commit: (s: Store, message: string) => void;
   reopenWithOwnerPassword: (closingId: string, reason: string, password: string) => Promise<unknown>;
   report: string;
@@ -40,7 +41,7 @@ type Props = {
   };
 };
 export function ReportsView({
-  actor, commit, reopenWithOwnerPassword,
+  actor, manufacturer, commit, reopenWithOwnerPassword,
   report,
   setReport,
   setReportContact,
@@ -76,6 +77,7 @@ export function ReportsView({
                 "Purchase report",
                 "Inventory report",
                 "Stock movement report",
+                ...(manufacturer ? ["Production ledger"] : []),
                 "Stock aging report",
                 "Daily cash sheet",
                 "Expense report",
@@ -98,7 +100,7 @@ export function ReportsView({
               ))}
             </GlassSelect>
           </Field>
-          {report === "Stock movement report" && <Field label="Product stock history"><GlassSelect aria-label="Product stock history" value={reportProduct} onValueChange={setReportProduct}><option value="">All products</option>{s.products.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</GlassSelect></Field>}
+          {(report === "Stock movement report" || report === "Production ledger") && <Field label={report === "Production ledger" ? "Production product" : "Product stock history"}><GlassSelect aria-label={report === "Production ledger" ? "Production product" : "Product stock history"} value={reportProduct} onValueChange={setReportProduct}><option value="">All products</option>{s.products.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</GlassSelect></Field>}
           {["Customer business report", "Customer ledger", "Supplier ledger"].includes(report) && (
             <Field
               label={report === "Customer ledger" ? "Customer" : "Supplier"}

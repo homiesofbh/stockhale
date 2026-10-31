@@ -65,6 +65,7 @@ type Props = {
     net: number;
   };
   pName: (id: string) => string;
+  manufacturer: boolean;
 };
 export function DashboardView({
   canAccess,
@@ -91,7 +92,9 @@ export function DashboardView({
   payables,
   allProfit,
   pName,
+  manufacturer,
 }: Props) {
+  const productionRuns = (s.productionRuns || []).filter(run => periodMatch(run.date, dashboardFrom, today()));
   return (
     <>
       <section className="dashboard-summary" aria-label="Sales overview">
@@ -129,7 +132,7 @@ export function DashboardView({
         </div>
         <div className="summary-detail">
           <h3>
-            Your <b>retail</b> overview
+            Your <b>{manufacturer ? "manufacturing" : "retail"}</b> overview
           </h3>
           <dl>
             <div>
@@ -143,15 +146,16 @@ export function DashboardView({
               </dd>
             </div>
             <div>
-              <dt>Billing today</dt>
+              <dt>{manufacturer ? "Production runs" : "Billing today"}</dt>
               <dd>
-                {money(
+                {manufacturer ? productionRuns.length : money(
                   s.invoices.filter(isPosted)
                     .filter((t) => t.date === today())
                     .reduce((n, t) => n + total(t), 0),
                 )}
               </dd>
             </div>
+            {manufacturer && <div><dt>Material cost transferred</dt><dd>{money(productionRuns.reduce((sum, run) => sum + run.materialCost, 0))}</dd></div>}
             <div>
               <dt>Expenses</dt>
               <dd>{money(dashboardProfit.expenses)}</dd>
@@ -257,7 +261,7 @@ export function DashboardView({
           <div className="section-head">
             <div>
               <h2>Recent invoices</h2>
-              <p>The latest from your counter.</p>
+              <p>The latest posted sales.</p>
             </div>
             <button className="text-button" onClick={() => go("Billing")}>
               All invoices <ArrowUpRight size={15} />
@@ -306,7 +310,7 @@ export function DashboardView({
               </div>
             ))
           ) : (
-            <Empty title="Your shelves are in balance">
+            <Empty title="No items are at low stock">
               Low-stock items will be flagged here.
             </Empty>
           )}

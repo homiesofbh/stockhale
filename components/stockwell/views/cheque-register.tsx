@@ -4,9 +4,9 @@ import { cashChequeSettlement, changeCheque, type Actor, type ChequeEvent } from
 import { money, today, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, Modal, Table } from "../ui";
 import { GlassSelect } from "../glass-select";
-export function ChequeRegister({ s, actor, commit, matches }: { s: Store; actor: Actor; commit: (s: Store, message: string) => void; matches: (...values: unknown[]) => boolean }) {
+export function ChequeRegister({ s, actor, commit, matches, query = "" }: { s: Store; actor: Actor; commit: (s: Store, message: string) => void; matches: (...values: unknown[]) => boolean; query?: string }) {
   const [status, setStatus] = useState("All"), [action, setAction] = useState<{ id: string; status: ChequeEvent["status"] } | null>(null), [error, setError] = useState("");
-  const cheques = s.payments.filter(p => p.method === "Cheque" && (status === "All" || (p.chequeStatus || "pending") === status) && matches(p.chequeNumber, p.chequeBank, [...s.customers, ...s.suppliers].find(c => c.id === p.contactId)?.name, p.chequeStatus)).sort((a, b) => (a.chequeDate || a.date).localeCompare(b.chequeDate || b.date));
+  const cheques = s.payments.filter(p => p.method === "Cheque" && (status === "All" || (p.chequeStatus || "pending") === status) && (!query || p.id === query || (s.crossCheques || []).some(c => c.id === query && c.sourcePaymentId === p.id)) && matches(p.id, p.chequeNumber, p.chequeBank, [...s.customers, ...s.suppliers].find(c => c.id === p.contactId)?.name, p.chequeStatus)).sort((a, b) => (a.chequeDate || a.date).localeCompare(b.chequeDate || b.date));
   const payment = action && s.payments.find(p => p.id === action.id);
   const forwarded = payment && (s.crossCheques || []).find(c => c.sourcePaymentId === payment.id);
   return <><section className="card"><div className="section-head"><div><h2>Received / issued cheques</h2><p>Expected dates never clear cheques automatically. Record supplier payments against the whole supplier account; customer payments remain bill-linked.</p></div><Field label="Cheque status"><GlassSelect value={status} onValueChange={setStatus}><option>All</option>{["pending", "cleared", "bounced", "cancelled"].map(v => <option key={v}>{v}</option>)}</GlassSelect></Field></div>

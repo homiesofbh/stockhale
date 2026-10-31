@@ -24,6 +24,7 @@ export const modules = [
   "Returns & Damage",
   "Reports",
   "Closing",
+  "Production",
 ] as const;
 
 export type Member = {
@@ -80,6 +81,7 @@ export type Audit = {
 export type Workspace = {
   id: string;
   name: string;
+  businessType?: "retail" | "manufacturer" | null;
   image: string;
   timeZone: string;
   revision: number;
@@ -158,10 +160,10 @@ export function prepareSyncChange(before: Store, change: Change, context: Valida
 
 /** Collection name -> modules allowed to change it. Used to reject out-of-scope edits. */
 export const collectionModules: Record<string, string[]> = {
-  products: ["Inventory", "Purchases"],
+  products: ["Inventory", "Purchases", "Production"],
   categories: ["Inventory"],
   units: ["Inventory"],
-  movements: ["Inventory", "Purchases", "Billing", "Returns & Damage"],
+  movements: ["Inventory", "Purchases", "Billing", "Returns & Damage", "Production"],
   customers: ["Customers", "Billing"],
   suppliers: ["Suppliers"],
   heads: ["Accounts Heads"],
@@ -185,6 +187,8 @@ export const collectionModules: Record<string, string[]> = {
   partners: ["Payments", "Accounts Heads"],
   partnerNames: ["Payments", "Accounts Heads"],
   crossCheques: ["Payments"],
+  recipes: ["Production"],
+  productionRuns: ["Production"],
 };
 
 /** Collection name -> friendly label used in error messages. */
@@ -213,6 +217,8 @@ export const recordCollectionLabels: Record<string, string> = {
   partners: "partner capital movements",
   crossCheques: "forwarded cheques",
   partnerNames: "partner names",
+  recipes: "production recipes",
+  productionRuns: "production runs",
 };
 
 /* ==========================================================================

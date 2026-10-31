@@ -3,6 +3,7 @@ import { workspaceRequest } from "@/lib/stockwell/workspace-request";
 import { CACHE_VERSION, migrateCache } from "@/lib/stockwell/cache-migrations";
 import { cacheKey } from "@/lib/stockwell/workspace";
 import { useEffect, useState, type FormEvent } from "react";
+import Link from "next/link";
 export function AuthPageClient({
   signup = false,
   team = false,
@@ -69,10 +70,11 @@ export function AuthPageClient({
   return (
     <main className="auth-shell">
       <section className="auth-intro">
-        <a className="brand" href="/">
-          STOCKHALE.
-        </a>
-        <span className="eyebrow">YOUR STORE. IN GOOD ORDER.</span>
+        <Link className="brand marketing-brand" href="/">
+          <span className="brand-mark"><span>S</span></span>
+          <span>STOCKHALE<span className="brand-dot">.</span></span>
+        </Link>
+        <span className="eyebrow">YOUR BUSINESS. IN GOOD ORDER.</span>
         <h1>
           {signup
             ? teamSignup
@@ -80,10 +82,10 @@ export function AuthPageClient({
               : publicSignupUnavailable
                 ? "New accounts are closed."
                 : "A workspace for your business."
-            : "Welcome back to your store."}
+            : "Welcome back to your business."}
         </h1>
         <p>
-          Stock, sales, and your team — connected wherever your day takes you.
+          Inventory, production, sales, and your team — connected wherever your day takes you.
         </p>
       </section>
       <section className="auth-card">
@@ -120,7 +122,7 @@ export function AuthPageClient({
             )}
             {signup && !team && !invite && (
               <label className="field">
-                <span>Store name</span>
+                <span>Business name</span>
                 <input name="storeName" required maxLength={200} />
               </label>
             )}

@@ -17,7 +17,7 @@ export function ReturnsView({ s, inRange, matches, pName, setInvoice }: Props) {
     const trade = trades.find((t) => t.id === r.tradeId);
     const unit = s.products.find((p) => p.id === r.productId)?.unit || "piece";
     const hay = [r.kind, r.reason, pName(r.productId), trade?.number, unit, r.date].join(" ").toLowerCase();
-    return inRange(r.date) && matches(r.kind, r.reason, pName(r.productId)) && (!q.trim() || hay.includes(q.trim().toLowerCase()));
+    return inRange(r.date) && matches(r.id, r.kind, r.reason, pName(r.productId)) && (!q.trim() || hay.includes(q.trim().toLowerCase()));
   }).slice().reverse().map((r) => {
     const trade = trades.find((t) => t.id === r.tradeId);
     const line = trade?.lines.find((l) => l.productId === r.productId);

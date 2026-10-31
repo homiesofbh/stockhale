@@ -81,7 +81,7 @@ export function useWorkspace() {
   const [syncing, setSyncing] = useState(false);
   const [review, setReview] = useState<{ changeId: string; collections: string[]; candidates: string[]; message: string; conflict?: boolean; canRecover?: boolean } | null>(null);
   const current = useRef<Cache | null>(null), cacheLoadBlocked = useRef(false),
-    busy = useRef(false), actionBusy = useRef(false), syncRequested = useRef(false), blockedConflictId = useRef("");
+    busy = useRef(false), actionBusy = useRef(false), actionRequested = useRef(false), syncRequested = useRef(false), syncController = useRef<AbortController | null>(null), blockedConflictId = useRef("");
   async function withCacheLock<T>(fn: () => T | Promise<T>): Promise<T> {
     // Web Locks serialize localStorage read/modify/write across tabs in this
     // browser profile. Other browsers/devices are serialized by the DB lock.
@@ -157,12 +157,12 @@ export function useWorkspace() {
   // devices are writing or a slow network lets the revision drift; after that
   // the 409 surfaces with the server's real message.
   const MAX_409_RECOVERIES = 3;
-  async function submit(c: Cache | null) {
+  async function submit(c: Cache | null, signal: AbortSignal) {
     for (let attempt = 0; ; attempt++) {
       try {
         const w: Workspace & { accepted?: string[] } = await workspaceRequest(c?.queue.length
           ? { action: "sync", revision: c.revision, changes: c.queue.slice(0, 1) }
-          : undefined);
+          : undefined, signal);
         return { c, w };
       } catch (e) {
         const conflict = e as { status?: number; reason?: string };
@@ -170,7 +170,7 @@ export function useWorkspace() {
         const pending = current.current;
         setSyncStatus(attempt ? `Saving your changes… (retry ${attempt + 1})` : "Saving your changes…");
         if (attempt) await new Promise((resolve) => setTimeout(resolve, 400 * 2 ** attempt + Math.random() * 300));
-        const server: Workspace = await workspaceRequest();
+        const server: Workspace = await workspaceRequest(undefined, signal);
         if (current.current !== pending) throw new Error("Changes updated while saving. They are safe on this device; try again.");
         const recovered = recoverIndependentPendingQueue(pending, server);
         save(recovered);
@@ -182,6 +182,7 @@ export function useWorkspace() {
   }
   async function sync(force = false) {
     if (cacheLoadBlocked.current) return;
+    if (actionRequested.current) { syncRequested.current = true; return; }
     if (!force && (blockedConflictId.current === current.current?.queue[0]?.id || current.current?.blockedChangeIds?.includes(current.current?.queue[0]?.id || ""))) return;
     if (force) blockedConflictId.current = "";
     if (busy.current || actionBusy.current) { syncRequested.current = true; return; }
@@ -196,13 +197,15 @@ export function useWorkspace() {
       return;
     }
     busy.current = true;
+    const controller = new AbortController();
+    syncController.current = controller;
     setSyncing(true);
     setSyncStatus(current.current?.queue.length ? "Syncing changes…" : "Checking sync…");
     try {
       const migrated = current.current && migrateCache(current.current);
       const start = migrated || current.current;
       if (start && start !== current.current) save(start, true);
-      const { c, w } = await submit(start);
+      const { c, w } = await submit(start, controller.signal);
       const latest = current.current;
       if (c && w.id !== c.workspace.id)
         throw Object.assign(new Error("Sign in to the workspace that created these pending changes."), { status: 403 });
@@ -266,6 +269,7 @@ export function useWorkspace() {
       setSyncStatus(blockedChangeIds.length ? "Conflict · other changes need review" : remaining.length && c && w.revision > c.revision + 1 && !rebasedRemaining ? "Conflict · newer queued changes preserved" : remaining.length ? "Pending sync" : "Synced");
       if (remaining.length && (rebasedRemaining || !c || w.revision === c.revision + 1)) setTimeout(() => void sync(), 100);
     } catch (e) {
+      if (controller.signal.aborted && actionRequested.current) return;
       const status = (e as { status?: number }).status;
       const reason = (e as { reason?: string }).reason;
       const message = e instanceof Error ? e.message : "Pending change rejected";
@@ -278,6 +282,7 @@ export function useWorkspace() {
       else setSyncStatus(failureStatus(status, message));
     } finally {
       busy.current = false;
+      if (syncController.current === controller) syncController.current = null;
       setSyncing(false);
       setReady(true);
       if (syncRequested.current) queueMicrotask(() => void sync());
@@ -405,13 +410,32 @@ export function useWorkspace() {
       throw new Error(
         "Sync pending records before changing workspace settings.",
       );
-    if (busy.current || actionBusy.current) throw new Error("Wait for the current sync or workspace action to finish.");
-    actionBusy.current = true;
+    // Pause new background syncs while this action waits for an already-running
+    // request. Otherwise polling can continually reacquire the sync lock and
+    // prevent first-run actions such as business setup from ever proceeding.
+    actionRequested.current = true;
+    syncController.current?.abort();
+    const waitStarted = Date.now();
+    try {
+      while (busy.current || actionBusy.current) {
+        if (Date.now() - waitStarted >= 21_000)
+          throw new Error("Workspace sync is taking longer than expected. Try your selection again.");
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+      if (current.current?.queue.length)
+        throw new Error("Sync pending records before changing workspace settings.");
+      actionBusy.current = true;
+    } catch (error) {
+      actionRequested.current = false;
+      if (syncRequested.current) void sync();
+      throw error;
+    }
+    actionRequested.current = false;
     try {
       const actionName = body && typeof body === "object" && !Array.isArray(body)
         ? (body as { action?: unknown }).action
         : undefined;
-      const location = ["read", "backup", "backup-recovery", "retry-email"].includes(actionName as string)
+      const location = ["read", "backup", "backup-recovery", "retry-email", "business-setup"].includes(actionName as string)
         ? "Unavailable"
         : await liveLocation();
       const request = body && typeof body === "object" && !Array.isArray(body)

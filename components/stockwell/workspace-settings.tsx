@@ -67,7 +67,7 @@ export function WorkspaceSettings({
         <div>
           <span className="eyebrow">WORKSPACE OWNER</span>
           <h1>Settings</h1>
-          <p>Your store identity and your team’s authority.</p>
+          <p>Your business profile and your team’s access.</p>
         </div>
       </div>
       {error && (
@@ -78,7 +78,7 @@ export function WorkspaceSettings({
       {notice && <p role="status">{notice}</p>}
       <div className="settings-grid">
         <section className="panel">
-          <h2>Store profile</h2>
+          <h2>Business profile</h2>
           <form
             onSubmit={(e) => {
               e.preventDefault();
@@ -86,7 +86,7 @@ export function WorkspaceSettings({
             }}
           >
             <label className="field">
-              <span>Store name</span>
+              <span>Business name</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -95,7 +95,7 @@ export function WorkspaceSettings({
               />
             </label>
             <label className="field">
-              <span>Store image (optional · up to 500 KB)</span>
+              <span>Business image (optional · up to 500 KB)</span>
               <input
                 type="file"
                 accept="image/png,image/jpeg,image/webp"
@@ -118,18 +118,18 @@ export function WorkspaceSettings({
               <datalist id="workspace-time-zones">
                 {Intl.supportedValuesOf("timeZone").map((zone) => <option key={zone} value={zone} />)}
               </datalist>
-              <small>The activity summary is sent after midnight in this time zone. Choose your store’s local time zone.</small>
+              <small>The activity summary is sent after midnight in this time zone. Choose your business’s local time zone.</small>
             </label>
             {image && (
               <div className="store-image-preview">
-                <img src={image} alt="Store image preview" />
+                <img src={image} alt="Business image preview" />
                 <button type="button" onClick={() => setImage("")}>
                   Remove image
                 </button>
               </div>
             )}
             <button className="primary" disabled={busy}>
-              Save store profile
+              Save business profile
             </button>
           </form>
         </section>
@@ -153,7 +153,7 @@ export function WorkspaceSettings({
               <input type="email" name="email" required />
             </label>
             <div className="permission-grid">
-              {modules.filter((m) => m !== "Closing").map((m) => (
+              {modules.filter((m) => m !== "Closing" && (m !== "Production" || workspace.businessType === "manufacturer")).map((m) => (
                 <label key={m}>
                   <input type="checkbox" name="modules" value={m} />
                   {m}

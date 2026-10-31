@@ -5,7 +5,7 @@
   min-width: 0;
 }
 .profileMenu .notificationCounter {
-  background: #954655;
+  background: var(--brand-accent);
   color: #fff;
   font-size: 13px;
   font-weight: 700;
@@ -27,7 +27,7 @@
   text-overflow: ellipsis;
   font-size: 12px;
 }
-.profileMenu > summary:focus-visible { outline: 2px solid #78698e; outline-offset: 3px; }
+.profileMenu > summary:focus-visible { outline: 2px solid var(--brand-accent); outline-offset: 3px; }
 .profileMenu:not([open]) > .dropdown { display: none; }
 .dropdown {
   position: absolute;

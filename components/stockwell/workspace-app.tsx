@@ -18,6 +18,7 @@ import {
   subtotal,
   today,
   total,
+  normalizeStore,
   type Contact,
   type Line,
   type Product,
@@ -53,11 +54,14 @@ import { ExpensesView } from "@/components/stockwell/views/expenses-view";
 import { InventoryView } from "@/components/stockwell/views/inventory-view";
 import { ProductDetailView } from "@/components/stockwell/views/product-detail-view";
 import { NotificationsView } from "@/components/stockwell/views/notifications-view";
+import { getFirstRecordTarget } from "@/lib/stockwell/audit-target";
 import { PaymentsView } from "@/components/stockwell/views/payments-view";
 import { ReportsView } from "@/components/stockwell/views/reports-view";
 import { ReturnsView } from "@/components/stockwell/views/returns-view";
 import { SalesView } from "@/components/stockwell/views/sales-view";
 import { TradeHistoryView } from "@/components/stockwell/views/trade-history-view";
+import { ProductionView } from "@/components/stockwell/views/production-view";
+import { BusinessSetup } from "@/components/stockwell/business-setup";
 import { WorkspaceHeader } from "@/components/stockwell/workspace-header";
 import {
   filterTrades,
@@ -133,7 +137,7 @@ export function WorkspaceApp() {
   }, [requestedModule, routeReady]);
   useEffect(() => {
     if (workspace.cache) {
-      setS(workspace.cache.workspace.store);
+      setS(normalizeStore(workspace.cache.workspace.store));
       setReady(true);
       const refreshTrial = () => setTrialExpired(!!workspace.cache?.workspace.trial?.endsAt && !workspace.cache.workspace.trial.planActive && Date.now() >= Date.parse(workspace.cache.workspace.trial.endsAt));
       refreshTrial();
@@ -170,8 +174,8 @@ export function WorkspaceApp() {
     if (latest && JSON.stringify(latest) !== JSON.stringify(invoice)) setInvoice(latest);
   }, [s, invoice?.id]);
   const account = workspace.cache?.workspace;
-  const canAccess = (name: string) => !!account && canAccessModule(account.member, name);
-  const module = (account ? accessibleModule(account.member, requestedModule) : "Dashboard") as Module;
+  const canAccess = (name: string) => !!account && (name !== "Production" || account.businessType === "manufacturer") && canAccessModule(account.member, name);
+  const module = (account ? (canAccess(requestedModule) ? requestedModule : accessibleModule(account.member, "Dashboard")) : "Dashboard") as Module;
   const modalModule = useRef<Module | null>(null);
   useEffect(() => {
     if (account && !canAccess(requestedModule)) {
@@ -220,6 +224,60 @@ export function WorkspaceApp() {
     setCategory("All");
     setDetailContact(null);
     setReportContact("");
+  }
+  function openAuditRecord(event: NonNullable<typeof account>["audit"][number]) {
+    if (!account) return;
+    const target = getFirstRecordTarget(event.records, event.module);
+    if (!target) {
+      setModule(event.module as Module);
+      setNotice("This activity entry does not contain a directly openable record.");
+      return;
+    }
+    const { store } = account;
+    if (target.collection === "invoices" || target.collection === "purchases") {
+      const trade = (target.collection === "invoices" ? store.invoices : store.purchases).find(item => item.id === target.id);
+      if (trade && canAccess(target.collection === "invoices" ? "Sales" : "Purchases")) {
+        setModule(target.collection === "invoices" ? "Sales" : "Purchases");
+        setInvoice(trade);
+        setPaper("A4");
+        return;
+      }
+    }
+    if (target.collection === "products") {
+      const product = store.products.find(item => item.id === target.id);
+      if (product && canAccess("Inventory")) {
+        setModule("Inventory");
+        setDetailProduct(product);
+        setModal("Product details");
+        return;
+      }
+    }
+    if (target.collection === "customers" || target.collection === "suppliers") {
+      const contactModule = target.collection === "customers" ? "Customers" : "Suppliers";
+      const contact = (target.collection === "customers" ? store.customers : store.suppliers).find(item => item.id === target.id);
+      if (contact && canAccess(contactModule)) {
+        setModule(contactModule);
+        setDetailContact(contact);
+        return;
+      }
+    }
+    if (target.collection === "movements" && canAccess("Inventory")) {
+      setModule("Inventory");
+      setQuery(target.id);
+      setFrom(""); setTo(""); setStatus("All"); setPaymentMethod("All");
+      setError("");
+      modalModule.current = "Inventory";
+      setModal("Movements");
+      return;
+    }
+    const targetModule = target.module as Module;
+    setModule(targetModule);
+    setQuery(target.id);
+    setFrom("");
+    setTo("");
+    setStatus("All");
+    setPaymentMethod("All");
+    setNotice(`Opened ${target.label} ${target.id}.`);
   }
   function open(name: string) {
     const target =
@@ -399,6 +457,7 @@ export function WorkspaceApp() {
     report,
     reportContact,
     reportProduct,
+    manufacturer: account?.businessType === "manufacturer",
   });
   useEffect(() => {
     setPdfError("");
@@ -457,6 +516,10 @@ export function WorkspaceApp() {
         StockHale<a href="/sign-in">Sign in to open your workspace</a>
       </div>
     );
+  if (!account.businessType) {
+    if (account.member.role === "owner") return <BusinessSetup workspace={workspace} />;
+    return <main className="business-setup-shell"><section className="business-setup-card"><span className="section-eyebrow">WORKSPACE SETUP</span><h1>Waiting for your workspace owner</h1><p>The owner needs to finish the one-time business setup before the team can start using this workspace.</p></section></main>;
+  }
   const isPlatformAdmin = account.member.email.trim().toLowerCase() === "homiesbridge@gmail.com";
   if (account.locked || trialExpired) {
     if (isPlatformAdmin) return <div className="admin-expired-shell"><AdminPanel onBack={() => void workspace.signout()} /></div>;
@@ -504,6 +567,7 @@ export function WorkspaceApp() {
                 setNotice={setNotice}
                 setModule={setModule}
                 notificationReturn={notificationReturn}
+                openRecord={openAuditRecord}
               />
             ) : (
               <>
@@ -523,7 +587,7 @@ export function WorkspaceApp() {
                       <span className="eyebrow">
                         {module === "Dashboard"
                           ? "YOUR BUSINESS, AT A GLANCE"
-                          : "RETAIL OPERATIONS"}{" "}
+                          : account.businessType === "manufacturer" ? "MANUFACTURING & SALES" : "RETAIL OPERATIONS"}{" "}
                       </span>
                       <h1>
                         {module === "Dashboard"
@@ -603,6 +667,7 @@ export function WorkspaceApp() {
                       payables={payables}
                       allProfit={allProfit}
                       pName={pName}
+                      manufacturer={account.businessType === "manufacturer"}
                     />
                   ) : (
                     <>
@@ -633,6 +698,7 @@ export function WorkspaceApp() {
                       {module === "Inventory" && (
                         <InventoryView
                           s={s}
+                          manufacturer={account.businessType === "manufacturer"}
                           open={open}
                           query={query}
                           category={category}
@@ -700,6 +766,7 @@ export function WorkspaceApp() {
                           inRange={inRange}
                           matches={matches}
                           commit={commit}
+                          query={query}
                         />
                       )}
                       {(module === "Customers" || module === "Suppliers") && (
@@ -727,6 +794,7 @@ export function WorkspaceApp() {
                       {module === "Reports" && (
                         <ReportsView
                           actor={account.member}
+                          manufacturer={account.businessType === "manufacturer"}
                           commit={commit}
                           reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })}
                           report={report}
@@ -741,12 +809,13 @@ export function WorkspaceApp() {
                           reportResult={reportResult}
                         />
                       )}
-                      {module === "Closing" && <DailyClosingView s={s} actor={account.member} commit={commit} reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })} />}
+                      {module === "Closing" && <DailyClosingView s={s} actor={account.member} query={query} commit={commit} reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })} />}
+                      {module === "Production" && account.businessType === "manufacturer" && <ProductionView store={s} actor={account.member} query={query} commit={async (next, message) => { await workspace.commit(next, "Production", message); setS(next); setNotice(message); setError(""); }} />}
                     </>
                   )}
                 </div>
                 <footer>
-                  StockHale <span>Retail Inventory & Operations</span>
+                  StockHale <span>{account.businessType === "manufacturer" ? "Manufacturing & Operations" : "Retail Inventory & Operations"}</span>
                   <span>All amounts in PKR</span>
                 </footer>
               </>
