@@ -3017,6 +3017,63 @@ td {
   min-height: 44px;
   max-width: 100%;
 }
+.time-zone-picker {
+  position: relative;
+  width: 100%;
+}
+.time-zone-picker-trigger {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 14px;
+  border: 1px solid #ffffffc7;
+  border-radius: 14px;
+  background: #ffffffa8;
+  color: #40354d;
+  text-align: left;
+}
+.time-zone-picker-menu {
+  position: absolute;
+  z-index: 100;
+  top: calc(100% + 6px);
+  left: 0;
+  width: 100%;
+  padding: 8px;
+  border: 1px solid #ffffffc7;
+  border-radius: 14px;
+  background: #f8f5fc;
+  box-shadow: 0 12px 32px #40354d29;
+}
+.time-zone-picker-menu > input {
+  width: 100%;
+  margin-bottom: 6px;
+  padding: 9px 11px;
+  border: 1px solid #d8d0e0;
+  border-radius: 9px;
+  background: white;
+  color: #33283f;
+}
+.time-zone-picker-menu [role="listbox"] {
+  max-height: 240px;
+  overflow-y: auto;
+}
+.time-zone-picker-menu [role="option"] {
+  display: block;
+  width: 100%;
+  padding: 9px 10px;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: #40354d;
+  text-align: left;
+  cursor: pointer;
+}
+.time-zone-picker-menu [role="option"]:hover,
+.time-zone-picker-menu [role="option"][aria-selected="true"] {
+  background: #eae4f1;
+}
 @media (max-width: 900px) {
   .settings-grid {
     grid-template-columns: 1fr;

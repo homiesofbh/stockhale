@@ -6,6 +6,8 @@ import type { Cache } from "@/lib/stockwell/workspace";
 import { orderedUnits, type Store } from "@/lib/stockwell/model";
 import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
 
+const TIME_ZONES = Intl.supportedValuesOf("timeZone");
+
 export function WorkspaceSettings({
   workspace,
   action,
@@ -29,6 +31,12 @@ export function WorkspaceSettings({
     [copied, setCopied] = useState(false);
   const inviteInput = useRef<HTMLInputElement>(null);
   const [unitName, setUnitName] = useState("");
+  const [timeZoneSearch, setTimeZoneSearch] = useState("");
+  const [timeZonePickerOpen, setTimeZonePickerOpen] = useState(false);
+  const timeZoneSearchInput = useRef<HTMLInputElement>(null);
+  const filteredTimeZones = TIME_ZONES.filter((zone) =>
+    zone.toLocaleLowerCase().includes(timeZoneSearch.trim().toLocaleLowerCase()),
+  );
   async function copyInvite() {
     try {
       await navigator.clipboard.writeText(invite);
@@ -114,10 +122,51 @@ export function WorkspaceSettings({
             </label>
             <label className="field">
               <span>Daily activity digest time zone</span>
-              <input list="workspace-time-zones" value={timeZone} onChange={(e) => setTimeZone(e.target.value)} required />
-              <datalist id="workspace-time-zones">
-                {Intl.supportedValuesOf("timeZone").map((zone) => <option key={zone} value={zone} />)}
-              </datalist>
+              <div className="time-zone-picker">
+                <button
+                  type="button"
+                  className="time-zone-picker-trigger"
+                  aria-haspopup="listbox"
+                  aria-expanded={timeZonePickerOpen}
+                  onClick={() => {
+                    setTimeZonePickerOpen((open) => !open);
+                    setTimeZoneSearch("");
+                    requestAnimationFrame(() => timeZoneSearchInput.current?.focus());
+                  }}
+                >
+                  {timeZone}<span aria-hidden="true">⌄</span>
+                </button>
+                {timeZonePickerOpen && (
+                  <div className="time-zone-picker-menu">
+                    <input
+                      ref={timeZoneSearchInput}
+                      value={timeZoneSearch}
+                      onChange={(event) => setTimeZoneSearch(event.target.value)}
+                      onKeyDown={(event) => {
+                        if (event.key === "Escape") setTimeZonePickerOpen(false);
+                      }}
+                      placeholder="Search time zones…"
+                      aria-label="Search time zones"
+                    />
+                    <div role="listbox" aria-label="Available time zones">
+                      {filteredTimeZones.map((zone) => (
+                        <button
+                          type="button"
+                          role="option"
+                          aria-selected={zone === timeZone}
+                          key={zone}
+                          onClick={() => {
+                            setTimeZone(zone);
+                            setTimeZonePickerOpen(false);
+                            setTimeZoneSearch("");
+                          }}
+                        >{zone}</button>
+                      ))}
+                      {filteredTimeZones.length === 0 && <p>No matching time zones</p>}
+                    </div>
+                  </div>
+                )}
+              </div>
               <small>The activity summary is sent daily at 11:58 PM in this time zone. Choose your business’s local time zone.</small>
             </label>
             {image && (
