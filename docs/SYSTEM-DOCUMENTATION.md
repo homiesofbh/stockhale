@@ -347,7 +347,7 @@ Restore does not restore passwords, sessions, or team permissions. It is a busin
 
 ## 19. Email and invitations
 
-The application can use Resend when `RESEND_API_KEY` and `RESEND_FROM` are configured. Invitation and notification email work is stored durably in PostgreSQL. Record changes are sent as a daily digest after midnight in the workspace time zone selected by the owner. Authenticated activity or the Settings retry action drains pending email work; an idle Vercel deployment does not run a permanent background timer, so a digest waits until the first request after local midnight unless a scheduled worker is deployed.
+The application can use Resend when `RESEND_API_KEY` and `RESEND_FROM` are configured. Invitation and notification email work is stored durably in PostgreSQL. Record changes are sent as a daily digest at 11:58 PM in the workspace time zone selected by the owner. The Cloudflare Worker checks every minute and sends due digests even when no user is active; authenticated API activity also drains due messages. Plan renewal reminders retain immediate delivery.
 
 ## 20. API and deployment architecture
 

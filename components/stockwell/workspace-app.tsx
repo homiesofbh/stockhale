@@ -148,7 +148,7 @@ export function WorkspaceApp() {
   useEffect(() => {
     const retry = async () => {
       if (!navigator.onLine || !workspace.cache) return;
-      await retryAttachmentQueue(async completed => {
+      await retryAttachmentQueue(workspace.cache.workspace.id, async completed => {
         const byModule = new Map<string, typeof completed>();
         for (const item of completed) {
           const moduleName = item.recordType === "expense" ? "Expenses" : "Purchases";
@@ -157,9 +157,11 @@ export function WorkspaceApp() {
         for (const [moduleName, items] of byModule) {
           const base = workspace.cache!.workspace.store;
           const key = moduleName === "Expenses" ? "expenses" : "purchases";
-          const next = { ...base, [key]: base[key].map((record: any) => record.id && items.some(item => item.recordId === record.id) ? { ...record, attachments: (record.attachments || []).map((attachment: any) => items.find(item => item.pendingId === attachment.id) || attachment) } : record) };
+          const attached = items.filter(item => item.workspaceId === workspace.cache!.workspace.id && base[key].some((record: any) => record.id === item.recordId && (record.attachments || []).some((attachment: any) => attachment.id === item.pendingId)));
+          if (!attached.length) continue;
+          const next = { ...base, [key]: base[key].map((record: any) => record.id && attached.some(item => item.recordId === record.id) ? { ...record, attachments: (record.attachments || []).map((attachment: any) => attached.find(item => item.pendingId === attachment.id) || attachment) } : record) };
           await workspace.commit(next, moduleName, "Offline attachments uploaded.");
-          await acknowledgeAttachmentQueue(items.map(item => item.pendingId));
+          await acknowledgeAttachmentQueue(attached.map(item => item.pendingId));
         }
         setS(workspace.cache!.workspace.store);
       });
@@ -936,6 +938,7 @@ export function WorkspaceApp() {
               modal={modal}
               isOwner={account.member.role === "owner"}
               creator={{ id: account.member.id, name: account.member.name }}
+              workspaceId={account.id}
               commit={async (next, message) => {
                 await commit(next, message);
                 if (modal === "Bill") { setQuery(""); setFrom(""); setTo(""); }
@@ -995,6 +998,7 @@ export function WorkspaceApp() {
             <ExpenseForm
               commitInline={(next, message) => commitInline(next, message, "Expenses")}
               actor={account.member}
+              workspaceId={account.id}
               submit={submit}
               num={num}
               commit={commit}

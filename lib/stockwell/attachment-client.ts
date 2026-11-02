@@ -8,9 +8,11 @@ type PendingAttachment = Attachment & {
   recordType: RecordType;
   recordId: string;
   pendingId: string;
+  workspaceId: string;
 };
 type QueueEntry = {
   pendingId: string;
+  workspaceId: string;
   recordType: RecordType;
   recordId: string;
   attachment: Attachment;
@@ -21,7 +23,7 @@ type QueueEntry = {
 const queueKey = "stockhale.pending-attachments";
 const dbName = "stockhale-attachments";
 const storeName = "files";
-let activeRetry: Promise<PendingAttachment[]> | null = null;
+const activeRetries = new Map<string, Promise<PendingAttachment[]>>();
 
 function readQueue(): Omit<QueueEntry, "file">[] {
   try {
@@ -79,12 +81,12 @@ async function removeFile(id: string) {
   db.close();
 }
 
-async function uploadNow(file: File, recordType: RecordType, recordId: string, attachmentId?: string): Promise<Attachment> {
+async function uploadNow(file: File, recordType: RecordType, recordId: string, workspaceId: string, attachmentId?: string): Promise<Attachment> {
   validateAttachment(file);
   const metadata = await fetch("/api/attachments", {
     method: "POST",
     headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ recordType, recordId, name: file.name, contentType: file.type, size: file.size, attachmentId }),
+    body: JSON.stringify({ workspaceId, recordType, recordId, name: file.name, contentType: file.type, size: file.size, attachmentId }),
   });
   const policy = await metadata.json();
   if (!metadata.ok) throw new Error(policy.error || "Could not prepare attachment upload.");
@@ -93,16 +95,17 @@ async function uploadNow(file: File, recordType: RecordType, recordId: string, a
   return { id: attachmentId || policy.id, key: policy.key, name: file.name, contentType: file.type, size: file.size, status: "uploaded", uploadedAt: new Date().toISOString() };
 }
 
-export async function uploadAttachment(file: File, recordType: RecordType, recordId: string): Promise<Attachment> {
+export async function uploadAttachment(file: File, recordType: RecordType, recordId: string, workspaceId: string): Promise<Attachment> {
+  if (!workspaceId) throw new Error("Select a workspace before attaching a file.");
   validateAttachment(file);
-  if (navigator.onLine) return uploadNow(file, recordType, recordId);
+  if (navigator.onLine) return uploadNow(file, recordType, recordId, workspaceId);
 
   const pendingId = crypto.randomUUID();
   const attachment: Attachment = { id: pendingId, key: `pending/${pendingId}`, name: file.name, contentType: file.type, size: file.size, status: "pending" };
   await storeFile(pendingId, file);
   try {
     const queue = readQueue();
-    writeQueue([...queue, { pendingId, recordType, recordId, attachment }]);
+    writeQueue([...queue, { pendingId, workspaceId, recordType, recordId, attachment }]);
   } catch (error) {
     await removeFile(pendingId);
     throw error;
@@ -110,22 +113,22 @@ export async function uploadAttachment(file: File, recordType: RecordType, recor
   return attachment;
 }
 
-async function retryAttachmentQueueOnce(): Promise<PendingAttachment[]> {
+async function retryAttachmentQueueOnce(workspaceId: string): Promise<PendingAttachment[]> {
   if (!navigator.onLine) return [];
   const queue = readQueue();
   const completed: PendingAttachment[] = [];
-  for (const entry of queue) {
+  for (const entry of queue.filter(item => item.workspaceId === workspaceId)) {
     try {
       let attachment = entry.uploaded;
       if (!attachment) {
         const file = await readFile(entry.pendingId);
-        attachment = await uploadNow(file, entry.recordType, entry.recordId, entry.pendingId);
+        attachment = await uploadNow(file, entry.recordType, entry.recordId, entry.workspaceId, entry.pendingId);
         // Persist the uploaded key before handing it to the workspace save. If
         // that save fails, the next retry can reuse the object instead of
         // uploading another copy.
         writeQueue(readQueue().map(item => item.pendingId === entry.pendingId ? { ...item, uploaded: attachment } : item));
       }
-      completed.push({ ...attachment, recordType: entry.recordType, recordId: entry.recordId, pendingId: entry.pendingId });
+      completed.push({ ...attachment, recordType: entry.recordType, recordId: entry.recordId, pendingId: entry.pendingId, workspaceId: entry.workspaceId });
     } catch {
       // Keep failed entries queued for the next online event or page load.
     }
@@ -133,18 +136,21 @@ async function retryAttachmentQueueOnce(): Promise<PendingAttachment[]> {
   return completed;
 }
 
-export function retryAttachmentQueue(onCompleted?: (completed: PendingAttachment[]) => Promise<void>): Promise<PendingAttachment[]> {
+export function retryAttachmentQueue(workspaceId: string, onCompleted?: (completed: PendingAttachment[]) => Promise<void>): Promise<PendingAttachment[]> {
+  if (!workspaceId) return Promise.resolve([]);
+  const activeRetry = activeRetries.get(workspaceId);
   if (activeRetry) return activeRetry;
   const run = async () => {
-    const completed = await retryAttachmentQueueOnce();
+    const completed = await retryAttachmentQueueOnce(workspaceId);
     if (completed.length && onCompleted) await onCompleted(completed);
     return completed;
   };
   const coordinated = typeof navigator.locks?.request === "function"
     ? navigator.locks.request("stockhale-attachment-retry", run)
     : run();
-  activeRetry = coordinated.finally(() => { activeRetry = null; });
-  return activeRetry;
+  const tracked = coordinated.finally(() => { activeRetries.delete(workspaceId); });
+  activeRetries.set(workspaceId, tracked);
+  return tracked;
 }
 
 /** Remove local copies only after their uploaded metadata has been saved to the workspace cache. */

@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readFileSync, writeFileSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 const config = readFileSync(new URL("../wrangler.jsonc", import.meta.url), "utf8");
@@ -15,4 +15,25 @@ const result = spawnSync("pnpm", ["exec", "opennextjs-cloudflare", "build"], {
 });
 
 if (result.error) throw result.error;
-process.exit(result.status ?? 1);
+if (result.status !== 0) process.exit(result.status ?? 1);
+
+// OpenNext generates the actual fetch worker during its build. Wrap that worker
+// afterward to add Cloudflare's scheduled event without changing its routing.
+writeFileSync(new URL("../.open-next/worker-entry.mjs", import.meta.url), `
+import app from "./worker.js";
+
+export default {
+  fetch: app.fetch,
+  scheduled(_event, _env, ctx) {
+    if (!_env.EMAIL_DRAIN_SECRET) {
+      console.error("EMAIL_DRAIN_SECRET is not configured; scheduled email drain skipped.");
+      return;
+    }
+    const url = new URL("/api/internal/email-drain", "https://internal.invalid");
+    ctx.waitUntil(app.fetch(new Request(url, {
+      method: "POST",
+      headers: { authorization: "Bearer " + _env.EMAIL_DRAIN_SECRET },
+    }), _env, ctx));
+  },
+};
+`);

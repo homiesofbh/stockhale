@@ -368,7 +368,7 @@ export const supplierPayableBalance = (s: Store, supplierId: string) => {
   const pendingRefunds = pending.reduce((sum, p) => sum + Math.max(-p.amount, 0), 0);
   const pendingForwarded = (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === supplierId && ["pending", "submitted"].includes(c.status)).reduce((sum, c) => {
     const source = s.payments.find(p => p.id === c.sourcePaymentId);
-    return sum + (source?.method === "Cheque" && (source.chequeStatus || "pending") === "pending" && !source.clearedDate ? Math.abs(source.amount) : 0);
+    return sum + (source?.kind === "Customer" && source.method === "Cheque" && source.amount > 0 && (source.chequeStatus || "pending") === "pending" && !source.clearedDate ? source.amount : 0);
   }, 0);
   if (balance > 0) return round(Math.max(0, balance - pendingOutgoing - pendingForwarded));
   if (balance < 0) return -round(Math.max(0, Math.abs(balance) - pendingRefunds));

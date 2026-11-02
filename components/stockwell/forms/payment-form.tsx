@@ -66,7 +66,8 @@ export function PaymentForm({
             const source = s.payments.find((payment) => payment.id === existingChequeId);
             const destinationId = text(f, "destination");
             const destinationName = destinationKind === "Supplier" ? s.suppliers.find(c => c.id === destinationId)?.name || "" : destinationId;
-            if (!source || source.kind !== "Customer" || source.method !== "Cheque" || !destinationName) throw new Error("Select an unforwarded pending customer cheque and its destination.");
+            const alreadyForwarded = (s.crossCheques || []).some(crossCheque => crossCheque.sourcePaymentId === existingChequeId);
+            if (!source || source.kind !== "Customer" || source.method !== "Cheque" || source.amount <= 0 || (source.chequeStatus || "pending") !== "pending" || source.clearedDate || alreadyForwarded || !destinationName) throw new Error("Select an unforwarded positive pending customer cheque and its destination.");
             commit({ ...s, crossCheques: [...(s.crossCheques || []), { id: uid(), sourcePaymentId: source.id, date: text(f, "date"), customerId: source.contactId, destinationKind, destinationId, destinationName, amount: Math.abs(source.amount), status: "pending", notes: text(f, "destinationNotes") }] }, "Existing customer cheque submitted for forwarding.");
             return;
           }

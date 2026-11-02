@@ -64,11 +64,16 @@ Use `.env.local` and `pnpm dev` for ordinary Next.js development.
 Run `pnpm cf-typegen` to generate Cloudflare binding types.
 
 Password reset and optional activity-email delivery need `RESEND_API_KEY` and
-`RESEND_FROM` Worker secrets. `RESEND_FROM` must be a sender on a
-Resend-verified domain. The sign-in page exposes **Forgot your password?** once
-these are configured; reset links are single-use, expire after one hour, and
-invalidate existing sessions after a successful reset.
-Workers drain the durable email outbox through API activity instead of a persistent timer.
+`RESEND_FROM` Worker secrets. Scheduled digest delivery also needs a random
+`EMAIL_DRAIN_SECRET` configured with `pnpm exec wrangler secret put EMAIL_DRAIN_SECRET`;
+the scheduled handler uses it to call the private email-drain route. `RESEND_FROM`
+must be a sender on a Resend-verified domain. The sign-in page exposes
+**Forgot your password?** once the reset credentials are configured; reset links
+are single-use, expire after one hour, and invalidate existing sessions after a
+successful reset.
+Cloudflare checks the durable email outbox every minute. Activity digests are
+sent at 11:58 PM in each workspace's configured time zone; API activity also
+drains due messages as a fallback.
 The configuration alone does not provision Neon, apply migrations, create the R2
 bucket, configure registrar DNS, or deploy the Worker.
 
@@ -109,7 +114,7 @@ The source is opened read-only. The import preserves user/workspace IDs, legacy 
 - Neon can start on its Free plan. Current allowances and paid usage rates are on [Neon's pricing page](https://neon.com/pricing). Vercel hosting and optional Resend email are billed separately under the applicable plans.
 - The app uses a small reusable connection pool, Neon's external pooler, and Vercel's pool suspension helper. Background tabs stop polling, allowing idle databases to suspend. Visible workspaces poll every 15 seconds; active usage still consumes compute.
 - Inventory updates lock the workspace row and check revisions inside a transaction. Concurrent stale writes return a conflict rather than silently overwriting records.
-- Email retries remain durable in Postgres. On Vercel they drain during authenticated API activity or the Settings retry action. An idle deployment does not run the old perpetual 30-second timer. For delivery while every client is closed, add a scheduled worker appropriate to your delivery requirements; frequent schedules prevent scale-to-zero.
+- Email retries remain durable in Postgres. A Cloudflare scheduled trigger checks once per minute; API activity and the Settings retry action also drain due work.
 
 See [workspace operation](docs/WORKSPACE.md) for offline queues and permissions.
 

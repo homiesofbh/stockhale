@@ -42,6 +42,7 @@ type Props = {
   modal: "Purchase" | "Bill";
   isOwner: boolean;
   creator: { id: string; name: string };
+  workspaceId: string;
   commit: (next: Store, message: string) => void;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
   setPaper: Dispatch<SetStateAction<InvoicePaper>>;
@@ -76,6 +77,7 @@ export function TradeForm({
   modal,
   isOwner,
   creator,
+  workspaceId,
   commit,
   setInvoice,
   setPaper,
@@ -178,7 +180,7 @@ export function TradeForm({
           if (addingSupplier || addingCustomer) throw new Error("Save or cancel the new contact before saving the transaction.");
           const id = uid();
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
-          const attachment = modal === "Purchase" && file ? await uploadAttachment(file, "purchase", id) : undefined;
+          const attachment = modal === "Purchase" && file ? await uploadAttachment(file, "purchase", id, workspaceId) : undefined;
           const t: Trade = {
             status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
             id,

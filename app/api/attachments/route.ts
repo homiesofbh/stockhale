@@ -24,6 +24,7 @@ export async function POST(request: Request) {
       const { user } = await authorize(request);
       const body = await readJsonBody(request, 32_768) as Record<string, any>; policy(body);
       const snap = await snapshot(user);
+      if (typeof body.workspaceId !== "string" || body.workspaceId !== snap.id) return Response.json({ error: "The active workspace changed. Select it again before uploading this attachment." }, { status: 409 });
       if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
       const module = body.recordType === "expense" ? "Expenses" : "Purchases";
       if (!allowed(snap.member, module)) return Response.json({ error: "You do not have access to this module." }, { status: 403 });

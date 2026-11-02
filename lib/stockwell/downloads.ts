@@ -1,6 +1,7 @@
 const csvCell = (v: unknown) => {
   const value = String(v ?? "");
-  return `"${(typeof v !== "number" && /^[=+@\-\t\r]/.test(value) ? "'" : "") + value.replaceAll('"', '""')}"`;
+  // Excel may ignore leading whitespace/control characters before a formula marker.
+  return `"${(typeof v !== "number" && /^[\s\uFEFF]*[=+@\-]/u.test(value) ? "'" : "") + value.replaceAll('"', '""')}"`;
 };
 export function download(name: string, data: string, type: string) {
   const url = URL.createObjectURL(new Blob([data], { type }));

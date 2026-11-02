@@ -4,7 +4,7 @@ ALTER TABLE workspaces
   ADD COLUMN IF NOT EXISTS "digestLease" BIGINT NOT NULL DEFAULT 0;
 
 -- Existing queued activity belongs to the local date it was received on.
--- It will be sent after that date ends in the workspace time zone.
+-- It will be sent at 11:58 PM in the workspace time zone.
 UPDATE events e
 SET "emailStatus"='sent'
 FROM workspaces w

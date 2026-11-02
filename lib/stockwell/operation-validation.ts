@@ -187,6 +187,33 @@ export function validateOperations(before: Store, after: Store, module: string, 
     const replay = changeCheque(before, event.paymentId, event.status, event.date, event.accountId, event.reason, actor);
     check(same(replay.payments.find(p => p.id === event.paymentId), after.payments.find(p => p.id === event.paymentId)), "Cheque status change does not match its audit event.");
   }
+  const oldCrossCheques = before.crossCheques || [];
+  const nextCrossCheques = after.crossCheques || [];
+  for (const old of oldCrossCheques) {
+    const next = nextCrossCheques.find(c => c.id === old.id);
+    check(!!next, "Forwarded cheque history cannot be deleted.");
+    if (!same(old, next)) {
+      check(same(without(old, ["status"]), without(next, ["status"])), "Forwarded cheque details cannot be changed.");
+      const event = additions(before.chequeEvents || [], after.chequeEvents || []).find(e => e.paymentId === old.sourcePaymentId);
+      check(!!event, "Forwarded cheque status can only change through the cheque lifecycle.");
+      const replay = changeCheque(before, event!.paymentId, event!.status, event!.date, event!.accountId, event!.reason, actor);
+      check(same(replay.crossCheques?.find(c => c.id === old.id), next), "Forwarded cheque status does not match its audit event.");
+    }
+  }
+  for (const crossCheque of additions(oldCrossCheques, nextCrossCheques)) {
+    const source = after.payments.find(p => p.id === crossCheque.sourcePaymentId);
+    const priorSource = before.payments.find(p => p.id === crossCheque.sourcePaymentId);
+    check(nextCrossCheques.filter(c => c.sourcePaymentId === crossCheque.sourcePaymentId).length === 1, "A customer cheque can only be forwarded once.");
+    check(!!source && source.kind === "Customer" && source.method === "Cheque" && source.amount > 0 && (source.chequeStatus || "pending") === "pending" && !source.clearedDate, "Only a positive pending customer cheque can be forwarded.");
+    check(crossCheque.status === "pending" && validDate(crossCheque.date) && crossCheque.date >= source!.date && crossCheque.customerId === source!.contactId && crossCheque.amount === source!.amount, "Forwarded cheque details must match the source cheque.");
+    check(!priorSource || (priorSource.kind === "Customer" && priorSource.method === "Cheque" && priorSource.amount > 0 && (priorSource.chequeStatus || "pending") === "pending" && !priorSource.clearedDate), "Only an unforwarded pending customer cheque can be forwarded.");
+    if (crossCheque.destinationKind === "Supplier") {
+      const supplier = after.suppliers.find(c => c.id === crossCheque.destinationId);
+      check(!!supplier && crossCheque.destinationName === supplier.name, "Select an existing supplier as the forwarded cheque destination.");
+    } else {
+      check(crossCheque.destinationKind === "Partner" && typeof crossCheque.destinationId === "string" && !!crossCheque.destinationId.trim() && crossCheque.destinationName === crossCheque.destinationId, "Enter a valid partner as the forwarded cheque destination.");
+    }
+  }
   for (const p of before.payments) {
     const next = after.payments.find(a => a.id === p.id);
     check(!!next, "Payments cannot be deleted.");

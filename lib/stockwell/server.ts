@@ -739,10 +739,22 @@ export async function logout(request: Request) {
   });
   return result.headers;
 }
-function localDateAt(date: Date, timeZone: string) {
-  const parts = new Intl.DateTimeFormat("en", { timeZone, year: "numeric", month: "2-digit", day: "2-digit" }).formatToParts(date);
+export function activityDigestDue(date: Date, timeZone: string) {
+  const parts = new Intl.DateTimeFormat("en", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(date);
   const part = (type: string) => parts.find((item) => item.type === type)?.value || "00";
-  return `${part("year")}-${part("month")}-${part("day")}`;
+  const localDate = `${part("year")}-${part("month")}-${part("day")}`;
+  return {
+    date: localDate,
+    due: Number(part("hour")) * 60 + Number(part("minute")) >= 23 * 60 + 58,
+  };
 }
 let delivering = false;
 export async function deliverEmails() {
@@ -786,9 +798,11 @@ export async function deliverEmails() {
     for (const w of workspaces) {
       const claimed = await row('UPDATE workspaces SET "digestLease"=$1 WHERE id=$2 AND "digestLease" <= $3 RETURNING id', Date.now() + 120000, w.id, Date.now());
       if (!claimed) continue;
-      const today = localDateAt(new Date(), w.time_zone || "UTC");
+      const { date: today, due } = activityDigestDue(new Date(), w.time_zone || "UTC");
       const dueDate = w.digestDate ? String(w.digestDate).slice(0, 10) : null;
-      if (dueDate && dueDate >= today) {
+      // Keep the 23:58 due window open through local midnight, and send each
+      // date only once. A delayed scheduled tick must not lose the digest.
+      if (!due || dueDate === today) {
         await query('UPDATE workspaces SET "digestLease"=0 WHERE id=$1', [w.id]);
         continue;
       }
@@ -799,7 +813,7 @@ export async function deliverEmails() {
       );
       if (!events.length) { await query('UPDATE workspaces SET "digestLease"=0 WHERE id=$1', [w.id]); continue; }
       const ids = events.map((e) => e.id);
-      const digestKey = `stockwell/digest/${w.id}/${dueDate || today}`;
+      const digestKey = `stockwell/digest/${w.id}/${today}`;
       try {
         const rows = events.map((e) => `• ${e.actor}\n  ${e.module}: ${e.action}\n  Records: ${e.records}\n  Action time: ${e.occurredAt}\n  Synced: ${e.receivedAt}`).join("\n\n");
         const response = await fetch("https://api.resend.com/emails", {
@@ -812,8 +826,8 @@ export async function deliverEmails() {
         body: JSON.stringify({
           from: process.env.RESEND_FROM,
           to: [w.email],
-          subject: `${w.name}: daily activity summary (${dueDate || today})`,
-          text: `Activity for ${dueDate || today} (${w.time_zone || "UTC"})\n\n${rows}`,
+          subject: `${w.name}: daily activity summary (${today})`,
+          text: `Activity for ${today} (${w.time_zone || "UTC"})\n\n${rows}`,
         }),
         signal: AbortSignal.timeout(8000),
       });
@@ -829,4 +843,8 @@ export async function deliverEmails() {
   } finally {
     delivering = false;
   }
+}
+
+export async function runScheduledEmailDrain() {
+  return deliverEmails();
 }

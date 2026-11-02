@@ -12,9 +12,10 @@ type Props = {
   commitInline?: (next: Store, message: string) => void;
   s: Store;
   actor: Actor;
+  workspaceId: string;
   text: (f: FormData, key: string) => string;
 };
-export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor }: Props) {
+export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor, workspaceId }: Props) {
   const [category, setCategory] = useState(s.expenseCategories[0] || "");
   const [newCategories, setNewCategories] = useState<string[]>([]);
   const [addingCategory, setAddingCategory] = useState(false);
@@ -46,7 +47,7 @@ export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor 
             throw new Error("Amount must be greater than zero.");
           const id = uid();
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
-          const attachment = file ? await uploadAttachment(file, "expense", id) : undefined;
+          const attachment = file ? await uploadAttachment(file, "expense", id, workspaceId) : undefined;
           commit(
             saveExpense({ ...s, expenseCategories: categories }, { id, date: text(f, "date"), category: text(f, "category"), head: text(f, "head"), amount: round(amount), financialAccountId: paymentAccountId(s, text(f, "method")), method: text(f, "method"), notes: text(f, "notes"), attachments: attachment ? [attachment] : undefined, createdBy: actor.id, createdByName: actor.name }, actor),
             "Expense recorded.",

@@ -118,7 +118,7 @@ export function WorkspaceSettings({
               <datalist id="workspace-time-zones">
                 {Intl.supportedValuesOf("timeZone").map((zone) => <option key={zone} value={zone} />)}
               </datalist>
-              <small>The activity summary is sent after midnight in this time zone. Choose your business’s local time zone.</small>
+              <small>The activity summary is sent daily at 11:58 PM in this time zone. Choose your business’s local time zone.</small>
             </label>
             {image && (
               <div className="store-image-preview">
@@ -269,7 +269,7 @@ export function WorkspaceSettings({
         <h2>Email notifications</h2>
         <p>
           {workspace.emailConfigured
-            ? `Resend is configured. Record changes are grouped into one daily email after midnight (${timeZone}).`
+            ? `Resend is configured. Record changes are grouped into one daily email at 11:58 PM (${timeZone}).`
             : "Resend is not configured yet. Set RESEND_API_KEY and RESEND_FROM on the server. Alerts are kept in the email outbox."}
         </p>
         <button
