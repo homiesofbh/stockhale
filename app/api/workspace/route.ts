@@ -14,6 +14,8 @@ import {
   submitTestimonial,
   updateAdminSubscription,
   cancelAdminSubscription,
+  workspaceRevision,
+  workspaceDetails,
 } from "@/lib/stockwell/server";
 import { withDatabase } from "@/lib/stockwell/database";
 import { readJsonBody } from "@/lib/stockwell/request-body";
@@ -48,18 +50,32 @@ function sessionHeaders(authHeaders: Headers) {
   return result;
 }
 export async function GET(request: Request) {
+  const requestStartedAt = Date.now();
   try {
     return await withDatabase(async () => {
       if (new URL(request.url).searchParams.get("testimonials") === "public")
         return Response.json(await publicTestimonials(), { headers });
+      const authStartedAt = Date.now();
       const { user, headers: authHeaders } = await authorize(request);
+      console.info("Workspace request auth timing", { authMs: Date.now() - authStartedAt });
+      if (new URL(request.url).searchParams.get("details") === "1")
+        return Response.json(await workspaceDetails(user), { headers: sessionHeaders(authHeaders) });
       if (new URL(request.url).searchParams.get("admin") === "overview")
         return Response.json(await adminOverview(user), { headers: sessionHeaders(authHeaders) });
       if (new URL(request.url).searchParams.get("admin") === "testimonials")
         return Response.json(await adminTestimonials(user), { headers: sessionHeaders(authHeaders) });
-      const overview = await snapshot(user);
+      const params = new URL(request.url).searchParams;
+      const knownRevision = params.get("revision"), knownWorkspace = params.get("workspaceId");
+      if (knownRevision !== null && knownWorkspace) {
+        const current = await workspaceRevision(user);
+        if (current.locked) return Response.json({ error: "Your trial has expired.", code: "TRIAL_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
+        if (current.id === knownWorkspace && current.revision === Number(knownRevision))
+          return Response.json({ unchanged: true, revision: current.revision }, { headers: sessionHeaders(authHeaders) });
+      }
+      const snapshotStartedAt = Date.now();
+      const overview = await snapshot(user, { details: false });
+      console.info("Workspace startup snapshot timing", { snapshotMs: Date.now() - snapshotStartedAt, totalMs: Date.now() - requestStartedAt });
       if (overview.locked) return Response.json({ error: "Your trial has expired.", code: "TRIAL_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
-      await deliverEmails();
       return Response.json(overview, {
         headers: sessionHeaders(authHeaders),
       });
@@ -69,6 +85,7 @@ export async function GET(request: Request) {
   }
 }
 export async function POST(request: Request) {
+  const requestStartedAt = Date.now();
   try {
     const origin = request.headers.get("origin");
     const canonicalURL =
@@ -122,8 +139,12 @@ export async function POST(request: Request) {
       if (payload.action === "reset-password")
         return Response.json(await resetPassword(payload, request), { headers });
       if (["signin", "signup", "team-signup"].includes(payload.action)) {
+        const authStartedAt = Date.now();
         const { user, headers: authHeaders } = await authenticate(payload, request);
+        console.info("Workspace auth timing", { action: payload.action, authMs: Date.now() - authStartedAt });
+        const snapshotStartedAt = Date.now();
         const overview = await snapshot(user, { details: false });
+        console.info("Workspace auth snapshot timing", { action: payload.action, snapshotMs: Date.now() - snapshotStartedAt });
         return Response.json(overview, {
           headers: sessionHeaders(authHeaders),
         });
@@ -145,16 +166,26 @@ export async function POST(request: Request) {
         return Response.json(await reviewTestimonial(user, payload), { headers: sessionHeaders(authHeaders) });
       if (payload.action === "admin-subscription") {
         const result = await updateAdminSubscription(user, payload);
-        await deliverEmails();
         return Response.json(result, { headers: sessionHeaders(authHeaders) });
       }
       if (payload.action === "admin-cancel-subscription") {
         return Response.json(await cancelAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
       }
       const result = await mutate(user, payload);
-      await deliverEmails();
+      console.info("Workspace mutation timing", { action: payload.action || "sync", mutationMs: Date.now() - requestStartedAt });
+      if (payload.action === "retry-email") {
+        await deliverEmails();
+        return Response.json(result, { headers: sessionHeaders(authHeaders) });
+      }
+      if (payload.action === "sync" && payload.compactSync === true && !(result as { needsSnapshot?: boolean }).needsSnapshot) {
+        console.info("Workspace compact sync response timing", { totalMs: Date.now() - requestStartedAt });
+        return Response.json({ compactSync: true, ...result }, { headers: sessionHeaders(authHeaders) });
+      }
+      const snapshotStartedAt = Date.now();
+      const overview = await snapshot(user, { details: false });
+      console.info("Workspace response snapshot timing", { action: payload.action || "sync", snapshotMs: Date.now() - snapshotStartedAt, totalMs: Date.now() - requestStartedAt });
       return Response.json(
-        { ...(await snapshot(user)), ...result },
+        { ...overview, ...result },
         { headers: sessionHeaders(authHeaders) },
       );
     });

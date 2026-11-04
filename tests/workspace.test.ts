@@ -2,6 +2,7 @@ import { test } from "node:test";
 import assert from "node:assert/strict";
 import { randomUUID, randomBytes, scryptSync } from "node:crypto";
 import { mkdtempSync, rmSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { Client } from "pg";
@@ -51,11 +52,11 @@ test("Postgres and Better Auth workspace integration", async (t) => {
   try {
     await t.test("schema migrations are repeatable", async () => {
       await migrate();
+      const before = Number((await query("SELECT COUNT(*)::int AS count FROM stockwell_migrations")).rows[0].count);
       await migrate();
-      assert.equal(
-        (await query("SELECT * FROM stockwell_migrations")).rowCount,
-        1,
-      );
+      const after = Number((await query("SELECT COUNT(*)::int AS count FROM stockwell_migrations")).rows[0].count);
+      assert.ok(before > 0);
+      assert.equal(after, before);
     });
     await t.test(
       "signup returns real Better Auth cookies and persists hashed credentials",
@@ -309,6 +310,14 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         const w = await server.snapshot(owner);
         assert.equal(w.revision, 1);
         assert.equal(w.store.products.length, 1);
+        assert.deepEqual(w.store.heads, store.heads);
+        assert.deepEqual(w.store.units, store.units);
+        const normalized = await query("SELECT record,ordinal FROM workspace_records WHERE workspace=$1 AND collection='products' AND record_id='rice'", [w.id]);
+        assert.equal(normalized.rowCount, 1);
+        assert.equal(normalized.rows[0].record.id, "rice");
+        const compatibilityStore = await query("SELECT store,records_ready FROM workspaces WHERE id=$1", [w.id]);
+        assert.equal(compatibilityStore.rows[0].records_ready, true);
+        assert.equal(JSON.parse(compatibilityStore.rows[0].store).products.length, 0);
         assert.equal(w.audit.filter((a) => a.id === change.id).length, 1);
         assert.match(w.audit.find((a) => a.id === change.id)!.actor, /Clerk/);
         assert.match(w.audit.find((a) => a.id === change.id)!.records, /rice/);
@@ -438,6 +447,15 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         process.env.RESEND_API_KEY = "test-key";
         process.env.RESEND_FROM = "alerts@example.test";
         const original = global.fetch;
+        const OriginalDate = global.Date;
+        const digestTime = "2026-01-01T23:59:00.000Z";
+        global.Date = class extends OriginalDate {
+          constructor(...args: any[]) {
+            if (args.length) super(args[0]);
+            else super(digestTime);
+          }
+          static now() { return new OriginalDate(digestTime).getTime(); }
+        } as DateConstructor;
         let fail = true;
         const failedKeys: string[] = [],
           sentKeys: string[] = [];
@@ -469,6 +487,7 @@ test("Postgres and Better Auth workspace integration", async (t) => {
           assert.deepEqual(failedKeys.sort(), sentKeys.sort());
         } finally {
           global.fetch = original;
+          global.Date = OriginalDate;
           delete process.env.RESEND_API_KEY;
           delete process.env.RESEND_FROM;
         }
@@ -633,6 +652,28 @@ test("Postgres and Better Auth workspace integration", async (t) => {
         }
       },
     );
+    await t.test("record migration backfills a legacy JSON workspace", async () => {
+      const current = await server.snapshot(owner);
+      const legacyStore = saveProduct(emptyStore(), {
+        id: "legacy-product",
+        name: "Legacy rice",
+        sku: "LEGACY-RICE",
+        barcode: "",
+        category: "General",
+        cost: 10,
+        price: 20,
+        low: 2,
+      }, 3);
+      legacyStore.categories = [];
+      await query("DELETE FROM workspace_records WHERE workspace=$1", [current.id]);
+      await query("UPDATE workspaces SET store=$1,records_ready=FALSE WHERE id=$2", [JSON.stringify(legacyStore), current.id]);
+      const migration = await readFile(new URL("../migrations/011-workspace-records.sql", import.meta.url), "utf8");
+      await query(migration);
+      const backfilled = await server.snapshot(owner);
+      assert.equal(backfilled.store.products[0].id, "legacy-product");
+      assert.equal(backfilled.store.products[0].sku, "LEGACY-RICE");
+      assert.deepEqual(backfilled.store.categories, []);
+    });
   } finally {
     await closeDatabase();
     await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`);

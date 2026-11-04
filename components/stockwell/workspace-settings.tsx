@@ -1,10 +1,12 @@
 "use client";
 import { Check, Copy, Link2 } from "lucide-react";
-import { useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import { modules, type Workspace } from "@/lib/stockwell/workspace";
 import type { Cache } from "@/lib/stockwell/workspace";
 import { orderedUnits, type Store } from "@/lib/stockwell/model";
 import { WorkspaceBackup } from "@/components/stockwell/workspace-backup";
+import { workspaceRequest } from "@/lib/stockwell/workspace-request";
+import type { Audit } from "@/lib/stockwell/workspace";
 
 const TIME_ZONES = Intl.supportedValuesOf("timeZone");
 
@@ -33,7 +35,19 @@ export function WorkspaceSettings({
   const [unitName, setUnitName] = useState("");
   const [timeZoneSearch, setTimeZoneSearch] = useState("");
   const [timeZonePickerOpen, setTimeZonePickerOpen] = useState(false);
+  const [members, setMembers] = useState(workspace.members);
+  const [audit, setAudit] = useState<Audit[]>(workspace.audit);
+  const [detailsLoading, setDetailsLoading] = useState(!workspace.members.length);
   const timeZoneSearchInput = useRef<HTMLInputElement>(null);
+  useEffect(() => {
+    let active = true;
+    void workspaceRequest(undefined, undefined, { details: true }).then((details: { members: Workspace["members"]; audit: Audit[] }) => {
+      if (active) { setMembers(details.members); setAudit(details.audit); }
+    }).catch(() => {
+      if (active) setError("Could not load team and audit details. Reopen Settings to retry.");
+    }).finally(() => { if (active) setDetailsLoading(false); });
+    return () => { active = false; };
+  }, [workspace.id]);
   const filteredTimeZones = TIME_ZONES.filter((zone) =>
     zone.toLocaleLowerCase().includes(timeZoneSearch.trim().toLocaleLowerCase()),
   );
@@ -232,7 +246,7 @@ export function WorkspaceSettings({
       </div>
       <section className="panel">
         <h2>Team authority</h2>
-        {workspace.members.map((m) => (
+        {detailsLoading ? <p>Loading team…</p> : members.map((m) => (
           <form
             className="member-authority"
             key={m.id}
@@ -274,7 +288,7 @@ export function WorkspaceSettings({
           </form>
         ))}
       </section>
-      <WorkspaceBackup action={action} cache={cache} settings />
+      <WorkspaceBackup action={action} cache={cache} settings audit={audit} />
       <section className="panel">
         <h2>Units of measure (UOM)</h2>
         <p>Manage the units available when creating products, including textile units such as yards.</p>

@@ -106,6 +106,47 @@ export type Change = {
   store: Store;
 };
 
+export type StoreDelta = Record<string, { upsert?: unknown[]; remove?: string[]; replace?: unknown[] }>;
+export function createStoreDelta(before: Store, after: Store): StoreDelta {
+  const delta: StoreDelta = {};
+  for (const key of Object.keys(collectionModules) as (keyof Store)[]) {
+    const oldValues = (before[key] || []) as unknown[];
+    const nextValues = (after[key] || []) as unknown[];
+    if (JSON.stringify(oldValues) === JSON.stringify(nextValues)) continue;
+    if (oldValues.every(v => typeof v === "object" && v !== null && "id" in v) && nextValues.every(v => typeof v === "object" && v !== null && "id" in v)) {
+      const oldMap = new Map(oldValues.map(v => [(v as {id:string}).id, v]));
+      const nextMap = new Map(nextValues.map(v => [(v as {id:string}).id, v]));
+      const expectedOrder = [...oldMap.keys()].filter(id => nextMap.has(id)).concat([...nextMap.keys()].filter(id => !oldMap.has(id)));
+      if (expectedOrder.some((id, index) => id !== (nextValues[index] as {id:string}).id)) {
+        delta[key] = { replace: nextValues };
+        continue;
+      }
+      const upsert = [...nextMap].filter(([id, value]) => JSON.stringify(oldMap.get(id)) !== JSON.stringify(value)).map(([, value]) => value);
+      const remove = [...oldMap.keys()].filter(id => !nextMap.has(id));
+      delta[key] = { upsert, remove };
+    } else delta[key] = { replace: nextValues };
+  }
+  return delta;
+}
+
+export function applyStoreDelta(base: Store, delta: StoreDelta): Store {
+  const result: Store = { ...base };
+  for (const [key, change] of Object.entries(delta)) {
+    if (!Object.hasOwn(collectionModules, key)) throw new Error("Invalid sync delta.");
+    if (change.replace && (change.upsert || change.remove)) throw new Error("Invalid sync delta.");
+    const current = (result[key as keyof Store] || []) as unknown[];
+    if (change.replace) { (result as any)[key] = change.replace; continue; }
+    const map = new Map(current.map(value => [(value as {id:string}).id, value]));
+    for (const id of change.remove || []) map.delete(id);
+    for (const value of change.upsert || []) {
+      if (!value || typeof value !== "object" || typeof (value as {id?:unknown}).id !== "string") throw new Error("Invalid sync delta record.");
+      map.set((value as {id:string}).id, value);
+    }
+    (result as any)[key] = [...map.values()];
+  }
+  return normalizeStore(result);
+}
+
 /**
  * What the device keeps locally: the last server snapshot, the queue of
  * unsynced changes, and baseStore (the server store those changes were made on,

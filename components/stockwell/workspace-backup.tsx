@@ -4,14 +4,16 @@ import { useEffect, useState } from "react";
 import { readRecoveryFile, type RecoveryBackup } from "@/lib/stockwell/recovery";
 import type { Change } from "@/lib/stockwell/workspace";
 import type { Cache } from "@/lib/stockwell/workspace";
+import type { Audit } from "@/lib/stockwell/workspace";
 import { BACKUP_REMINDER, backupDue, backupKey, completeBackup, downloadRecovery, downloadBackup } from "@/lib/stockwell/backup";
 import { Modal } from "./ui";
 
-export function WorkspaceBackup({ cache, settings, action }: { cache: Cache; settings: boolean; action: (body: unknown) => Promise<any> }) {
+export function WorkspaceBackup({ cache, settings, action, audit = cache.workspace.audit }: { cache: Cache; settings: boolean; action: (body: unknown) => Promise<any>; audit?: Audit[] }) {
   const [restore, setRestore] = useState<RecoveryBackup | null>(null);
   const [confirmation, setConfirmation] = useState(""), [reason, setReason] = useState("");
   const [pending, setPending] = useState<{ change: Change; revision: number } | null>(null), [approvalReason, setApprovalReason] = useState("");
-  const [points, setPoints] = useState(cache.workspace.audit.filter(a => a.action === "Pre-restore safety snapshot"));
+  const [points, setPoints] = useState(audit.filter(a => a.action === "Pre-restore safety snapshot"));
+  useEffect(() => setPoints(audit.filter(a => a.action === "Pre-restore safety snapshot")), [audit]);
   const [due, setDue] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");

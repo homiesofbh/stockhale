@@ -50,7 +50,7 @@ export function defer(p: Promise<unknown>) {
 export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
   const cs = connectionString();
   if (!cs)
-    throw Object.assign(new Error("Database is not configured."), { status: 503 });
+    throw Object.assign(new Error("Database is not configured. Set DATABASE_URL."), { status: 503 });
   const pool = new Pool({ connectionString: cs, max: 2, connectionTimeoutMillis: 8000 });
   pool.on("error", (err: any) => {
     if (err?.message?.includes("socket has been closed")) return;

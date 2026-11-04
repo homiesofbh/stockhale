@@ -1,5 +1,5 @@
 import { chartAccounts } from "./accounts";
-import { balance, emptyStore, isPosted, recordPayment, recordReturn, recordTrade, saveProduct, saveContact, round, stock, today, total, type Store, type Trade } from "./model";
+import { balance, emptyStore, isPosted, recordPayment, recordReturn, recordTrade, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
 import { productionMovements, validateRecipe } from "./production";
 import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
@@ -7,8 +7,8 @@ export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?:
 const clean = (value: any): any => Array.isArray(value) ? value.map(clean) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, clean(value[k])])) : value;
 export const same = (a: unknown, b: unknown) => JSON.stringify(clean(a)) === JSON.stringify(clean(b));
 const without = (value: any, keys: string[]) => Object.fromEntries(Object.entries(value).filter(([k]) => !keys.includes(k)));
-const additions = <T extends { id: string }>(before: T[], after: T[]) => after.filter(a => !before.some(b => b.id === a.id));
-function immutable<T extends { id: string }>(before: T[], after: T[], label: string) { for (const old of before) check(after.some(next => next.id === old.id && same(old, next)), `${label} cannot be changed or deleted.`); }
+const additions = <T extends { id: string }>(before: T[], after: T[]) => { const ids = new Set(before.map(b => b.id)); return after.filter(a => !ids.has(a.id)); };
+function immutable<T extends { id: string }>(before: T[], after: T[], label: string) { const next = new Map(after.map(record => [record.id, record])); for (const old of before) check(next.has(old.id) && same(old, next.get(old.id)), `${label} cannot be changed or deleted.`); }
 const movementKey = (m: Store["movements"][number]) => JSON.stringify(clean(without(m, ["id", "createdAt"])));
 export function validateStore(s: Store) {
   check(!!s && s.version === 1, "Unsupported store version.");
@@ -18,22 +18,54 @@ export function validateStore(s: Store) {
     const ids = new Set<string>();
     for (const record of value as any[]) { check(!!record && typeof record.id === "string" && !!record.id && !ids.has(record.id), `Invalid or duplicate ID in ${key}.`); ids.add(record.id); }
   }
+  const productIds = new Set(s.products.map(p => p.id));
+  const customerIds = new Set(s.customers.map(c => c.id));
+  const supplierIds = new Set(s.suppliers.map(c => c.id));
+  const invoiceIds = new Set(s.invoices.map(t => t.id));
+  const tradeById = new Map([...s.invoices, ...s.purchases].map(t => [t.id, t]));
+  const invoicesById = new Map(s.invoices.map(t => [t.id, t]));
+  const purchasesById = new Map(s.purchases.map(t => [t.id, t]));
+  const chequePaymentIds = new Set(s.payments.filter(p => p.method === "Cheque").map(p => p.id));
   for (const key of ["heads", "categories", "expenseCategories", "units"] as const) check((s[key] || []).every(v => typeof v === "string" && !!v.trim()), `Invalid ${key}.`);
-  let productCheck = emptyStore();
-  for (const product of s.products) productCheck = saveProduct(productCheck, product);
+  const skuOwners = new Map<string, string>();
+  const barcodeOwners = new Map<string, string>();
+  const skuByProduct = new Map<string, string>();
+  const barcodeByProduct = new Map<string, string>();
+  for (const product of s.products) {
+    const sku = typeof product.sku === "string" ? product.sku.trim().toLowerCase() : "";
+    const barcode = typeof product.barcode === "string" ? product.barcode.trim() : "";
+    const barcodeKey = barcode.toLowerCase();
+    check(typeof product.name === "string" && !!product.name.trim() && !!sku, "Product name and SKU are required.");
+    check(!product.variantOf || (product.variantOf !== product.id && productIds.has(product.variantOf)), "Select a valid parent product for this variant.");
+    check(!skuOwners.has(sku), "This SKU is already in use.");
+    check(!barcode || !barcodeOwners.has(barcode), "This barcode is already assigned to a product.");
+    check(!/[\x00-\x1f\x7f]/.test(barcode), "Barcode must not contain control characters.");
+    check([product.cost, product.price, product.low].every(value => Number.isFinite(value) && value >= 0), "Prices and thresholds must be non-negative numbers.");
+    skuOwners.set(sku, product.id);
+    if (barcode) barcodeOwners.set(barcode, product.id);
+    skuByProduct.set(product.id, sku);
+    barcodeByProduct.set(product.id, barcodeKey);
+  }
+  for (const product of s.products) {
+    const sku = skuByProduct.get(product.id)!;
+    const barcode = barcodeByProduct.get(product.id)!;
+    check(!barcode || !skuOwners.has(barcode) || skuOwners.get(barcode) === product.id, "A barcode cannot match another product's SKU.");
+    const otherBarcodeOwner = barcodeOwners.get(sku);
+    check(!otherBarcodeOwner || otherBarcodeOwner === product.id, "A barcode cannot match another product's SKU.");
+  }
   for (const contact of s.customers) { check(typeof contact.name === "string" && typeof contact.phone === "string" && typeof contact.email === "string" && typeof contact.address === "string", "Invalid customer details."); saveContact(s, "Customer", contact); }
   for (const contact of s.suppliers) { check(typeof contact.name === "string" && typeof contact.phone === "string" && typeof contact.email === "string" && typeof contact.address === "string", "Invalid supplier details."); saveContact(s, "Supplier", contact); }
   for (const trade of [...s.invoices, ...s.purchases]) {
     check(validDate(trade.date) && typeof trade.number === "string" && !!trade.number && [undefined, "draft", "posted", "void"].includes(trade.status), "Invalid bill details.");
-    check(Array.isArray(trade.lines) && trade.lines.length > 0 && trade.lines.every(l => s.products.some(p => p.id === l.productId) && [l.qty, l.price, l.cost].every(Number.isFinite) && l.qty > 0 && l.price >= 0 && l.cost >= 0), "Invalid bill lines.");
+    check(Array.isArray(trade.lines) && trade.lines.length > 0 && trade.lines.every(l => productIds.has(l.productId) && [l.qty, l.price, l.cost].every(Number.isFinite) && l.qty > 0 && l.price >= 0 && l.cost >= 0), "Invalid bill lines.");
     check(Number.isFinite(trade.paid) && trade.paid >= 0 && trade.paid <= total(trade) && Number.isFinite(trade.discount) && trade.discount >= 0 && trade.discount <= trade.lines.reduce((n, l) => n + l.price * l.qty, 0) && Number.isFinite(trade.tax) && trade.tax >= 0 && trade.tax <= 100, "Invalid bill amounts.");
-    check(typeof trade.contactId === "string" && (!trade.contactId || (s.invoices.some(t => t.id === trade.id) ? s.customers : s.suppliers).some(c => c.id === trade.contactId)), "Bill references an unknown customer or supplier.");
+    check(typeof trade.contactId === "string" && (!trade.contactId || (invoiceIds.has(trade.id) ? customerIds : supplierIds).has(trade.contactId)), "Bill references an unknown customer or supplier.");
     check(s.heads.includes(trade.head), "Bill references an unknown account head.");
   }
   check(new Set([...s.invoices, ...s.purchases].map(t => t.id)).size === s.invoices.length + s.purchases.length, "Duplicate bill IDs.");
   check(new Set([...s.invoices, ...s.purchases].map(t => t.number)).size === s.invoices.length + s.purchases.length, "Duplicate bill references.");
   for (const p of s.payments) {
-    const trade = (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId);
+    const trade = (p.kind === "Customer" ? invoicesById : purchasesById).get(p.tradeId);
     if (p.accountLevel) {
       check(p.kind === "Supplier" && !p.advance && !p.tradeId && s.suppliers.some(c => c.id === p.contactId) && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid supplier account payment.");
       check(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || !!s.financialAccounts?.some(a => a.name === p.method), "Invalid supplier payment method.");
@@ -48,15 +80,17 @@ export function validateStore(s: Store) {
     check(p.method !== "Cheque" || !!p.chequeNumber && !!p.chequeBank && validDate(p.chequeDate || "") && ["pending", "cleared", "bounced", "cancelled"].includes(p.chequeStatus || "pending"), "Invalid cheque details.");
   }
   for (const e of s.expenses) check(validDate(e.date) && Number.isFinite(e.amount) && e.amount > 0 && round(e.amount) === e.amount && s.heads.includes(e.head) && s.expenseCategories.includes(e.category), "Invalid expense.");
-  for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && s.products.some(p => p.id === r.productId) && (r.kind === "Damaged stock" || [...s.invoices, ...s.purchases].some(t => t.id === r.tradeId && isPosted(t))), "Invalid return.");
-  for (const m of s.movements) check(validDate(m.date) && Number.isFinite(m.qty) && s.products.some(p => p.id === m.productId), "Invalid stock movement.");
+  for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && productIds.has(r.productId) && (r.kind === "Damaged stock" || (tradeById.has(r.tradeId) && isPosted(tradeById.get(r.tradeId)!))), "Invalid return.");
+  for (const m of s.movements) check(validDate(m.date) && Number.isFinite(m.qty) && productIds.has(m.productId), "Invalid stock movement.");
   for (const recipe of s.recipes || []) validateRecipe(s, recipe);
   check(new Set((s.recipes || []).map(recipe => recipe.id)).size === (s.recipes || []).length, "Duplicate recipe IDs.");
   check(new Set((s.productionRuns || []).map(run => run.id)).size === (s.productionRuns || []).length, "Duplicate production run IDs.");
   for (const run of s.productionRuns || []) check(validDate(run.date) && !!run.recipeId && !!run.recipeName && !!run.reference && Number.isInteger(run.batches) && run.batches > 0 && Number.isFinite(run.outputQuantity) && run.outputQuantity > 0 && Number.isFinite(run.outputUnitCost) && run.outputUnitCost >= 0 && Number.isFinite(run.materialCost) && run.materialCost >= 0 && !!run.actorId && s.products.some(product => product.id === run.outputProductId) && Array.isArray(run.ingredients) && run.ingredients.length > 0 && run.ingredients.every(item => s.products.some(product => product.id === item.productId) && item.productId !== run.outputProductId && Number.isFinite(item.quantity) && item.quantity > 0 && Number.isFinite(item.unitCost) && item.unitCost >= 0), "Invalid production run.");
   for (const c of s.corrections || []) check(validDate(c.date) && !!c.reason?.trim() && c.before.id === c.tradeId && c.after.id === c.tradeId, "Invalid bill correction history.");
-  for (const e of s.chequeEvents || []) check(validDate(e.date) && !!e.reason?.trim() && s.payments.some(p => p.id === e.paymentId && p.method === "Cheque"), "Invalid cheque history.");
-  s.products.forEach(p => check(stock(s, p.id) >= 0, "Invalid backup: stock cannot be negative."));
+  for (const e of s.chequeEvents || []) check(validDate(e.date) && !!e.reason?.trim() && chequePaymentIds.has(e.paymentId), "Invalid cheque history.");
+  const stockByProduct = new Map<string, number>();
+  for (const movement of s.movements) stockByProduct.set(movement.productId, (stockByProduct.get(movement.productId) || 0) + movement.qty);
+  s.products.forEach(p => check(roundQty(stockByProduct.get(p.id) || 0) >= 0, "Invalid backup: stock cannot be negative."));
   for (const payment of s.payments.filter(p => p.method === "Cheque")) {
     const events = (s.chequeEvents || []).filter(e => e.paymentId === payment.id).sort((a, b) => a.date.localeCompare(b.date) || a.occurredAt.localeCompare(b.occurredAt));
     let status = events.length && events[0].status !== "cleared" && payment.clearedDate ? "cleared" : "pending";
@@ -91,12 +125,20 @@ export function validateOperations(before: Store, after: Store, module: string, 
   immutable(before.productionRuns || [], after.productionRuns || [], "Production runs");
   immutable(before.returns, after.returns, "Returns");
   immutable(before.expenses, after.expenses, "Expenses");
+  const afterProducts = new Map(after.products.map(product => [product.id, product]));
+  const manufacturingProducts = new Set<string>();
+  for (const recipe of before.recipes || []) {
+    manufacturingProducts.add(recipe.outputProductId);
+    for (const ingredient of recipe.ingredients) manufacturingProducts.add(ingredient.productId);
+  }
+  for (const run of before.productionRuns || []) {
+    manufacturingProducts.add(run.outputProductId);
+    for (const ingredient of run.ingredients) manufacturingProducts.add(ingredient.productId);
+  }
   for (const product of before.products) {
-    const next = after.products.find(candidate => candidate.id === product.id);
+    const next = afterProducts.get(product.id);
     if (!next) continue;
-    const usedInManufacturing = (before.recipes || []).some(recipe => recipe.outputProductId === product.id || recipe.ingredients.some(ingredient => ingredient.productId === product.id)) ||
-      (before.productionRuns || []).some(run => run.outputProductId === product.id || run.ingredients.some(ingredient => ingredient.productId === product.id));
-    check(!usedInManufacturing || product.unit === next.unit, "A product measurement unit cannot change after it is used by a recipe or production run.");
+    check(!manufacturingProducts.has(product.id) || product.unit === next.unit, "A product measurement unit cannot change after it is used by a recipe or production run.");
   }
   const expectedMovements: Store["movements"] = [];
   let expectedProducts = before.products;
@@ -112,13 +154,29 @@ export function validateOperations(before: Store, after: Store, module: string, 
   }
   const replayedOpenings: Store["movements"] = [];
   if (module === "Purchases") {
-    for (const product of additions(before.products, after.products)) {
+    const newProducts = additions(before.products, after.products);
+    expectedProducts = [...expectedProducts, ...newProducts.map(product => ({
+      ...product,
+      sku: product.sku.trim(),
+      barcode: product.barcode.trim(),
+      unit: (product.unit || "piece").trim(),
+    }))];
+    for (const product of newProducts) {
       const openingMovement = additions(before.movements, after.movements).find(movement => movement.productId === product.id && movement.type === "Opening stock");
       const opening = openingMovement?.qty || 0;
       requireOpenDate(before, openingMovement?.date || today());
-      const replay = saveProduct({ ...before, products: expectedProducts }, product, opening);
-      expectedProducts = replay.products;
-      if (openingMovement) replayedOpenings.push(...replay.movements.filter(movement => movement.productId === product.id && movement.type === "Opening stock").map(movement => ({ ...movement, date: openingMovement.date, reference: openingMovement.reference, reason: openingMovement.reason })));
+      check(Number.isFinite(opening) && opening >= 0, "Prices, thresholds, and opening stock must be non-negative numbers.");
+      if (openingMovement) {
+        check(opening > 0, "Opening stock must be greater than zero.");
+        replayedOpenings.push({
+          ...openingMovement,
+          productId: product.id,
+          type: "Opening stock",
+          qty: opening,
+          reference: product.sku.trim(),
+          reason: "Opening balance",
+        });
+      }
     }
   }
   expectedMovements.push(...replayedOpenings);
@@ -255,7 +313,9 @@ export function validateOperations(before: Store, after: Store, module: string, 
   }
   if (module === "Purchases") check(same(expectedProducts, after.products), "Purchase changes may update only the calculated product costs.");
   if (module === "Production") check(same(expectedProducts, after.products), "Production may update only finished-product costs calculated from the recipe.");
-  after.products.forEach(p => check(stock(after, p.id) >= 0, "This change would make stock negative."));
+  const afterStock = new Map<string, number>();
+  for (const movement of after.movements) afterStock.set(movement.productId, (afterStock.get(movement.productId) || 0) + movement.qty);
+  after.products.forEach(p => check(roundQty(afterStock.get(p.id) || 0) >= 0, "This change would make stock negative."));
   for (const key of ["journals", "bankVouchers"] as const) for (const v of after[key] || []) {
     const old = before[key]?.find(a => a.id === v.id);
     if (!old || !same(old, v)) {

@@ -8,8 +8,8 @@ import { verifyPassword } from "better-auth/crypto";
 import { isIP } from "node:net";
 import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
-import { emptyStore, normalizeStore } from "./model";
-import { modules, verifyChange, prepareSyncChange, type Member } from "./workspace";
+import { emptyStore, normalizeStore, type Store } from "./model";
+import { modules, verifyChange, prepareSyncChange, applyStoreDelta, createStoreDelta, type Member, type StoreDelta } from "./workspace";
 import { reopenDay } from "./operations";
 export { db } from "./database";
 type Row = Record<string, any>;
@@ -80,6 +80,64 @@ async function workspace(user: Row, lock = false) {
   if (!w) throw new Error("Workspace unavailable.");
   return w;
 }
+// Load the normalized representation for ordinary workspace operations. The
+// The JSON column is only the legacy seed; current backups use these records.
+async function loadWorkspaceStore(w: Row) {
+  if (!w.records_ready) return normalizeStore(JSON.parse(w.store));
+  const records = await all(
+    'SELECT collection,record_id,ordinal,record FROM workspace_records WHERE workspace=$1 ORDER BY collection,ordinal',
+    w.id,
+  );
+  const store: Row = { version: 1 };
+  // An absent row means an empty collection, including configurable lists.
+  // Applying emptyStore defaults here would resurrect deleted categories,
+  // heads or units after a reload.
+  for (const [key, value] of Object.entries(normalizeStore(emptyStore()))) {
+    if (Array.isArray(value)) store[key] = [];
+  }
+  for (const item of records) {
+    (store[item.collection] ||= []).push(item.record);
+  }
+  return normalizeStore(store as Store);
+}
+async function persistWorkspaceStore(w: Row, before: Store, store: Store, revision: number) {
+  const entries: { collection: string; id: string; ordinal: number; record: unknown }[] = [];
+  const removed: { collection: string; id: string }[] = [];
+  // Seed every record on the first write, including unchanged default lists.
+  const baseline = w.records_ready ? before : { version: 1 } as Store;
+  const collections = new Set([...Object.keys(baseline), ...Object.keys(store)]);
+  const recordsById = (records: unknown) => {
+    const result = new Map<string, { record: unknown; ordinal: number }>();
+    if (!Array.isArray(records)) return result;
+    records.forEach((record: any, ordinal) => {
+      const base = String(record?.id ?? record?.name ?? `#${ordinal}`);
+      const id = result.has(base) ? `${base}#${ordinal}` : base;
+      result.set(id, { record, ordinal });
+    });
+    return result;
+  };
+  for (const collection of collections) {
+    const beforeRecords = recordsById((baseline as any)[collection]);
+    const nextRecords = recordsById((store as any)[collection]);
+    for (const [id] of beforeRecords) if (!nextRecords.has(id)) removed.push({ collection, id });
+    for (const [id, next] of nextRecords) {
+      const prior = beforeRecords.get(id);
+      if (!prior || prior.ordinal !== next.ordinal || JSON.stringify(prior.record) !== JSON.stringify(next.record)) {
+        entries.push({ collection, id, ordinal: next.ordinal, record: next.record });
+      }
+    }
+  }
+  for (const entry of removed) await query('DELETE FROM workspace_records WHERE workspace=$1 AND collection=$2 AND record_id=$3', [w.id, entry.collection, entry.id]);
+  if (entries.length) {
+    await query(`INSERT INTO workspace_records(workspace,collection,record_id,ordinal,record)
+      SELECT $1,e.collection,e.record_id,e.ordinal,e.record FROM json_to_recordset($2::json)
+      AS e(collection text,record_id text,ordinal integer,record json)
+      ON CONFLICT(workspace,collection,record_id) DO UPDATE SET ordinal=EXCLUDED.ordinal,record=EXCLUDED.record
+      WHERE workspace_records.ordinal IS DISTINCT FROM EXCLUDED.ordinal OR workspace_records.record::text IS DISTINCT FROM EXCLUDED.record::text`,
+      [w.id, JSON.stringify(entries.map(({ collection, id, ordinal, record }) => ({ collection, record_id: id, ordinal, record })))]);
+  }
+  await query('UPDATE workspaces SET revision=$1,records_ready=TRUE WHERE id=$2', [revision, w.id]);
+}
 function requireWorkspaceAccess(w: Row) {
   if (trialAccess(w).locked)
     throw Object.assign(new Error("Your 3-day trial has ended. Choose a plan to continue using StockHale."), { status: 402, code: "TRIAL_EXPIRED" });
@@ -144,6 +202,30 @@ export async function snapshot(user: Row, options: { details?: boolean } = {}) {
     };
   });
 }
+export async function workspaceRevision(user: Row) {
+  const w = await row(
+    'SELECT w.id,w.revision,w.plan_active,w.trial_started_at,w.access_revoked_at FROM workspaces w JOIN members m ON m.workspace=w.id WHERE m."user"=$1',
+    user.id,
+  );
+  if (!w) throw new Error("Workspace unavailable.");
+  return { id: w.id, revision: Number(w.revision), locked: trialAccess(w).locked };
+}
+export async function workspaceDetails(user: Row) {
+  return transaction(async () => {
+    const w = await row('SELECT id,owner FROM workspaces JOIN members ON members.workspace=workspaces.id WHERE members."user"=$1', user.id);
+    if (!w) throw new Error("Workspace unavailable.");
+    const m = await member(w, user);
+    if (m.role !== "owner") return { members: [], audit: [] };
+    const [members, audit] = await Promise.all([
+      all('SELECT users.id,users.name,users.email,members.modules FROM users JOIN members ON members."user"=users.id WHERE members.workspace=$1', w.id),
+      all('SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC LIMIT 300', w.id),
+    ]);
+    return {
+      members: members.map((item): Member => ({ id: item.id, name: item.name, email: item.email, role: w.owner === item.id ? "owner" : "member", modules: JSON.parse(item.modules) })),
+      audit,
+    };
+  });
+}
 function trialAccess(w: Row) {
   const startedAt = w.trial_started_at ? new Date(w.trial_started_at).toISOString() : null;
   const endsAt = startedAt ? new Date(Date.parse(startedAt) + 72 * 60 * 60 * 1000).toISOString() : null;
@@ -185,7 +267,11 @@ export async function adminOverview(user: Row) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const workspaces = await all(
-      `SELECT w.id, w.name, w.subscription, w.revision, w.store, w.trial_started_at, w.plan_active, w.plan_activated_at, w.plan_expires_at, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email, u."createdAt" AS owner_created_at,
+      `SELECT w.id, w.name, w.subscription, w.revision, w.trial_started_at, w.plan_active, w.plan_activated_at, w.plan_expires_at, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email, u."createdAt" AS owner_created_at,
+        (SELECT COUNT(*)::int FROM workspace_records r WHERE r.workspace=w.id AND r.collection='products') AS product_count,
+        (SELECT COUNT(*)::int FROM workspace_records r WHERE r.workspace=w.id AND r.collection='purchases') AS purchase_count,
+        (SELECT COUNT(*)::int FROM workspace_records r WHERE r.workspace=w.id AND r.collection='customers') AS customer_count,
+        (SELECT COUNT(*)::int FROM workspace_records r WHERE r.workspace=w.id AND r.collection='suppliers') AS supplier_count,
         (SELECT COUNT(*)::int FROM members m WHERE m.workspace=w.id) AS member_count,
         (SELECT COUNT(*)::int FROM users workforce JOIN members wm ON wm."user"=workforce.id WHERE wm.workspace=w.id AND wm."user"<>w.owner AND workforce.email <> '') AS workforce_email_count,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
@@ -201,7 +287,6 @@ export async function adminOverview(user: Row) {
         workforceEmails: workspaces.reduce((sum, item) => sum + Number(item.workforce_email_count), 0),
       },
       workspaces: workspaces.map((item) => {
-        const store = normalizeStore(JSON.parse(item.store));
         return {
           id: item.id,
           name: item.name,
@@ -220,11 +305,11 @@ export async function adminOverview(user: Row) {
           memberCount: Number(item.member_count),
           workforceEmailCount: Number(item.workforce_email_count),
           usage: {
-            products: store.products.length,
+            products: Number(item.product_count),
             sales: Number(item.sales_count),
-            purchases: store.purchases.length,
-            customers: store.customers.length,
-            suppliers: store.suppliers.length,
+            purchases: Number(item.purchase_count),
+            customers: Number(item.customer_count),
+            suppliers: Number(item.supplier_count),
             activity: Number(item.activity_count),
             revision: Number(item.revision),
           },
@@ -338,7 +423,7 @@ async function readSnapshot(user: Row, existingWorkspace?: Row, details = true) 
     image: w.image,
     timeZone: w.time_zone || "UTC",
     revision: w.revision,
-    store: normalizeStore(JSON.parse(w.store)),
+    store: await loadWorkspaceStore(w),
     member: m,
     members:
       details && m.role === "owner"
@@ -492,11 +577,16 @@ export async function mutate(user: Row, body: Row) {
     if (body.action !== "business-setup") requireWorkspaceAccess(w);
     if (body.action === "sync") {
       const m = await member(w, user);
-      if (!Array.isArray(body.changes) || body.changes.length > 100)
+      // The browser submits one ordered change at a time so every accepted
+      // revision can be acknowledged before later snapshots are attempted.
+      if (!Array.isArray(body.changes) || body.changes.length > 1)
         throw new Error("Invalid sync batch.");
-      let store = normalizeStore(JSON.parse(w.store)),
+      const beforeStore = await loadWorkspaceStore(w);
+      let store = beforeStore,
         revision = w.revision;
       const accepted: string[] = [];
+      let canonicalDelta: StoreDelta = {};
+      let needsSnapshot = false;
       for (const c of body.changes) {
         if (c.actorId !== user.id)
           throw Object.assign(
@@ -511,6 +601,7 @@ export async function mutate(user: Row, body: Row) {
           )
         ) {
           accepted.push(c.id);
+          needsSnapshot = true;
           continue;
         }
         if (body.revision + accepted.length !== revision)
@@ -533,18 +624,22 @@ export async function mutate(user: Row, body: Row) {
         required(c.action, 300);
         if (!Number.isFinite(Date.parse(c.occurredAt)))
           throw new Error("Invalid event time.");
-        const { store: nextStore, records } = prepareSyncChange(store, c, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
+        const submittedStore = c.delta && typeof c.delta === "object" && !Array.isArray(c.delta)
+          ? applyStoreDelta(store, c.delta)
+          : c.store ? normalizeStore(c.store) : (() => { throw new Error("Invalid sync change."); })();
+        const validationStartedAt = Date.now();
+        const { store: nextStore, records } = prepareSyncChange(store, { ...c, store: submittedStore }, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
+        console.info("Workspace sync validation timing", { validationMs: Date.now() - validationStartedAt });
+        canonicalDelta = createStoreDelta(submittedStore, nextStore);
         await event(w, user, c.module, c.action, records, c.id, c.occurredAt);
         store = nextStore;
         revision++;
         accepted.push(c.id);
       }
-      await query("UPDATE workspaces SET store=$1,revision=$2 WHERE id=$3", [
-        JSON.stringify(store),
-        revision,
-        w.id,
-      ]);
-      return { accepted };
+      const writeStartedAt = Date.now();
+      await persistWorkspaceStore(w, beforeStore, store, revision);
+      console.info("Workspace sync write timing", { writeMs: Date.now() - writeStartedAt });
+      return { accepted, revision, canonicalDelta, workspaceId: w.id, needsSnapshot };
     }
     if (body.action === "reopen-day") {
       const m = await member(w, user);
@@ -565,19 +660,21 @@ export async function mutate(user: Row, body: Row) {
         : await verifyPassword({ hash, password });
       if (!matches) throw new Error("Owner password is incorrect.");
       const reason = required(body.reason, 2000);
-      const before = normalizeStore(JSON.parse(w.store));
+      const before = await loadWorkspaceStore(w);
       const after = reopenDay(before, required(body.closingId), reason, { id: w.owner, role: "owner" });
       const occurredAt = new Date().toISOString();
       const records = verifyChange(before, after, "Closing", { actor: { id: w.owner, role: "owner", modules: [] }, occurredAt, receivedAt: occurredAt });
-      const updated = await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2 AND revision=$3", [JSON.stringify(after), w.id, w.revision]);
+      const updated = await query("UPDATE workspaces SET revision=revision+1 WHERE id=$1 AND revision=$2", [w.id, w.revision]);
       if (!updated.rowCount) throw Object.assign(new Error("Workspace changed. Reload and try again."), { status: 409 });
+      await persistWorkspaceStore(w, before, after, Number(w.revision) + 1);
       await event(w, user, "Closing", "Daily close reopened with workspace owner password approval", records, randomUUID(), occurredAt);
       return readSnapshot(user);
     }
     owner(w, user);
     if (body.action === "backup" || body.action === "backup-recovery") {
       const audit = await all('SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC,id DESC', w.id);
-      let store = JSON.parse(w.store);
+      const beforeStore = await loadWorkspaceStore(w);
+      let store = beforeStore;
       if (body.action === "backup-recovery") {
         const point = await row("SELECT records FROM events WHERE id=$1 AND workspace=$2 AND action=$3", required(body.eventId), w.id, "Pre-restore safety snapshot");
         if (!point) throw new Error("Recovery point not found.");
@@ -591,7 +688,8 @@ export async function mutate(user: Row, body: Row) {
       if (body.revision !== w.revision) throw Object.assign(new Error("Workspace changed. Reload and review the restore again."), { status: 409 });
       if (body.confirmation !== w.name) throw new Error("Type the exact workspace name to confirm restore.");
       const reason = required(body.reason, 2000), backup = await validateRecoveryBackup(body.backup, w.id);
-      await event(w, user, "Settings", "Pre-restore safety snapshot", JSON.stringify({ store: JSON.parse(w.store), revision: w.revision, savedAt: new Date().toISOString(), reason }));
+      const beforeStore = await loadWorkspaceStore(w);
+      await event(w, user, "Settings", "Pre-restore safety snapshot", JSON.stringify({ store: beforeStore, revision: w.revision, savedAt: new Date().toISOString(), reason }));
       const existingAudit = await all("SELECT id,workspace FROM events WHERE id=ANY($1::text[])", backup.audit.map(a => a.id));
       if (existingAudit.some(a => a.workspace !== w.id)) throw new Error("Backup audit ID belongs to another workspace.");
       const existingIds = new Set(existingAudit.map(a => a.id)), missing = backup.audit.filter(a => !existingIds.has(a.id));
@@ -600,7 +698,7 @@ export async function mutate(user: Row, body: Row) {
           SELECT e.id,$1,e.actor,e.module,e.action,e.records,e."occurredAt",e."receivedAt",'sent'
           FROM jsonb_to_recordset($2::jsonb) AS e(id text,actor text,module text,action text,records text,"occurredAt" text,"receivedAt" text)`, [w.id, JSON.stringify(missing.slice(offset, offset + 500))]);
       }
-      await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2", [JSON.stringify(backup.store), w.id]);
+      await persistWorkspaceStore(w, beforeStore, backup.store, Number(w.revision) + 1);
       await event(w, user, "Settings", "Backup restored", JSON.stringify({ reason, exportedAt: backup.exportedAt, restoredRevision: backup.revision, previousRevision: w.revision }));
       return {};
     }
@@ -609,9 +707,9 @@ export async function mutate(user: Row, body: Row) {
       const c = body.change, reason = required(body.reason, 2000);
       if (!c || c.module !== "Expenses" || !await row('SELECT "user" FROM members WHERE workspace=$1 AND "user"=$2', w.id, c.actorId)) throw new Error("Choose a pending expense from a current workspace member.");
       if (await row("SELECT id FROM events WHERE id=$1 AND workspace=$2", c.id, w.id)) throw new Error("This change was already accepted.");
-      const records = verifyChange(JSON.parse(w.store), c.store, c.module, { actor: { id: c.actorId, role: "member" }, occurredAt: c.occurredAt, receivedAt: new Date().toISOString(), allowLateExpense: true });
+      const records = verifyChange(await loadWorkspaceStore(w), c.store, c.module, { actor: { id: c.actorId, role: "member" }, occurredAt: c.occurredAt, receivedAt: new Date().toISOString(), allowLateExpense: true });
       await event(w, user, "Expenses", "Approved offline expense", JSON.stringify({ originalActor: c.actorId, reason, records }), required(c.id), c.occurredAt);
-      await query("UPDATE workspaces SET store=$1,revision=revision+1 WHERE id=$2", [JSON.stringify(c.store), w.id]);
+      await persistWorkspaceStore(w, await loadWorkspaceStore(w), c.store, Number(w.revision) + 1);
       return {};
     }
     if (body.action === "import") {
@@ -633,10 +731,7 @@ export async function mutate(user: Row, body: Row) {
       validateJournals(store);
       if (store.bankVouchers !== undefined && !Array.isArray(store.bankVouchers)) throw new Error("Invalid bank voucher records.");
       validateBanks(store);
-      await query("UPDATE workspaces SET store=$1,revision=1 WHERE id=$2", [
-        JSON.stringify(store),
-        w.id,
-      ]);
+      await persistWorkspaceStore(w, await loadWorkspaceStore(w), store, 1);
       await event(
         w,
         user,

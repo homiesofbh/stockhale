@@ -1,6 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
-import { verifyChange, changesBetween, modules, canAccessModule, cacheKey, recoverPendingQueue, recoverIndependentPendingQueue, planHeadDrop, type Cache, type Workspace } from "./workspace";
+import { verifyChange, changesBetween, modules, canAccessModule, cacheKey, recoverPendingQueue, recoverIndependentPendingQueue, planHeadDrop, createStoreDelta, applyStoreDelta, type Cache, type Workspace, type StoreDelta } from "./workspace";
 import { normalizeStore, type Store } from "./model";
 import { configureServiceWorker } from "./service-worker-client";
 import { CACHE_VERSION, migrateCache } from "./cache-migrations";
@@ -81,7 +81,7 @@ export function useWorkspace() {
   const [syncing, setSyncing] = useState(false);
   const [review, setReview] = useState<{ changeId: string; collections: string[]; candidates: string[]; message: string; conflict?: boolean; canRecover?: boolean } | null>(null);
   const current = useRef<Cache | null>(null), cacheLoadBlocked = useRef(false),
-    busy = useRef(false), actionBusy = useRef(false), actionRequested = useRef(false), syncRequested = useRef(false), syncController = useRef<AbortController | null>(null), blockedConflictId = useRef("");
+    busy = useRef(false), actionBusy = useRef(false), actionRequested = useRef(false), syncRequested = useRef(false), syncController = useRef<AbortController | null>(null), blockedConflictId = useRef(""), retryAttempt = useRef(0), retryAt = useRef(0);
   async function withCacheLock<T>(fn: () => T | Promise<T>): Promise<T> {
     // Web Locks serialize localStorage read/modify/write across tabs in this
     // browser profile. Other browsers/devices are serialized by the DB lock.
@@ -160,9 +160,21 @@ export function useWorkspace() {
   async function submit(c: Cache | null, signal: AbortSignal) {
     for (let attempt = 0; ; attempt++) {
       try {
-        const w: Workspace & { accepted?: string[] } = await workspaceRequest(c?.queue.length
-          ? { action: "sync", revision: c.revision, changes: c.queue.slice(0, 1) }
+        const first = c?.queue[0];
+        if (c && !first) {
+          const check = await workspaceRequest(undefined, signal, { revision: c.revision, workspaceId: c.workspace.id });
+          if (check.unchanged) return { c, unchanged: true as const };
+          return { c, w: check as Workspace };
+        }
+        const raw = await workspaceRequest(first
+          ? { action: "sync", compactSync: true, revision: c!.revision, changes: [c!.baseStore
+            ? { actorId: first.actorId, id: first.id, module: first.module, action: first.action, occurredAt: first.occurredAt, location: first.location, delta: createStoreDelta(c!.baseStore, first.store) }
+            : first] }
           : undefined, signal);
+        const w: Workspace & { accepted?: string[] } = raw.compactSync
+          ? { ...c!.workspace, revision: raw.revision, store: applyStoreDelta(c!.queue[0].store, raw.canonicalDelta as StoreDelta), accepted: raw.accepted }
+          : raw;
+        if (raw.compactSync && raw.workspaceId !== c?.workspace.id) throw Object.assign(new Error("Sign in to the workspace that created these pending changes."), { status: 403 });
         return { c, w };
       } catch (e) {
         const conflict = e as { status?: number; reason?: string };
@@ -180,8 +192,9 @@ export function useWorkspace() {
       }
     }
   }
-  async function sync(force = false) {
+  async function sync(force = false, immediate = false) {
     if (cacheLoadBlocked.current) return;
+    if (!force && !immediate && Date.now() < retryAt.current) return;
     if (actionRequested.current) { syncRequested.current = true; return; }
     if (!force && (blockedConflictId.current === current.current?.queue[0]?.id || current.current?.blockedChangeIds?.includes(current.current?.queue[0]?.id || ""))) return;
     if (force) blockedConflictId.current = "";
@@ -205,7 +218,16 @@ export function useWorkspace() {
       const migrated = current.current && migrateCache(current.current);
       const start = migrated || current.current;
       if (start && start !== current.current) save(start, true);
-      const { c, w } = await submit(start, controller.signal);
+      const submitted = await submit(start, controller.signal);
+      if ("unchanged" in submitted) {
+        retryAttempt.current = 0;
+        retryAt.current = 0;
+        setSyncStatus("Synced");
+        setSyncError("");
+        return;
+      }
+      const { c } = submitted;
+      const w = submitted.w as Workspace & { accepted?: string[] };
       const latest = current.current;
       if (c && w.id !== c.workspace.id)
         throw Object.assign(new Error("Sign in to the workspace that created these pending changes."), { status: 403 });
@@ -252,6 +274,8 @@ export function useWorkspace() {
         // still differ from the authoritative store after a concurrent edit.
         baseStore: remaining.length ? normalizeStore(w.store) : undefined,
       });
+      retryAttempt.current = 0;
+      retryAt.current = 0;
       setReview(null);
       blockedConflictId.current = "";
       setSyncError(blockedChangeIds.length ? "Independent changes synced. Other saved changes still need review." : "");
@@ -274,6 +298,10 @@ export function useWorkspace() {
       const reason = (e as { reason?: string }).reason;
       const message = e instanceof Error ? e.message : "Pending change rejected";
       setSyncError(message);
+      if (status !== 401 && status !== 403 && status !== 409 && status !== 400) {
+        retryAttempt.current = Math.min(retryAttempt.current + 1, 8);
+        retryAt.current = Date.now() + Math.min(5 * 60_000, 15_000 * 2 ** (retryAttempt.current - 1)) + Math.random() * 2_000;
+      }
       if (reason === "merge-conflict" && current.current?.queue[0]) blockedConflictId.current = current.current.queue[0].id;
       if (status === 401) {
         setSyncStatus("Session expired · sign in to sync");
@@ -324,7 +352,7 @@ export function useWorkspace() {
     }, current.current && !current.current.queue.length ? 250 : 0);
     const timer = setInterval(() => {
       if (!document.hidden) void sync();
-    }, 15000);
+    }, 60000);
     const online = () => void sync();
     const offline = () => {
       setSyncing(false);
@@ -399,7 +427,7 @@ export function useWorkspace() {
       // The change is already safe in the local queue. Keep the form responsive
       // on slow connections while sync continues in the background.
       await Promise.race([
-        sync(),
+        sync(false, true),
         new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
       ]);
     }
