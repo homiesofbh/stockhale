@@ -1,4 +1,5 @@
 const placeholders = [
+  { name: "Chocolate and sweets", image: "photo-1548907040-4d42faa8e1c8", keywords: ["chocolate", "chocolates", "candy", "candies", "sweet", "sweets", "confectionery"] },
   { name: "Fresh produce", image: "photo-1542838132-92c53300491e", keywords: ["food", "fruit", "produce", "grocery"] },
   { name: "Coffee and tea", image: "photo-1445116572660-236099ec97a0", keywords: ["coffee", "tea", "beverage", "drink"] },
   { name: "Apparel", image: "photo-1483985988355-763728e1935b", keywords: ["clothing", "apparel", "fashion", "garment", "textile"] },
@@ -14,10 +15,18 @@ const placeholders = [
 ];
 
 export function productPlaceholderIndex(name: string, category: string) {
-  const text = `${name} ${category}`.toLowerCase();
-  const match = placeholders.findIndex(item => item.keywords.some(keyword => text.includes(keyword)));
-  if (match >= 0) return match;
+  const normalize = (value: string) => value.toLowerCase().normalize("NFKD").replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const nameWords = new Set(normalize(name).split(/\s+/).filter(Boolean));
+  const categoryWords = new Set(normalize(category).split(/\s+/).filter(Boolean));
+
+  // Prefer explicit product-name matches, then category matches. Whole-word
+  // comparison prevents words like "chocolates" from matching "clean".
+  const nameMatch = placeholders.findIndex(item => item.keywords.some(keyword => nameWords.has(normalize(keyword))));
+  if (nameMatch >= 0) return nameMatch;
+  const categoryMatch = placeholders.findIndex(item => item.keywords.some(keyword => categoryWords.has(normalize(keyword))));
+  if (categoryMatch >= 0) return categoryMatch;
   let hash = 0;
+  const text = `${normalize(name)} ${normalize(category)}`;
   for (const char of text) hash = (hash * 31 + char.charCodeAt(0)) | 0;
   return Math.abs(hash) % placeholders.length;
 }
