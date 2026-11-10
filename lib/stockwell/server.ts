@@ -140,7 +140,12 @@ async function persistWorkspaceStore(w: Row, before: Store, store: Store, revisi
 }
 function requireWorkspaceAccess(w: Row) {
   if (trialAccess(w).locked)
-    throw Object.assign(new Error("Your 3-day trial has ended. Choose a plan to continue using StockHale."), { status: 402, code: "TRIAL_EXPIRED" });
+    throw Object.assign(new Error(accessExpiredMessage(w)), { status: 402, code: "PLAN_EXPIRED" });
+}
+function accessExpiredMessage(w: Row) {
+  return w.plan_expires_at && Date.now() >= new Date(w.plan_expires_at).getTime()
+    ? "Your plan has expired. Contact the StockHale team for further assistance."
+    : "Your trial has expired. Contact the StockHale team for further assistance.";
 }
 async function member(w: Row, u: Row): Promise<Member> {
   const m = await row(
@@ -204,7 +209,7 @@ export async function snapshot(user: Row, options: { details?: boolean } = {}) {
 }
 export async function workspaceRevision(user: Row) {
   const w = await row(
-    'SELECT w.id,w.revision,w.plan_active,w.trial_started_at,w.access_revoked_at FROM workspaces w JOIN members m ON m.workspace=w.id WHERE m."user"=$1',
+    'SELECT w.id,w.revision,w.plan_active,w.plan_expires_at,w.trial_started_at,w.access_revoked_at FROM workspaces w JOIN members m ON m.workspace=w.id WHERE m."user"=$1',
     user.id,
   );
   if (!w) throw new Error("Workspace unavailable.");
@@ -231,8 +236,9 @@ function trialAccess(w: Row) {
   const endsAt = startedAt ? new Date(Date.parse(startedAt) + 72 * 60 * 60 * 1000).toISOString() : null;
   const revoked = !!w.access_revoked_at;
   const expired = !!endsAt && Date.now() >= Date.parse(endsAt);
-  const locked = !w.plan_active && (revoked || expired);
-  return { trial: { startedAt, endsAt, active: !locked && !w.plan_active, planActive: !!w.plan_active }, locked };
+  const planExpired = !!w.plan_expires_at && Date.now() >= new Date(w.plan_expires_at).getTime();
+  const locked = revoked || expired && !w.plan_active || planExpired;
+  return { trial: { startedAt, endsAt, active: !locked && !w.plan_active, planActive: !!w.plan_active, planExpiresAt: w.plan_expires_at ? new Date(w.plan_expires_at).toISOString() : null }, locked };
 }
 
 const ADMIN_EMAIL = "homiesbridge@gmail.com";
@@ -326,16 +332,22 @@ export async function updateAdminSubscription(user: Row, body: Row) {
   const subscription = required(body.subscription, 40);
   if (!(ADMIN_PLANS as readonly string[]).includes(subscription))
     throw new Error("Choose a valid subscription.");
+  const term = body.term === "monthly" || body.term === "yearly" ? body.term : null;
+  if (subscription !== "Free" && !term) throw new Error("Choose a monthly or yearly plan term.");
+  const current = await row("SELECT subscription, plan_active FROM workspaces WHERE id=$1", workspaceId);
+  if (!current) throw Object.assign(new Error("Workspace not found."), { status: 404 });
+  if (subscription !== "Free" && current.plan_active && subscription !== current.subscription)
+    throw Object.assign(new Error("Cancel the active plan before changing its plan."), { status: 409 });
   const result = await query(
     `UPDATE workspaces
      SET subscription=$1,
          plan_active=($1 <> 'Free'),
          plan_activated_at=CASE WHEN $1='Free' THEN NULL ELSE COALESCE(plan_activated_at,NOW()) END,
-         plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE CASE WHEN plan_expires_at > NOW() THEN plan_expires_at ELSE NOW() + INTERVAL '30 days' END END,
+         plan_expires_at=CASE WHEN $1='Free' THEN NULL ELSE CASE WHEN plan_active AND plan_expires_at > NOW() THEN plan_expires_at ELSE NOW() + CASE WHEN $3='yearly' THEN INTERVAL '1 year' ELSE INTERVAL '1 month' END END END,
          access_revoked_at=CASE WHEN $1='Free' THEN NOW() ELSE NULL END
      WHERE id=$2
      RETURNING id, subscription, plan_active, plan_expires_at`,
-    [subscription, workspaceId],
+    [subscription, workspaceId, term],
   );
   if (!result.rowCount) throw Object.assign(new Error("Workspace not found."), { status: 404 });
   await query(
@@ -361,7 +373,33 @@ export async function updateAdminSubscription(user: Row, body: Row) {
       ],
     );
   }
-  return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: !!result.rows[0].plan_active, appliedAt: new Date().toISOString() };
+  return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: !!result.rows[0].plan_active, planExpiresAt: result.rows[0].plan_expires_at, appliedAt: new Date().toISOString() };
+}
+
+export async function renewAdminSubscription(user: Row, body: Row) {
+  requireAdmin(user);
+  const workspaceId = required(body.workspaceId, 200);
+  const term = body.term === "monthly" || body.term === "yearly" ? body.term : null;
+  if (!term) throw new Error("Choose a monthly or yearly renewal term.");
+  const result = await query(
+    `UPDATE workspaces
+     SET plan_active=TRUE,
+         plan_activated_at=COALESCE(plan_activated_at,NOW()),
+         plan_expires_at=NOW() + CASE WHEN $2='yearly' THEN INTERVAL '1 year' ELSE INTERVAL '1 month' END,
+         access_revoked_at=NULL
+     WHERE id=$1 AND subscription <> 'Free' AND plan_active=FALSE
+     RETURNING id, subscription, plan_expires_at`,
+    [workspaceId, term],
+  );
+  if (!result.rowCount) throw Object.assign(new Error("This plan is active already or no paid plan is selected."), { status: 409 });
+  const expiresAt = new Date(result.rows[0].plan_expires_at);
+  await query(`DELETE FROM events WHERE workspace=$1 AND action='Plan renewal reminder' AND "emailStatus" <> 'sent'`, [workspaceId]);
+  await query(
+    `INSERT INTO events(id,workspace,actor,module,action,records,"occurredAt","receivedAt","emailStatus","nextAttempt")
+     VALUES($1,$2,$3,'Billing','Plan renewal reminder',$4,$5,$5,'queued',$6)`,
+    [randomUUID(), workspaceId, "StockHale <alerts@stockhale.app>", `${result.rows[0].subscription} plan expires at ${expiresAt.toISOString()}. Renew your plan to keep access active.`, new Date().toISOString(), Math.max(0, expiresAt.getTime() - 24 * 60 * 60 * 1000)],
+  );
+  return { ok: true, workspaceId, subscription: result.rows[0].subscription, planActive: true, planExpiresAt: expiresAt.toISOString() };
 }
 
 export async function cancelAdminSubscription(user: Row, body: Row) {

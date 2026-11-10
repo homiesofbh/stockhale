@@ -250,16 +250,26 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
   }
 
   function changePlan(workspaceId: string, subscription: string) {
+    const current = data?.workspaces.find((item) => item.id === workspaceId);
+    if (subscription !== "Free" && subscription !== current?.subscription && current?.planActive) {
+      window.alert("Cancel the active plan before changing it.");
+      void load();
+      return;
+    }
+    const term = subscription === "Free" ? undefined : window.prompt("Plan term: enter monthly or yearly.", "monthly")?.trim().toLowerCase();
+    if (subscription !== "Free" && term !== "monthly" && term !== "yearly") {
+      void load();
+      return;
+    }
     return run(workspaceId, "Subscription could not be updated.", async () => {
       const result = await workspaceRequest({
         action: "admin-subscription",
         workspaceId,
         subscription,
+        term,
       });
       if (result.error) throw new Error(result.error);
-      return `${result.subscription} access ${
-        result.planActive ? "activated" : "deactivated"
-      } immediately.`;
+      return `${result.subscription} ${term || "plan"} access ${result.planActive ? "activated" : "deactivated"}${result.planExpiresAt ? ` through ${formatDate(result.planExpiresAt)}` : ""}.`;
     });
   }
 
@@ -276,6 +286,21 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
       });
       if (result.error) throw new Error(result.error);
       return "Plan cancelled and access revoked immediately.";
+    });
+  }
+
+  function renewPlan(workspace: Workspace) {
+    if (workspace.planActive) return;
+    const term = window.prompt("Renewal term: enter monthly or yearly.", "monthly")?.trim().toLowerCase();
+    if (term !== "monthly" && term !== "yearly") return;
+    return run(workspace.id, "Plan could not be renewed.", async () => {
+      const result = await workspaceRequest({
+        action: "admin-renew-subscription",
+        workspaceId: workspace.id,
+        term,
+      });
+      if (result.error) throw new Error(result.error);
+      return `${result.subscription} renewed for ${term} through ${formatDate(result.planExpiresAt)}.`;
     });
   }
 
@@ -635,6 +660,16 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
                           </select>
                           <div className="admin-access">
                             <Badge tone={access.tone}>{access.label}</Badge>
+                            {item.subscription !== "Free" && !item.planActive && (
+                              <button
+                                type="button"
+                                className="admin-danger-link"
+                                disabled={isBusy}
+                                onClick={() => void renewPlan(item)}
+                              >
+                                Renew plan
+                              </button>
+                            )}
                             {item.planActive && (
                               <button
                                 type="button"

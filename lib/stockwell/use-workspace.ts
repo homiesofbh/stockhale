@@ -297,7 +297,7 @@ export function useWorkspace() {
       const status = (e as { status?: number }).status;
       const reason = (e as { reason?: string }).reason;
       const message = e instanceof Error ? e.message : "Pending change rejected";
-      setSyncError(message);
+      setSyncError(status === 402 ? "Your plan has expired. Contact the StockHale team for further assistance." : message);
       if (status !== 401 && status !== 403 && status !== 409 && status !== 400) {
         retryAttempt.current = Math.min(retryAttempt.current + 1, 8);
         retryAt.current = Date.now() + Math.min(5 * 60_000, 15_000 * 2 ** (retryAttempt.current - 1)) + Math.random() * 2_000;

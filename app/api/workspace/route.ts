@@ -14,6 +14,7 @@ import {
   submitTestimonial,
   updateAdminSubscription,
   cancelAdminSubscription,
+  renewAdminSubscription,
   workspaceRevision,
   workspaceDetails,
 } from "@/lib/stockwell/server";
@@ -35,7 +36,7 @@ function failure(e: unknown) {
         : e instanceof Error
           ? e.message
           : "Request failed.",
-      code: error.code === "TRIAL_EXPIRED" ? error.code : undefined,
+      code: error.code === "PLAN_EXPIRED" ? error.code : undefined,
     },
     {
       status: infrastructure ? 503 : error.statusCode || error.status || 400,
@@ -68,14 +69,14 @@ export async function GET(request: Request) {
       const knownRevision = params.get("revision"), knownWorkspace = params.get("workspaceId");
       if (knownRevision !== null && knownWorkspace) {
         const current = await workspaceRevision(user);
-        if (current.locked) return Response.json({ error: "Your trial has expired.", code: "TRIAL_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
+        if (current.locked) return Response.json({ error: "Your plan has expired. Contact the StockHale team for further assistance.", code: "PLAN_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
         if (current.id === knownWorkspace && current.revision === Number(knownRevision))
           return Response.json({ unchanged: true, revision: current.revision }, { headers: sessionHeaders(authHeaders) });
       }
       const snapshotStartedAt = Date.now();
       const overview = await snapshot(user, { details: false });
       console.info("Workspace startup snapshot timing", { snapshotMs: Date.now() - snapshotStartedAt, totalMs: Date.now() - requestStartedAt });
-      if (overview.locked) return Response.json({ error: "Your trial has expired.", code: "TRIAL_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
+      if (overview.locked) return Response.json({ error: "Your plan has expired. Contact the StockHale team for further assistance.", code: "PLAN_EXPIRED" }, { status: 402, headers: sessionHeaders(authHeaders) });
       return Response.json(overview, {
         headers: sessionHeaders(authHeaders),
       });
@@ -170,6 +171,9 @@ export async function POST(request: Request) {
       }
       if (payload.action === "admin-cancel-subscription") {
         return Response.json(await cancelAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
+      }
+      if (payload.action === "admin-renew-subscription") {
+        return Response.json(await renewAdminSubscription(user, payload), { headers: sessionHeaders(authHeaders) });
       }
       const result = await mutate(user, payload);
       console.info("Workspace mutation timing", { action: payload.action || "sync", mutationMs: Date.now() - requestStartedAt });

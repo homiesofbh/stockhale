@@ -91,7 +91,7 @@ export type Workspace = {
   audit: Audit[];
   readEvent?: string;
   emailConfigured: boolean;
-  trial?: { startedAt: string | null; endsAt: string | null; active: boolean; planActive: boolean };
+  trial?: { startedAt: string | null; endsAt: string | null; active: boolean; planActive: boolean; planExpiresAt?: string | null };
   locked?: boolean;
 };
 

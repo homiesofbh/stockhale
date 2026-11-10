@@ -71,7 +71,6 @@ import {
 import { createReportData } from "@/lib/stockwell/reports";
 
 import { ProductSearch } from "./product-search";
-import { AdminPanel } from "./admin-panel";
 
 export function WorkspaceApp() {
   const workspace = useWorkspace();
@@ -79,7 +78,6 @@ export function WorkspaceApp() {
   const [ready, setReady] = useState(false);
   const [storageError, setStorageError] = useState("");
   const [requestedModule, setModule] = useState<Module>("Dashboard");
-  const [adminOpen, setAdminOpen] = useState(false);
   const [routeReady, setRouteReady] = useState(false);
   const [trialExpired, setTrialExpired] = useState(false);
   const [query, setQuery] = useState("");
@@ -139,7 +137,12 @@ export function WorkspaceApp() {
     if (workspace.cache) {
       setS(normalizeStore(workspace.cache.workspace.store));
       setReady(true);
-      const refreshTrial = () => setTrialExpired(!!workspace.cache?.workspace.trial?.endsAt && !workspace.cache.workspace.trial.planActive && Date.now() >= Date.parse(workspace.cache.workspace.trial.endsAt));
+      const refreshTrial = () => {
+        const trial = workspace.cache?.workspace.trial;
+        const paidExpired = !!trial?.planExpiresAt && Date.now() >= Date.parse(trial.planExpiresAt);
+        const trialExpiredNow = !!trial?.endsAt && !trial.planActive && Date.now() >= Date.parse(trial.endsAt);
+        setTrialExpired(paidExpired || trialExpiredNow);
+      };
       refreshTrial();
       const timer = window.setInterval(refreshTrial, 1000);
       return () => window.clearInterval(timer);
@@ -176,6 +179,9 @@ export function WorkspaceApp() {
     if (latest && JSON.stringify(latest) !== JSON.stringify(invoice)) setInvoice(latest);
   }, [s, invoice?.id]);
   const account = workspace.cache?.workspace;
+  useEffect(() => {
+    if (workspace.syncError.includes("plan has expired")) setError("Your plan has expired. Contact the StockHale team for further assistance.");
+  }, [workspace.syncError]);
   const canAccess = (name: string) => !!account && (name !== "Production" || account.businessType === "manufacturer") && canAccessModule(account.member, name);
   const module = (account ? (canAccess(requestedModule) ? requestedModule : accessibleModule(account.member, "Dashboard")) : "Dashboard") as Module;
   const modalModule = useRef<Module | null>(null);
@@ -524,8 +530,11 @@ export function WorkspaceApp() {
   }
   const isPlatformAdmin = account.member.email.trim().toLowerCase() === "homiesbridge@gmail.com";
   if (account.locked || trialExpired) {
-    if (isPlatformAdmin) return <div className="admin-expired-shell"><AdminPanel onBack={() => void workspace.signout()} /></div>;
-    return <div className="trial-lock"><section><span className="section-eyebrow">WORKSPACE ACCESS PAUSED</span><h1>Choose a plan<br/><em>to keep going.</em></h1><p>Your workspace and records are safely saved. Contact our team to activate a subscription; once activated, you can continue where you left off.</p><a className="pricing-action" href="/pricing">Review plans</a><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Activate%20StockHale%20plan">Contact us to activate</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
+    if (isPlatformAdmin) return <div className="trial-lock"><section><span className="section-eyebrow">ADMINISTRATION</span><h1>Workspace access paused</h1><p>Your workspace plan has expired. Open administration to review plans and restore access.</p><a className="pricing-action" href="/workspace/admin">Open administration</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
+    return <div className="trial-lock"><section><span className="section-eyebrow">WORKSPACE ACCESS PAUSED</span><h1>Plan expired</h1><p>Your plan has expired. Contact the StockHale team for further assistance.</p><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Renew%20StockHale%20plan">Contact StockHale team</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
+  }
+  if (workspace.syncError.includes("plan has expired")) {
+    return <div className="trial-lock"><section role="alert"><span className="section-eyebrow">WORKSPACE ACCESS PAUSED</span><h1>Plan expired</h1><p>Your plan has expired. Contact the StockHale team for further assistance.</p><a className="trial-contact" href="mailto:hello@stockhale.app?subject=Renew%20StockHale%20plan">Contact StockHale team</a><button onClick={() => void workspace.signout()}>Sign out</button></section></div>;
   }
   return (
     <>
@@ -542,14 +551,12 @@ export function WorkspaceApp() {
           setModule={setModule}
           setNotice={setNotice}
           isPlatformAdmin={isPlatformAdmin}
-          openAdmin={() => setAdminOpen(true)}
+          openAdmin={() => window.location.assign("/workspace/admin")}
         />
         <div
           className={`workspace ${module === "Dashboard" ? "dashboard-workspace" : ""}`}
         >
           <main>
-            {adminOpen && isPlatformAdmin ? <AdminPanel onBack={() => setAdminOpen(false)} /> : null}
-            {!adminOpen && <>
             {module === "Settings" && account.member.role === "owner" ? (
               <WorkspaceSettings
                 workspace={account}
@@ -822,7 +829,6 @@ export function WorkspaceApp() {
                 </footer>
               </>
             )}
-            </>}
           </main>
         </div>
       </div>
