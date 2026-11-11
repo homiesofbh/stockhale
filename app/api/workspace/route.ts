@@ -89,6 +89,7 @@ export async function GET(request: Request) {
           postedOnly: params.get("postedOnly") === "1",
           noContactOnly: params.get("noContactOnly") === "1",
           unpaidOnly: params.get("unpaidOnly") === "1",
+          forwardableOnly: params.get("forwardableOnly") === "1",
           tradeId: params.get("tradeId") || "",
           productIds: (params.get("productIds") || "").split(",").filter(Boolean).slice(0, 5000),
           page: Number(params.get("page") || 1),

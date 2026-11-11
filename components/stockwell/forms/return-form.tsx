@@ -44,7 +44,7 @@ export function ReturnForm({
   const tradePage = useServerCollection<Trade>({ collection: returnKind === "Sales return" ? "invoices" : "purchases", module: returnKind === "Sales return" ? "Billing" : "Purchases", query: tradeSearch, postedOnly: true, pageSize: 15, enabled: returnKind !== "Damaged stock" });
   const productReturns = useServerCollection<ReturnRecord>({ collection: "returns", tradeId: selectedTrade, pageSize: 1, enabled: !!selectedTrade && returnKind !== "Damaged stock" });
   const postedTrades = tradePage.records;
-  const selectedOriginalPage = useServerCollection<Trade>({ collection: returnKind === "Sales return" ? "invoices" : "purchases", module: returnKind === "Sales return" ? "Billing" : "Purchases", query: "", pageSize: 100, enabled: !!selectedTrade && returnKind !== "Damaged stock" });
+  const selectedOriginalPage = useServerCollection<Trade>({ collection: returnKind === "Sales return" ? "invoices" : "purchases", module: returnKind === "Sales return" ? "Billing" : "Purchases", tradeId: selectedTrade, pageSize: 1, enabled: !!selectedTrade && returnKind !== "Damaged stock" });
   const selectedOriginal = selectedOriginalPage.records.find((t) => t.id === selectedTrade) || trades.find((t) => t.id === selectedTrade);
   const selectedTradeRecord = selectedOriginal;
   const productPage = useServerCollection<Product>({ collection: "products", query: scan, productIds: returnKind === "Damaged stock" ? [] : selectedOriginal?.lines.map(line => line.productId) || [], pageSize: 100, enabled: returnKind === "Damaged stock" || !!selectedTrade });

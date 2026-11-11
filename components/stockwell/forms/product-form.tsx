@@ -1,7 +1,7 @@
 "use client";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
-import { Field } from "@/components/stockwell/ui";
+import { Field, ServerPagination } from "@/components/stockwell/ui";
 import {
   saveProduct,
   availableUnits,
@@ -42,7 +42,12 @@ export function ProductForm({
   const [categoryName, setCategoryName] = useState("");
   const [categoryError, setCategoryError] = useState("");
   const categories = [...s.categories, ...newCategories.filter(name => !s.categories.some(existing => existing.toLowerCase() === name.toLowerCase()))];
-  const productsPage = useServerCollection<Product>({ collection: "products", query: "", pageSize: 25, enabled: !!editProduct });
+  const [parentQuery, setParentQuery] = useState("");
+  const [parentId, setParentId] = useState(editProduct?.variantOf || "");
+  const productsPage = useServerCollection<Product>({ collection: "products", query: parentQuery, pageSize: 25 });
+  const selectedParent = s.products.find(product => product.id === parentId);
+  const parentOptions = productsPage.records.filter(product => product.id !== editProduct?.id);
+  if (selectedParent && !parentOptions.some(product => product.id === parentId)) parentOptions.unshift(selectedParent);
   const isCustomUnit = unit === "__custom__";
   const unitLocked = !!editProduct && (
     s.recipes.some(recipe => recipe.outputProductId === editProduct.id || recipe.ingredients.some(ingredient => ingredient.productId === editProduct.id)) ||
@@ -143,7 +148,16 @@ export function ProductForm({
         <Field label="Packing (optional)"><input name="packing" maxLength={80} defaultValue={editProduct?.packing || ""} placeholder="e.g. 25 kg bag" /></Field>
         <Field label="Location / warehouse (optional)"><input name="store" maxLength={80} defaultValue={editProduct?.store || ""} /></Field>
         <Field label="Size (optional)"><input name="size" maxLength={80} defaultValue={editProduct?.size || ""} /></Field>
-        <Field label="Variant parent (optional)"><div className="server-select-field"><GlassSelect name="variantOf" defaultValue={editProduct?.variantOf || ""} searchable searchPlaceholder="Search products…"><option value="">Standalone product</option>{productsPage.records.filter(x => x.id !== editProduct?.id).map(x => <option key={x.id} value={x.id}>{x.name} · {x.sku}</option>)}</GlassSelect><button type="button" className="secondary-button" disabled={productsPage.page >= productsPage.pageCount} onClick={() => productsPage.setPage(productsPage.page + 1)}>More products</button></div></Field>
+        <Field label="Variant parent (optional)">
+          <div className="server-select-field">
+            <input type="search" aria-label="Search variant parents" placeholder="Search products…" value={parentQuery} onChange={event => setParentQuery(event.target.value)} />
+            <GlassSelect name="variantOf" value={parentId} onValueChange={setParentId}>
+              <option value="">Standalone product</option>
+              {parentOptions.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}
+            </GlassSelect>
+            <ServerPagination page={productsPage.page} pageCount={productsPage.pageCount} count={productsPage.count} pageSize={productsPage.pageSize} setPage={productsPage.setPage} />
+          </div>
+        </Field>
         <Field label="Cost price (PKR)">
           <input
             name="cost"

@@ -112,7 +112,7 @@ export function TradeForm({
   const [savingProduct, setSavingProduct] = useState(false);
   const [workingStore, setWorkingStore] = useState(s);
   const contactPage = useServerCollection<any>({ collection: modal === "Purchase" ? "suppliers" : "customers", module: modal === "Purchase" ? "Suppliers" : "Customers", query: contactQuery, pageSize: 12 });
-  const productPage = useServerCollection<any>({ collection: "products", query: productQuery, pageSize: 12, enabled: true });
+  const productPage = useServerCollection<any>({ collection: "products", query: productQuery, status: "Active", pageSize: 12, enabled: true });
   useEffect(() => { setWorkingStore(current => current.products.length > s.products.length ? current : s); }, [s]);
   const [addingProduct, setAddingProduct] = useState(false);
   const [productError, setProductError] = useState("");
@@ -129,7 +129,7 @@ export function TradeForm({
   const contactSearch = contactQuery.trim().toLowerCase();
   const matchingContacts = contactPage.records;
   const productSearch = productQuery.trim().toLowerCase();
-  const selectableProducts = [...productPage.records, ...lines.map(line => workingStore.products.find(product => product.id === line.productId)).filter(Boolean)].filter((p, index, all) => p?.active !== false && all.findIndex(candidate => candidate?.id === p?.id) === index);
+  const selectableProducts = productPage.records;
   const units = availableUnits(workingStore.units, workingStore.products.map(product => product.unit));
   const unpaidWalkIn = modal === "Bill" && !contact && paidAmount < billTotal;
   const insufficientStock = modal === "Bill"

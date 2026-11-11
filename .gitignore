@@ -390,6 +390,7 @@ lib/stockwell/*
 !lib/stockwell/cache-migrations.ts
 !lib/stockwell/request-body.ts
 !lib/stockwell/workspace-request.ts
+!lib/stockwell/use-server-collection.ts
 
 # Public SEO source and the downloadable stocktake template.
 !lib/seo/

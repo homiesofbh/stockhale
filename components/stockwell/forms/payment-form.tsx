@@ -57,8 +57,8 @@ export function PaymentForm({
   const contacts = useServerCollection<any>({ collection: paymentKind === "Customer" ? "customers" : "suppliers", module: paymentKind === "Customer" ? "Customers" : "Suppliers", query: contactQuery, pageSize: 15 });
   const trades = useServerCollection<any>({ collection: paymentKind === "Customer" ? "invoices" : "purchases", module: paymentKind === "Customer" ? "Billing" : "Purchases", query: tradeQuery, contactId: selectedContactId, noContactOnly: selectedContact.startsWith("walkin:"), postedOnly: true, unpaidOnly: true, pageSize: 15, enabled: !advance && !!selectedContact });
   const walkInTrades = useServerCollection<any>({ collection: "invoices", module: "Billing", query: walkInQuery, postedOnly: true, noContactOnly: true, unpaidOnly: true, pageSize: 10, enabled: paymentKind === "Customer" });
-  const pendingCheques = useServerCollection<any>({ collection: "chequeRegister", module: "Payments", query: chequeQuery, status: "pending", pageSize: 10, enabled: forwardCheque && paymentKind === "Customer" });
-  const receivedCustomerCheques = pendingCheques.records.filter((payment) => payment.kind === "Customer" && payment.amount > 0 && !(s.crossCheques || []).some((crossCheque) => crossCheque.sourcePaymentId === payment.id));
+  const pendingCheques = useServerCollection<any>({ collection: "chequeRegister", module: "Payments", query: chequeQuery, status: "pending", forwardableOnly: true, pageSize: 10, enabled: forwardCheque && paymentKind === "Customer" });
+  const receivedCustomerCheques = pendingCheques.records;
   const contactKind = paymentKind === "Customer" ? "Customer" : "Supplier";
   const unappliedForContact = selectedContactId ? unappliedCreditBalance(s, contactKind, selectedContactId) : 0;
   const negativeAdvanceTotal = selectedContactId

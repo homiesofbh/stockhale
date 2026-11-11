@@ -239,7 +239,7 @@ const COLLECTIONS = new Set([
   "productionRuns", "recipes", "dailyCloses", "accounts", "financialAccounts", "accountDirectory", "paymentHistory", "chequeRegister", "partnerLedger", "activityLog", "financialTransactions", "walkInReview", "dashboardSummary",
 ]);
 const COLLECTION_SEARCH: Record<string, string[]> = {
-  products: ["name", "sku", "barcode", "category", "color", "gsm", "packing", "store", "size"],
+  products: ["id", "name", "sku", "barcode", "category", "color", "gsm", "packing", "store", "size", "unit"],
   customers: ["name", "company", "phone", "mobile", "email", "address", "ntn", "contactPerson", "salesTaxNumber", "description"],
   suppliers: ["name", "company", "phone", "mobile", "email", "address", "ntn", "contactPerson", "salesTaxNumber", "description"],
   purchases: ["number", "reference", "date", "method", "status", "walkInName", "walkInCompany", "walkInPhone"],
@@ -258,7 +258,7 @@ const COLLECTION_SEARCH: Record<string, string[]> = {
   accounts: ["id", "name", "code", "type", "description"],
   financialAccounts: ["id", "name", "type", "accountNumber", "description"],
 };
-export async function workspaceCollection(user: Row, options: { collection: string; module?: string; actor?: string; moduleFilter?: string; query?: string; secondaryQuery?: string; productId?: string; productIds?: string[]; productRole?: string; contactId?: string; postedOnly?: boolean; noContactOnly?: boolean; unpaidOnly?: boolean; tradeId?: string; week?: string; accountId?: string; bankOnly?: boolean; from?: string; to?: string; secondaryFrom?: string; secondaryTo?: string; category?: string; status?: string; paymentMethod?: string; page?: number; pageSize?: number }) {
+export async function workspaceCollection(user: Row, options: { collection: string; module?: string; actor?: string; moduleFilter?: string; query?: string; secondaryQuery?: string; productId?: string; productIds?: string[]; productRole?: string; contactId?: string; postedOnly?: boolean; noContactOnly?: boolean; unpaidOnly?: boolean; tradeId?: string; forwardableOnly?: boolean; week?: string; accountId?: string; bankOnly?: boolean; from?: string; to?: string; secondaryFrom?: string; secondaryTo?: string; category?: string; status?: string; paymentMethod?: string; page?: number; pageSize?: number }) {
   if (!COLLECTIONS.has(options.collection)) throw Object.assign(new Error("Invalid collection."), { status: 400 });
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
@@ -296,28 +296,53 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       args.push(options.paymentMethod); conditions.push(`record->>'method'=$${args.length}`);
     }
     if (options.collection === "payments" && options.module === "Payments" && options.status === "pending") conditions.push("COALESCE(record->>'chequeStatus','pending')='pending'");
+    const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 25)));
+    const page = Math.max(1, Math.floor(options.page || 1));
+    const offset = (page - 1) * pageSize;
     const where = conditions.join(" AND ");
-    let count = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${where}`, ...args))?.count || 0);
-    let aggregates: Record<string, number> | undefined;
     if (options.collection === "products") {
-      const productStatus = options.status || "All";
-      const filteredStatus = productStatus !== "All";
-      const statusCondition = filteredStatus
-        ? productStatus === "Out of stock" ? "COALESCE(stock.qty,0)=0"
-          : productStatus.toLowerCase() === "low stock" ? "COALESCE(stock.qty,0)>0 AND COALESCE(stock.qty,0)<=COALESCE((p.record->>'low')::numeric,0)"
-          : "COALESCE(stock.qty,0)>COALESCE((p.record->>'low')::numeric,0)"
+      const status = options.status?.toLowerCase();
+      const quantity = "COALESCE(stock.qty,0)";
+      const threshold = "COALESCE((record->>'low')::numeric,0)";
+      const stockFilter = status === "out of stock" ? `${quantity}=0`
+        : status === "low stock" ? `${quantity}>0 AND ${quantity}<=${threshold}`
+        : status === "in stock" ? `${quantity}>${threshold}`
+        : status === "active" ? "record->>'active' IS DISTINCT FROM 'false'"
         : "TRUE";
-      const aggregate = await row(`SELECT COUNT(*)::int AS count, COALESCE(SUM(COALESCE((p.record->>'cost')::numeric,0)*COALESCE(stock.qty,0)),0) AS stock_value, COALESCE(SUM(COALESCE(stock.qty,0)),0) AS stock_units, COUNT(*) FILTER (WHERE COALESCE(stock.qty,0)>0 AND COALESCE(stock.qty,0)<=COALESCE((p.record->>'low')::numeric,0))::int AS low_stock FROM workspace_records p LEFT JOIN LATERAL (SELECT SUM((m.record->>'qty')::numeric) AS qty FROM workspace_records m WHERE m.workspace=p.workspace AND m.collection='movements' AND m.record->>'productId'=p.record->>'id') stock ON TRUE WHERE p.workspace=$1 AND p.collection='products' AND ($2='' OR ${fields.map(field => `COALESCE(p.record->>'${field}','') ILIKE '%' || $2 || '%'`).join(" OR ")}) AND ($3='All' OR p.record->>'category'=$3) AND (${statusCondition})`, w.id, term, options.category || "All");
-      aggregates = { stockValue: Number(aggregate?.stock_value || 0), stockUnits: Number(aggregate?.stock_units || 0), lowStock: Number(aggregate?.low_stock || 0) };
-      count = Number(aggregate?.count || 0);
+      const source = `FROM (
+        SELECT record, ordinal, record_id
+        FROM workspace_records WHERE ${where}
+      ) products
+      LEFT JOIN LATERAL (
+        SELECT ROUND(SUM((m.record->>'qty')::numeric),2) AS qty
+        FROM workspace_records m
+        WHERE m.workspace=$1 AND m.collection='movements'
+          AND m.record->>'productId'=products.record->>'id'
+      ) stock ON TRUE
+      WHERE ${stockFilter}`;
+      const aggregate = await row(`SELECT COUNT(*)::int AS count,
+        SUM(COALESCE((record->>'cost')::numeric,0)*${quantity}) AS stock_value,
+        SUM(${quantity}) AS stock_units,
+        COUNT(*) FILTER (WHERE ${quantity}>0 AND ${quantity}<=${threshold})::int AS low_stock
+        ${source}`, ...args);
+      const records = await all(`SELECT record, ${quantity} AS qty ${source}
+        ORDER BY ordinal, record_id LIMIT $${args.length + 1} OFFSET $${args.length + 2}`, ...args, pageSize, offset);
+      const lowStock = Number(aggregate?.low_stock || 0);
+      return {
+        records: records.map(item => ({ ...item.record, currentStock: Number(item.qty) })),
+        count: Number(aggregate?.count || 0),
+        page,
+        pageSize,
+        aggregates: { stockValue: Number(aggregate?.stock_value || 0), stockUnits: Number(aggregate?.stock_units || 0), lowStock },
+        meta: { lowStockCount: lowStock },
+      };
     }
+    const count = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${where}`, ...args))?.count || 0);
+    let aggregates: Record<string, number> | undefined;
     if (options.collection === "expenses") {
       const aggregate = await row(`SELECT COALESCE(SUM((record->>'amount')::numeric),0) AS total FROM workspace_records WHERE ${where}`, ...args);
       aggregates = { total: Number(aggregate?.total || 0) };
     }
-    const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 25)));
-    const page = Math.max(1, Math.floor(options.page || 1));
-    const offset = (page - 1) * pageSize;
     if (options.collection === "dashboardSummary") {
       const store = await loadWorkspaceStore(w);
       const invoices = store.invoices.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
@@ -460,6 +485,15 @@ export async function workspaceCollection(user: Row, options: { collection: stri
     }
     if (options.collection === "chequeRegister") {
       const conditions = ["workspace=$1", "collection='payments'", "record->>'method'='Cheque'"];
+      if (options.forwardableOnly) {
+        conditions.push("record->>'kind'='Customer'", "(record->>'amount')::numeric>0");
+        conditions.push(`NOT EXISTS (
+          SELECT 1 FROM workspace_records forwarded
+          WHERE forwarded.workspace=workspace_records.workspace
+            AND forwarded.collection='crossCheques'
+            AND forwarded.record->>'sourcePaymentId'=workspace_records.record->>'id'
+        )`);
+      }
       const chequeArgs: unknown[] = [w.id];
       const status = options.status || "All";
       if (status !== "All") {
@@ -524,8 +558,8 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       const partnerTerm = term ? (unionArgs.push(`%${term}%`), ` AND concat_ws(' ',pe.record->>'id',pe.record->>'partner',pe.record->>'notes',pe.record->>'method') ILIKE $${unionArgs.length}`) : "";
       const historyUnion = `SELECT i.record->>'id' id,i.record->>'date' date,COALESCE(NULLIF(concat_ws(' · ',NULLIF(c.record->>'name',''),NULLIF(c.record->>'company','')),''),NULLIF(concat_ws(' · ',NULLIF(i.record->>'walkInName',''),NULLIF(i.record->>'walkInCompany',''),NULLIF(i.record->>'walkInPhone','')),''),'Walk-in customer') contact,i.record->>'number' reference,'Customer' kind,(i.record->>'paid')::numeric amount,i.record->'balanceAfter' balanceAfter,i.record->>'method' method,'' cheque,NULL::text chequeStatus,i.record->>'head' head FROM workspace_records i LEFT JOIN workspace_records c ON c.workspace=i.workspace AND c.collection='customers' AND c.record->>'id'=i.record->>'contactId' WHERE i.workspace=$1 AND i.collection='invoices' AND i.record->>'status' NOT IN ('draft','void') AND COALESCE((i.record->>'paid')::numeric,0)>0${invoiceDate}${invoiceTerm}
         UNION ALL SELECT p.record->>'id',p.record->>'date',COALESCE(c.record->>'name','Walk-in customer'),p.record->>'number','Supplier',(p.record->>'paid')::numeric,p.record->'balanceAfter',p.record->>'method','',NULL::text,p.record->>'head' FROM workspace_records p LEFT JOIN workspace_records c ON c.workspace=p.workspace AND c.collection='suppliers' AND c.record->>'id'=p.record->>'contactId' WHERE p.workspace=$1 AND p.collection='purchases' AND p.record->>'status' NOT IN ('draft','void') AND COALESCE((p.record->>'paid')::numeric,0)>0${purchaseDate}${purchaseTerm}
-        UNION ALL SELECT pm.record->>'id',pm.record->>'date',COALESCE(c.record->>'name','Walk-in customer'),CASE WHEN pm.record->>'accountLevel'='true' THEN 'Supplier account payment' WHEN pm.record->>'advance'='true' AND COALESCE(pm.record->>'tradeId','')='' THEN 'Unapplied advance' ELSE COALESCE(t.record->>'number','') END,pm.record->>'kind',(pm.record->>'amount')::numeric,pm.record->'balanceAfter',CASE WHEN pm.record->>'chequeStatus' IS NOT NULL THEN 'Cheque '||pm.record->>'chequeStatus' ELSE pm.record->>'method' END,CASE WHEN COALESCE(pm.record->>'chequeNumber','')<>'' THEN concat_ws(' · ',pm.record->>'chequeNumber',pm.record->>'chequeBank','due '||pm.record->>'chequeDate',CASE WHEN pm.record->>'clearedDate' IS NOT NULL THEN 'cleared '||pm.record->>'clearedDate' END) ELSE '' END,pm.record->>'chequeStatus',pm.record->>'head' FROM workspace_records pm LEFT JOIN workspace_records c ON c.workspace=pm.workspace AND c.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'suppliers' ELSE 'customers' END AND c.record->>'id'=pm.record->>'contactId' LEFT JOIN workspace_records t ON t.workspace=pm.workspace AND t.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'purchases' ELSE 'invoices' END AND t.record->>'id'=pm.record->>'tradeId' WHERE pm.workspace=$1 AND pm.collection='payments'${paymentDate}${paymentTerm}
-        UNION ALL SELECT pe.record->>'id',pe.record->>'date',pe.record->>'partner',COALESCE(pe.record->>'notes',''),'Partner '||pe.record->>'kind',CASE WHEN pe.record->>'kind'='Contribution' THEN (pe.record->>'amount')::numeric ELSE -(pe.record->>'amount')::numeric END,pe.record->'balanceAfter',pe.record->>'method','',NULL::text,'Partner capital' FROM workspace_records pe WHERE pe.workspace=$1 AND pe.collection='partners'${partnerDate}${partnerTerm}`;
+        UNION ALL SELECT pm.record->>'id',pm.record->>'date',COALESCE(c.record->>'name','Walk-in customer'),CASE WHEN pm.record->>'accountLevel'='true' THEN 'Supplier account payment' WHEN pm.record->>'advance'='true' AND COALESCE(pm.record->>'tradeId','')='' THEN 'Unapplied advance' ELSE COALESCE(t.record->>'number','') END,pm.record->>'kind',(pm.record->>'amount')::numeric,pm.record->'balanceAfter',CASE WHEN pm.record->>'chequeStatus' IS NOT NULL THEN 'Cheque ' || (pm.record->>'chequeStatus') ELSE pm.record->>'method' END,CASE WHEN COALESCE(pm.record->>'chequeNumber','')<>'' THEN concat_ws(' · ',pm.record->>'chequeNumber',pm.record->>'chequeBank','due ' || (pm.record->>'chequeDate'),CASE WHEN pm.record->>'clearedDate' IS NOT NULL THEN 'cleared ' || (pm.record->>'clearedDate') END) ELSE '' END,pm.record->>'chequeStatus',pm.record->>'head' FROM workspace_records pm LEFT JOIN workspace_records c ON c.workspace=pm.workspace AND c.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'suppliers' ELSE 'customers' END AND c.record->>'id'=pm.record->>'contactId' LEFT JOIN workspace_records t ON t.workspace=pm.workspace AND t.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'purchases' ELSE 'invoices' END AND t.record->>'id'=pm.record->>'tradeId' WHERE pm.workspace=$1 AND pm.collection='payments'${paymentDate}${paymentTerm}
+        UNION ALL SELECT pe.record->>'id',pe.record->>'date',pe.record->>'partner',COALESCE(pe.record->>'notes',''),'Partner ' || (pe.record->>'kind'),CASE WHEN pe.record->>'kind'='Contribution' THEN (pe.record->>'amount')::numeric ELSE -(pe.record->>'amount')::numeric END,pe.record->'balanceAfter',pe.record->>'method','',NULL::text,'Partner capital' FROM workspace_records pe WHERE pe.workspace=$1 AND pe.collection='partners'${partnerDate}${partnerTerm}`;
       const filteredUnion = term ? `SELECT * FROM (${historyUnion}) h WHERE concat_ws(' ',h.id,h.date,h.contact,h.reference,h.kind,h.method,h.cheque,h.head) ILIKE $${unionArgs.push(`%${term}%`)}` : historyUnion;
       const countResult = await row(`SELECT COUNT(*)::int AS count FROM (${filteredUnion}) history`, ...unionArgs);
       const records = await all(`SELECT * FROM (${filteredUnion}) history ORDER BY date DESC,id DESC LIMIT $${unionArgs.length + 1} OFFSET $${unionArgs.length + 2}`, ...unionArgs, pageSize, offset);
@@ -535,6 +569,7 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       const store = await loadWorkspaceStore(w);
       const trades = options.collection === "invoices" ? store.invoices : store.purchases;
       let filtered = filterTrades(store, trades, { query: options.query || "", from: options.from || "", to: options.to || "", status: options.status || "All", paymentMethod: options.paymentMethod || "All" }, options.collection === "purchases");
+      if (options.tradeId) filtered = filtered.filter(trade => trade.id === options.tradeId);
       if (options.contactId) filtered = filtered.filter(trade => trade.contactId === options.contactId);
       if (options.postedOnly) filtered = filtered.filter(trade => trade.status !== "draft" && trade.status !== "void");
       if (options.noContactOnly) filtered = filtered.filter(trade => !trade.contactId);
@@ -546,24 +581,9 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       const records = sorted.slice(offset, offset + pageSize).map(trade => options.productId ? { ...trade, lines: trade.lines.filter(line => line.productId === options.productId) } : trade);
       return { records, count: sorted.length, page, pageSize, aggregates: options.module === "Sales" ? { quantity: sorted.reduce((sum, trade) => sum + trade.lines.filter(line => !options.productId || line.productId === options.productId).reduce((n, line) => n + line.qty, 0), 0), revenue: profit(store, options.from || "", options.to || "").revenue } : options.module === "Billing" ? { total: sorted.reduce((sum, trade) => sum + total(trade), 0) } : undefined };
     }
-    const orderBy = options.collection === "products" ? "ordinal ASC" : options.collection === "dailyCloses" ? "record->>'date' DESC, record->>'closedAt' DESC" : options.collection === "movements" ? "record->>'date' DESC, COALESCE((record->>'createdAt')::bigint,0) DESC,record_id DESC" : "ordinal DESC";
+    const orderBy = options.collection === "dailyCloses" ? "record->>'date' DESC, record->>'closedAt' DESC" : options.collection === "movements" ? "record->>'date' DESC, COALESCE((record->>'createdAt')::bigint,0) DESC,record_id DESC" : "ordinal DESC";
     const records = await all(`SELECT record_id,ordinal,record FROM workspace_records WHERE ${where} ORDER BY ${orderBy} LIMIT $${args.length + 1} OFFSET $${args.length + 2}`, ...args, pageSize, offset);
     const meta = options.collection === "customers" || options.collection === "suppliers" ? await contactBillCounts(w, options.collection, records.map(item => item.record.id)) : undefined;
-    if (options.collection === "products") {
-      const products = records.map(item => item.record);
-      const movementRows = await all("SELECT record FROM workspace_records WHERE workspace=$1 AND collection='movements' AND record->>'productId'=ANY($2::text[])", w.id, products.map(product => product.id));
-      const stockByProduct = new Map<string, number>();
-      for (const movement of movementRows) stockByProduct.set(movement.record.productId, round((stockByProduct.get(movement.record.productId) || 0) + Number(movement.record.qty || 0)));
-      const enriched = products.map(product => ({ ...product, currentStock: stockByProduct.get(product.id) || 0 }));
-      return { records: enriched, count, page, pageSize, aggregates, meta: { lowStockCount: aggregates?.lowStock || 0 } };
-    }
-    if (options.collection === "products") {
-      const products = records.map(item => item.record);
-      const movementRows = await all("SELECT record FROM workspace_records WHERE workspace=$1 AND collection='movements' AND record->>'productId'=ANY($2::text[])", w.id, products.map(product => product.id));
-      const stockByProduct = new Map<string, number>();
-      for (const movement of movementRows) stockByProduct.set(movement.record.productId, round((stockByProduct.get(movement.record.productId) || 0) + Number(movement.record.qty || 0)));
-      return { records: products.map(product => ({ ...product, currentStock: stockByProduct.get(product.id) || 0 })), count, page, pageSize, aggregates };
-    }
     return { records: records.map(item => item.record), count, page, pageSize, aggregates, ...(meta ? { meta } : {}) };
   });
 }
