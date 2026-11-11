@@ -1,9 +1,8 @@
 "use client";
-import { Badge, Stat, Table } from "@/components/stockwell/ui";
+import { Badge, ServerPagination, Stat, Table } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import {
   money,
-  profit,
   round,
   subtotal,
   today,
@@ -12,13 +11,17 @@ import {
 } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { useState } from "react";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
+import { useState as useLocalState } from "react";
 type Props = {
   from: string;
   to: string;
   setFrom: Dispatch<SetStateAction<string>>;
   setTo: Dispatch<SetStateAction<string>>;
   s: Store;
-  invoices: Trade[];
+  query: string;
+  status: string;
+  paymentMethod: string;
   pName: (id: string) => string;
   preparedBy: (id?: string, name?: string) => string;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
@@ -30,18 +33,23 @@ export function SalesView({
   setFrom,
   setTo,
   s,
-  invoices,
+  query,
+  status,
+  paymentMethod,
   pName,
   preparedBy,
   setInvoice,
   setPaper,
 }: Props) {
   const [productId, setProductId] = useState("All");
-  const selectedInvoices = productId === "All" ? invoices : invoices.filter(trade => trade.lines.some(line => line.productId === productId));
-  const selectedLines = selectedInvoices.flatMap(trade => trade.lines.filter(line => productId === "All" || line.productId === productId).map(line => ({ trade, line })));
+  const [productQuery, setProductQuery] = useLocalState("");
+  const productPage = useServerCollection<any>({ collection: "products", query: productQuery, pageSize: 15 });
+  const result = useServerCollection<Trade>({ collection: "invoices", module: "Sales", query, from, to, status, paymentMethod, productId: productId === "All" ? "" : productId, pageSize: 20 });
+  const selectedInvoices = result.records;
+  const selectedLines = selectedInvoices.flatMap(trade => trade.lines.map(line => ({ trade, line })));
   return (
     <>
-      <div className="filters"><GlassSelect aria-label="Filter sales by product" value={productId} onValueChange={setProductId}><option value="All">All products</option>{s.products.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</GlassSelect></div>
+      <div className="filters"><GlassSelect aria-label="Filter sales by product" value={productId} onValueChange={setProductId}><option value="All">All products</option>{productPage.records.map(product => <option key={product.id} value={product.id}>{product.name}</option>)}</GlassSelect><input type="search" aria-label="Search products for sales filter" placeholder="Search products…" value={productQuery} onChange={event => setProductQuery(event.target.value)} /><ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} /></div>
       <div className="period-tabs">
         {["All time", "Today", "This week", "This month"].map((label) => (
           <button
@@ -75,24 +83,25 @@ export function SalesView({
       <div className="stats-grid three">
         <Stat
           label="Net sales"
-          value={money(profit(s, from, to).revenue)}
+          value={money(result.aggregates?.revenue || 0)}
           detail="After discounts and returns, excluding tax"
           accent
         />
         <Stat
           label="Quantity sold"
           value={String(
-            selectedLines.reduce((n, entry) => n + entry.line.qty, 0),
+            result.aggregates?.quantity || 0,
           )}
           detail="Original units on matching bills"
         />
         <Stat
           label="Sales records"
-          value={String(selectedInvoices.length)}
+          value={String(result.count)}
           detail="Every bill is recorded as a sale"
         />
       </div>
       <section className="card">
+        {result.error && <p className="form-error" role="alert">{result.error}</p>}
         <Table
           headers={[
             "Date / Invoice",
@@ -125,6 +134,7 @@ export function SalesView({
               ];
             })}
         />
+        <ServerPagination page={result.page} pageCount={result.pageCount} count={result.count} pageSize={result.pageSize} setPage={result.setPage} />
       </section>
     </>
   );

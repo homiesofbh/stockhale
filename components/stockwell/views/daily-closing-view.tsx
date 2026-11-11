@@ -3,15 +3,17 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { BankVoucherForm } from "../forms/bank-voucher-form";
 import { GlassSelect } from "../glass-select";
-import { Modal } from "../ui";
+import { Modal, ServerPagination } from "../ui";
 import {
   cashStatement,
   closeDay,
   type Actor,
+  type DailyClose,
 } from "@/lib/stockwell/operations";
 import { bankStatement, nextBankVoucherNumber } from "@/lib/stockwell/bank-vouchers";
 import { money, profit, round, today, uid, type Store } from "@/lib/stockwell/model";
 import { Badge, Field, InfoTip, Table } from "../ui";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 
 export function DailyClosingView({
   s,
@@ -44,6 +46,8 @@ export function DailyClosingView({
   const [unknownReason, setUnknownReason] = useState(false);
   const [depositOpen, setDepositOpen] = useState(false);
   const [closingStatus, setClosingStatus] = useState("All");
+  const closeHistory = useServerCollection<DailyClose>({ collection: "dailyCloses", query, status: closingStatus, pageSize: 20 });
+  const productionPage = useServerCollection<any>({ collection: "productionRuns", from: date, to: date, pageSize: 15 });
   useEffect(() => {
     const target = (s.dailyCloses || []).find(item => item.id === query);
     if (target) setDate(target.date);
@@ -60,7 +64,7 @@ export function DailyClosingView({
     closing: bankStatement(s, account, "", date).closing,
   }));
   const recordedProfit = profit(s, date, date);
-  const productionRuns = (s.productionRuns || []).filter(run => run.date === date);
+  const productionRuns = productionPage.records;
   const productName = (id: string) => s.products.find(product => product.id === id)?.name || "Unknown product";
   const productUnit = (id: string) => s.products.find(product => product.id === id)?.unit || "piece";
   const variance =
@@ -153,7 +157,7 @@ export function DailyClosingView({
         </div>
       </div>
 
-      {(s.recipes.length > 0 || s.productionRuns.length > 0) && <section className="card production-close-summary"><div className="section-head"><div><h3>Production activity</h3><p>Inventory value transferred through manufacturing; this does not change drawer cash.</p></div><Badge>{productionRuns.length} run{productionRuns.length === 1 ? "" : "s"} today</Badge></div>{productionRuns.length ? <Table headers={["Reference", "Recipe", "Finished goods", "Materials used", "Material cost"]} rows={productionRuns.map(run => [run.reference, run.recipeName, `${run.outputQuantity} ${productUnit(run.outputProductId)} · ${productName(run.outputProductId)}`, run.ingredients.map(item => `${item.quantity} ${productUnit(item.productId)} ${productName(item.productId)}`).join(" · "), money(run.materialCost)])} /> : <p className="form-hint">No production recorded for this date.</p>}</section>}
+      {(s.recipes.length > 0 || productionPage.count > 0) && <section className="card production-close-summary"><div className="section-head"><div><h3>Production activity</h3><p>Inventory value transferred through manufacturing; this does not change drawer cash.</p></div><Badge>{productionPage.count} run{productionPage.count === 1 ? "" : "s"} today</Badge></div>{productionRuns.length ? <Table headers={["Reference", "Recipe", "Finished goods", "Materials used", "Material cost"]} rows={productionRuns.map((run: any) => [run.reference, run.recipeName, `${run.outputQuantity} ${productUnit(run.outputProductId)} · ${productName(run.outputProductId)}`, run.ingredients.map((item: any) => `${item.quantity} ${productUnit(item.productId)} ${productName(item.productId)}`).join(" · "), money(run.materialCost)])} /> : <p className="form-hint">No production recorded for this date.</p>}<ServerPagination page={productionPage.page} pageCount={productionPage.pageCount} count={productionPage.count} pageSize={productionPage.pageSize} setPage={productionPage.setPage} /></section>}
 
       <div className="closing-profit-heading">
         <h3>Recorded profit summary</h3>
@@ -309,14 +313,7 @@ export function DailyClosingView({
           "Recorded by / at",
           "Action",
         ]}
-        rows={[...(s.dailyCloses || [])]
-          .filter(c => !query || c.id === query)
-          .sort(
-            (a, b) =>
-              b.date.localeCompare(a.date) ||
-              b.closedAt.localeCompare(a.closedAt)
-          )
-          .map((c) => [
+        rows={closeHistory.records.map((c) => [
             <time key="date" dateTime={c.date}>{formatClosingDate(c.date)}</time>,
             money(c.expected),
             money(c.counted),
@@ -357,14 +354,11 @@ export function DailyClosingView({
             ),
           ])}
       />
+      {closeHistory.error && <p className="form-error" role="alert">{closeHistory.error}</p>}
+      <ServerPagination page={closeHistory.page} pageCount={closeHistory.pageCount} count={closeHistory.count} pageSize={closeHistory.pageSize} setPage={closeHistory.setPage} />
 
-      {[...(s.dailyCloses || [])]
-        .filter((c) => !!c.summary && (!query || c.id === query))
-        .sort(
-          (a, b) =>
-            b.date.localeCompare(a.date) ||
-            b.closedAt.localeCompare(a.closedAt)
-        )
+      {closeHistory.records
+        .filter((c) => !!c.summary)
         .map((c) => (
           <details className="daily-close-form" key={c.id} open={!!query && c.id === query}>
             <summary>

@@ -1,27 +1,32 @@
 "use client";
 import { useState } from "react";
-import { Badge, Table } from "@/components/stockwell/ui";
+import { Badge, ServerPagination, Table } from "@/components/stockwell/ui";
 import { money, type Store, type Trade } from "@/lib/stockwell/model";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
   s: Store;
-  inRange: (date: string) => boolean;
-  matches: (...values: unknown[]) => boolean;
+  query: string;
+  from: string;
+  to: string;
+  samplePreview?: boolean;
   pName: (id: string) => string;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
 };
-export function ReturnsView({ s, inRange, matches, pName, setInvoice }: Props) {
+export function ReturnsView({ s, query, from, to, pName, setInvoice, samplePreview = false }: Props) {
   const [q, setQ] = useState("");
+  const result = useServerCollection<any>({ collection: "returns", query, secondaryQuery: q, from, to, pageSize: 25, enabled: !samplePreview });
   const trades = [...s.invoices, ...s.purchases];
-  const rows = s.returns.filter((r) => {
+  const records = samplePreview ? s.returns.filter(record => {
+    const trade = trades.find(item => item.id === record.tradeId);
+    const product = s.products.find(item => item.id === record.productId);
+    const values = [record.id, record.kind, record.reason, product?.name, trade?.number, product?.unit, record.date].join(" ").toLowerCase();
+    return (!query || values.includes(query.toLowerCase())) && (!q.trim() || values.includes(q.trim().toLowerCase())) && (!from || record.date >= from) && (!to || record.date <= to);
+  }).reverse() : result.records;
+  const rows = records.map((r) => {
     const trade = trades.find((t) => t.id === r.tradeId);
     const unit = s.products.find((p) => p.id === r.productId)?.unit || "piece";
-    const hay = [r.kind, r.reason, pName(r.productId), trade?.number, unit, r.date].join(" ").toLowerCase();
-    return inRange(r.date) && matches(r.id, r.kind, r.reason, pName(r.productId)) && (!q.trim() || hay.includes(q.trim().toLowerCase()));
-  }).slice().reverse().map((r) => {
-    const trade = trades.find((t) => t.id === r.tradeId);
     const line = trade?.lines.find((l) => l.productId === r.productId);
-    const unit = s.products.find((p) => p.id === r.productId)?.unit || "piece";
     return [r.date, <Badge key="kind" tone={r.kind === "Damaged stock" ? "amber" : ""}>{r.kind}</Badge>, trade ? <button className="link" aria-label={`Open invoice ${trade.number}`} onClick={() => setInvoice(trade)}>{trade.number}</button> : "—", pName(r.productId), r.qty, unit, line ? money(line.price) : "—", r.kind === "Damaged stock" ? "—" : money(r.amount), r.reason];
   });
   return (
@@ -31,6 +36,8 @@ export function ReturnsView({ s, inRange, matches, pName, setInvoice }: Props) {
         headers={["Date", "Type", "Reference", "Product", "Quantity", "UOM", "Unit price", "Credit adjustment", "Reason"]}
         rows={rows}
       />
+      {!samplePreview && result.error && <p className="form-error" role="alert">{result.error}</p>}
+      {!samplePreview && <ServerPagination page={result.page} pageCount={result.pageCount} count={result.count} pageSize={result.pageSize} setPage={result.setPage} />}
     </section>
   );
 }

@@ -1,0 +1,10 @@
+CREATE INDEX IF NOT EXISTS workspace_records_collection_date
+  ON workspace_records(workspace, collection, (record->>'date') DESC, record_id);
+CREATE INDEX IF NOT EXISTS workspace_records_contact_date
+  ON workspace_records(workspace, collection, (record->>'contactId'), (record->>'date') DESC);
+CREATE INDEX IF NOT EXISTS workspace_records_status_date
+  ON workspace_records(workspace, collection, (record->>'status'), (record->>'date') DESC);
+CREATE INDEX IF NOT EXISTS workspace_records_product_date
+  ON workspace_records(workspace, collection, (record->>'productId'), (record->>'date') DESC);
+CREATE INDEX IF NOT EXISTS workspace_records_json_search
+  ON workspace_records USING GIN ((record::jsonb) jsonb_path_ops);

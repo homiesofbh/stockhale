@@ -41,6 +41,9 @@ type Overview = {
   plans: string[];
   totals: { users: number; workspaces: number; workforceEmails: number };
   workspaces: Workspace[];
+  filteredCount: number;
+  page: number;
+  pageSize: number;
 };
 
 type Testimonial = {
@@ -202,7 +205,7 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
 
     const [overview, reviews] = await Promise.allSettled([
       fetchJson<Overview>(
-        "/api/workspace?admin=overview",
+        `/api/workspace?admin=overview&q=${encodeURIComponent(query)}&subscription=${encodeURIComponent(subscriptionFilter)}&sort=${sortBy}&direction=${sortDirection}&page=${workspacePage}&pageSize=${workspacePageSize}`,
         "Could not load admin overview.",
       ),
       fetchJson<{ testimonials?: Testimonial[] }>(
@@ -218,11 +221,7 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
       setTestimonials(reviews.value.testimonials ?? []);
     else
       setReviewsError(errorMessage(reviews.reason, "Could not load testimonials."));
-  }, []);
-
-  useEffect(() => {
-    void load();
-  }, [load]);
+  }, [query, subscriptionFilter, sortBy, sortDirection, workspacePage]);
 
   /* ---------- Actions ---------- */
 
@@ -319,49 +318,9 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
     [testimonials],
   );
 
-  const workspaceMatches = useMemo(() => {
-    const term = query.trim().toLowerCase();
-    if (!data) return [];
-    return data.workspaces.filter((w) => {
-      if (subscriptionFilter !== "All" && w.subscription !== subscriptionFilter)
-        return false;
-      if (!term) return true;
-      return [w.name, w.owner.name, w.owner.email, w.id]
-        .join(" ")
-        .toLowerCase()
-        .includes(term);
-    });
-  }, [data, query, subscriptionFilter]);
-
-  const sortedWorkspaces = useMemo(() => {
-    const collator = new Intl.Collator(undefined, { sensitivity: "base", numeric: true });
-    const value = (workspace: Workspace) => {
-      if (sortBy === "alphabetical") return workspace.name || workspace.owner.name || workspace.owner.email;
-      if (sortBy === "subscription") return workspace.subscription;
-      if (sortBy === "accountCreated") return workspace.accountCreatedAt;
-      if (sortBy === "planActivated") return workspace.planActivatedAt || "";
-      return workspace.planExpiresAt || "";
-    };
-    return [...workspaceMatches].sort((a, b) => {
-      const aValue = value(a);
-      const bValue = value(b);
-      const aMissing = !aValue;
-      const bMissing = !bValue;
-      if (aMissing !== bMissing) return aMissing ? 1 : -1;
-      const result = typeof aValue === "string" && typeof bValue === "string"
-        ? (sortBy === "accountCreated" || sortBy === "planActivated" || sortBy === "planExpires"
-            ? aValue.localeCompare(bValue)
-            : collator.compare(aValue, bValue))
-        : 0;
-      return sortDirection === "asc" ? result : -result;
-    });
-  }, [sortBy, sortDirection, workspaceMatches]);
-
-  const workspacePageCount = Math.max(1, Math.ceil(sortedWorkspaces.length / workspacePageSize));
-  const workspaces = sortedWorkspaces.slice(
-    (workspacePage - 1) * workspacePageSize,
-    workspacePage * workspacePageSize,
-  );
+  const filteredCount = data?.filteredCount || 0;
+  const workspacePageCount = Math.max(1, Math.ceil(filteredCount / workspacePageSize));
+  const workspaces = data?.workspaces || [];
 
   useEffect(() => {
     setWorkspacePage(1);
@@ -370,6 +329,11 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
   useEffect(() => {
     setWorkspacePage((page) => Math.min(page, workspacePageCount));
   }, [workspacePageCount]);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => void load(), 200);
+    return () => window.clearTimeout(timer);
+  }, [load]);
 
   /* ---------- Render ---------- */
 
@@ -516,12 +480,12 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
                 <span className="eyebrow">WORKSPACES</span>
                 <h2 id="admin-workspaces-title">Plans &amp; access</h2>
                 <p>
-                  {sortedWorkspaces.length === 0
+                  {filteredCount === 0
                     ? "No matching workspaces."
                     : `Showing ${(workspacePage - 1) * workspacePageSize + 1}–${Math.min(
                         workspacePage * workspacePageSize,
-                        sortedWorkspaces.length,
-                      )} of ${sortedWorkspaces.length} workspaces.`}
+                        filteredCount,
+                      )} of ${filteredCount} workspaces.`}
                 </p>
               </div>
               <div className="admin-workspace-controls">
@@ -725,12 +689,12 @@ export function AdminPanel({ onBack }: { onBack: () => void }) {
 
               {workspaces.length === 0 && (
                 <p className="admin-empty">
-                  {data.workspaces.length === 0
+                  {data.totals.workspaces === 0
                     ? "No workspaces yet."
                     : "No workspaces match your search."}
                 </p>
               )}
-              {sortedWorkspaces.length > workspacePageSize && (
+              {filteredCount > workspacePageSize && (
                 <nav className="admin-pagination" aria-label="Workspace pages">
                   <button type="button" className="secondary-button" disabled={workspacePage === 1} onClick={() => setWorkspacePage((page) => page - 1)}>Previous</button>
                   <span>Page {workspacePage} of {workspacePageCount}</span>

@@ -2,13 +2,10 @@
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { type Module } from "@/components/stockwell/navigation";
 import { StockArt } from "@/components/stockwell/stock-art";
-import { Badge, Empty, Stat, Table } from "@/components/stockwell/ui";
+import { Badge, Empty, ServerPagination, Stat, Table } from "@/components/stockwell/ui";
 import {
   balance,
   money,
-  isPosted,
-  periodMatch,
-  stock,
   today,
   total,
   type Line,
@@ -24,25 +21,15 @@ import {
   Package,
 } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
+import { useState } from "react";
 type Props = {
   canAccess: (module: string) => boolean;
   dashboardPeriod: string;
   setDashboardPeriod: Dispatch<SetStateAction<string>>;
-  dashboardProfit: {
-    revenue: number;
-    otherIncome: number;
-    cogs: number;
-    expenses: number;
-    otherExpenses: number;
-    damage: number;
-    net: number;
-  };
-  dashboardInvoices: Trade[];
   s: Store;
   dashboardFrom: string;
-  lowStock: Product[];
   go: (m: Module) => void;
-  inventoryValue: number;
   quickProduct: string;
   setQuickProduct: Dispatch<SetStateAction<string>>;
   storageError: string;
@@ -53,17 +40,6 @@ type Props = {
   paymentStatus: (t: Trade) => "Credit balance" | "Paid" | "Partial" | "Unpaid" | "Draft" | "Voided";
   cash: number;
   bank: number;
-  receivables: number;
-  payables: number;
-  allProfit: {
-    revenue: number;
-    otherIncome: number;
-    cogs: number;
-    expenses: number;
-    otherExpenses: number;
-    damage: number;
-    net: number;
-  };
   pName: (id: string) => string;
   manufacturer: boolean;
 };
@@ -71,13 +47,9 @@ export function DashboardView({
   canAccess,
   dashboardPeriod,
   setDashboardPeriod,
-  dashboardProfit,
-  dashboardInvoices,
   s,
   dashboardFrom,
-  lowStock,
   go,
-  inventoryValue,
   quickProduct,
   setQuickProduct,
   storageError,
@@ -88,13 +60,24 @@ export function DashboardView({
   paymentStatus,
   cash,
   bank,
-  receivables,
-  payables,
-  allProfit,
   pName,
   manufacturer,
 }: Props) {
-  const productionRuns = (s.productionRuns || []).filter(run => periodMatch(run.date, dashboardFrom, today()));
+  const [quickProductQuery, setQuickProductQuery] = useState("");
+  const latestInvoices = useServerCollection<Trade>({ collection: "invoices", module: "Sales", pageSize: 5, enabled: canAccess("Billing") });
+  const latestPurchases = useServerCollection<Trade>({ collection: "purchases", module: "Inventory", pageSize: 4, enabled: canAccess("Purchases") });
+  const latestSales = useServerCollection<Trade>({ collection: "invoices", module: "Sales", pageSize: 4, enabled: canAccess("Sales") });
+  const periodPurchases = useServerCollection<Trade>({ collection: "purchases", module: "Inventory", from: dashboardFrom, to: today(), pageSize: 1, enabled: canAccess("Purchases") });
+  const todaySalesSummary = useServerCollection<Trade>({ collection: "invoices", module: "Billing", from: today(), to: today(), pageSize: 1, enabled: canAccess("Billing") });
+  const inventoryPage = useServerCollection<Product>({ collection: "products", status: "Low stock", pageSize: 5, enabled: canAccess("Inventory") });
+  const inventoryAll = useServerCollection<Product>({ collection: "products", query: quickProductQuery, pageSize: 10, enabled: canAccess("Inventory") });
+  const receivableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", pageSize: 1, enabled: canAccess("Billing") });
+  const payableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Purchases", pageSize: 1, enabled: canAccess("Purchases") });
+  const periodStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", from: dashboardFrom, to: today(), pageSize: 1, enabled: canAccess("Billing") });
+  const allProfitStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", pageSize: 1, enabled: canAccess("Billing") });
+  const periodInvoiceCount = Number(periodStats.aggregates?.invoiceCount || 0);
+  const lowStockCount = Number(inventoryPage.aggregates?.lowStock || 0);
+  const productionRuns = useServerCollection<any>({ collection: "productionRuns", from: dashboardFrom || undefined, to: today(), pageSize: 1, enabled: manufacturer });
   return (
     <>
       <section className="dashboard-summary" aria-label="Sales overview">
@@ -116,15 +99,15 @@ export function DashboardView({
             </GlassSelect>
           </label>
           <div className="summary-value">
-            {money(dashboardProfit.revenue)}{" "}
+            {money(periodStats.aggregates?.profit?.revenue || 0)}{" "}
             <CircleDollarSign size={21} strokeWidth={1.3} />
           </div>
           <p>
-            {dashboardInvoices.length} completed sales <span>·</span> Averaging{" "}
+            {periodInvoiceCount} completed sales <span>·</span> Averaging{" "}
             <b>
               {money(
-                dashboardInvoices.length
-                  ? dashboardProfit.revenue / dashboardInvoices.length
+                periodInvoiceCount
+                ? (periodStats.aggregates?.profit?.revenue || 0) / periodInvoiceCount
                   : 0,
               )}
             </b>
@@ -139,30 +122,24 @@ export function DashboardView({
               <dt>Purchases</dt>
               <dd>
                 {
-                  s.purchases.filter(isPosted).filter((t) =>
-                    periodMatch(t.date, dashboardFrom, today()),
-                  ).length
+                  periodPurchases.count
                 }
               </dd>
             </div>
             <div>
               <dt>{manufacturer ? "Production runs" : "Billing today"}</dt>
               <dd>
-                {manufacturer ? productionRuns.length : money(
-                  s.invoices.filter(isPosted)
-                    .filter((t) => t.date === today())
-                    .reduce((n, t) => n + total(t), 0),
-                )}
+                {manufacturer ? productionRuns.count : money(todaySalesSummary.aggregates?.total || 0)}
               </dd>
             </div>
-            {manufacturer && <div><dt>Material cost transferred</dt><dd>{money(productionRuns.reduce((sum, run) => sum + run.materialCost, 0))}</dd></div>}
+            {manufacturer && <div><dt>Material cost transferred</dt><dd>{money(productionRuns.aggregates?.materialCost || 0)}</dd></div>}
             <div>
               <dt>Expenses</dt>
-              <dd>{money(dashboardProfit.expenses)}</dd>
+              <dd>{money(periodStats.aggregates?.profit?.expenses || 0)}</dd>
             </div>
             <div>
               <dt>Low-stock items</dt>
-              <dd>{lowStock.length}</dd>
+              <dd>{lowStockCount}</dd>
             </div>
           </dl>
         </div>
@@ -173,7 +150,7 @@ export function DashboardView({
               <br />
               ITEMS
             </span>
-            <strong>{s.products.length}</strong>
+            <strong>{inventoryAll.count}</strong>
           </div>
         </div>
       </section>
@@ -184,12 +161,12 @@ export function DashboardView({
             <Package size={33} strokeWidth={1.3} />
             <h2>YOUR INVENTORY</h2>
             <p>
-              {s.products.length} products · {s.categories.length}{" "}
+              {inventoryAll.count} products · {s.categories.length}{" "}
               {s.categories.length === 1 ? "category" : "categories"}
               <br />
-              {lowStock.length} items at low stock
+              {lowStockCount} items at low stock
             </p>
-            <strong>{money(inventoryValue)}</strong>
+            <strong>{money(inventoryAll.aggregates?.stockValue || 0)}</strong>
             <small>Current stock value</small>
           </div>
           <ChevronRight className="hero-arrow" size={22} />
@@ -220,19 +197,21 @@ export function DashboardView({
               onValueChange={(e) => setQuickProduct(e)}
             >
               <option value="">Select a product</option>
-              {s.products.map((p) => (
+              {(inventoryAll.records as Product[]).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.name}
                 </option>
               ))}
             </GlassSelect>
+            <input type="search" aria-label="Search products to bill" placeholder="Search products…" value={quickProductQuery} onChange={event => setQuickProductQuery(event.target.value)} />
+            <ServerPagination page={inventoryAll.page} pageCount={inventoryAll.pageCount} count={inventoryAll.count} pageSize={inventoryAll.pageSize} setPage={inventoryAll.setPage} />
             <button
               className="gradient-button"
               disabled={!!storageError}
               onClick={() => {
                 go("Billing");
                 open("Bill");
-                const p = s.products.find((p) => p.id === quickProduct);
+                const p = inventoryAll.records.find((p) => p.id === quickProduct) || s.products.find((p) => p.id === quickProduct);
                 if (p)
                   setLines([
                     {
@@ -269,10 +248,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Invoice", "Customer", "Total", "Payment"]}
-            rows={s.invoices.filter(isPosted)
-              .slice(-5)
-              .reverse()
-              .map((t) => [
+            rows={latestInvoices.records.map((t) => [
                 <button className="link" onClick={() => setInvoice(t)}>
                   {t.number}
                   <small>{t.date}</small>
@@ -290,14 +266,14 @@ export function DashboardView({
           <div className="section-head">
             <div>
               <h2>Stock watch</h2>
-              <p>{lowStock.length} items at or below threshold</p>
+              <p>{lowStockCount} items at or below threshold</p>
             </div>
             <span className="stock-icon">
               <Boxes size={20} />
             </span>
           </div>
-          {lowStock.length ? (
-            lowStock.slice(0, 5).map((p) => (
+          {inventoryPage.records.length ? (
+            inventoryPage.records.map((p) => (
               <div className="stock-watch" key={p.id}>
                 <span className="product-icon">
                   <Package size={18} />
@@ -306,7 +282,7 @@ export function DashboardView({
                   <b>{p.name}</b>
                   <small>{p.sku}</small>
                 </div>
-                <Badge tone="amber">{stock(s, p.id)} left</Badge>
+                <Badge tone="amber">{Number((p as Product & { currentStock?: number }).currentStock || 0)} left</Badge>
               </div>
             ))
           ) : (
@@ -330,18 +306,18 @@ export function DashboardView({
         />
         <Stat
           label="Receivables"
-          value={money(receivables)}
+          value={money(receivableStats.aggregates?.balance || 0)}
           detail="Outstanding customer bills"
         />
         <Stat
           label="Payables"
-          value={money(payables)}
+          value={money(payableStats.aggregates?.balance || 0)}
           detail="Outstanding supplier purchases"
         />
         <Stat
           label="Profit overview"
-          value={money(allProfit.net)}
-          detail={`${money(allProfit.expenses + allProfit.otherExpenses)} in expenses · ${money(allProfit.otherIncome)} other income`}
+          value={money(allProfitStats.aggregates?.profit?.net || 0)}
+          detail={`${money((allProfitStats.aggregates?.profit?.expenses || 0) + (allProfitStats.aggregates?.profit?.otherExpenses || 0))} in expenses · ${money(allProfitStats.aggregates?.profit?.otherIncome || 0)} other income`}
         />
       </div>
       <div className="dashboard-grid">
@@ -354,10 +330,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Reference", "Supplier", "Amount"]}
-            rows={s.purchases.filter(isPosted)
-              .slice(-4)
-              .reverse()
-              .map((t) => [
+            rows={latestPurchases.records.map((t) => [
                 t.number,
                 cName(t.contactId, true),
                 money(total(t)),
@@ -373,10 +346,7 @@ export function DashboardView({
           </div>
           <Table
             headers={["Date", "Product", "Quantity"]}
-            rows={s.invoices.filter(isPosted)
-              .slice(-4)
-              .reverse()
-              .flatMap((t) =>
+            rows={latestSales.records.flatMap((t) =>
                 t.lines.map((l) => [t.date, pName(l.productId), l.qty]),
               )}
           />

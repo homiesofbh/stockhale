@@ -4,14 +4,13 @@ import { ChequeRegister } from "./cheque-register";
 import type { Actor } from "@/lib/stockwell/operations";
 import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
 import { BankVouchersView } from "./bank-vouchers-view";
-import { Badge, Field, Modal, Stat, Table } from "@/components/stockwell/ui";
+import { Badge, Field, Modal, ServerPagination, Stat, Table } from "@/components/stockwell/ui";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { saveFinancialAccount, sharedBankLedger } from "@/lib/stockwell/bank-vouchers";
-import { financialRows, money, round, today, uid, type Store } from "@/lib/stockwell/model";
+import { money, round, today, uid, type FinancialRow, type PartnerEntry, type Store } from "@/lib/stockwell/model";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 type Props = {
   actor: Actor;
-  receivables: number;
-  payables: number;
   cash: number;
   bank: number;
   s: Store;
@@ -20,11 +19,11 @@ type Props = {
   matches: (...values: unknown[]) => boolean;
   commit: (next: Store, message: string) => void;
   query?: string;
+  from?: string;
+  to?: string;
 };
 export function PaymentsView({
   actor,
-  receivables,
-  payables,
   cash,
   bank,
   s,
@@ -33,6 +32,8 @@ export function PaymentsView({
   matches,
   commit,
   query = "",
+  from = "",
+  to = "",
 }: Props) {
   const [partner, setPartner] = useState("");
   const [partnerDraft, setPartnerDraft] = useState("");
@@ -51,36 +52,24 @@ export function PaymentsView({
   const [accountHistoryTo, setAccountHistoryTo] = useState("");
   const [bankHistoryFrom, setBankHistoryFrom] = useState("");
   const [bankHistoryTo, setBankHistoryTo] = useState("");
-  const [paymentHistoryPage, setPaymentHistoryPage] = useState(0);
+  const paymentHistory = useServerCollection<any>({ collection: "paymentHistory", query, from, to, pageSize: 15 });
+  const receivableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", pageSize: 1 });
+  const payableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Purchases", pageSize: 1 });
+  const partnerLedger = useServerCollection<any>({ collection: "partnerLedger", category: ledgerPartner, pageSize: 20 });
+  const partnerMovements = useServerCollection<PartnerEntry>({ collection: "partners", query, from, to, pageSize: 20 });
+  const bankHistoryPage = useServerCollection<FinancialRow>({ collection: "financialTransactions", query, from, to, secondaryFrom: bankHistoryFrom, secondaryTo: bankHistoryTo, bankOnly: true, pageSize: 25 });
+  const accountHistoryPage = useServerCollection<FinancialRow>({ collection: "financialTransactions", accountId: historyAccountId, bankOnly: true, from: accountHistoryFrom, to: accountHistoryTo, pageSize: 25, enabled: !!historyAccountId });
   useEffect(() => {
     if ((s.financialAccounts || []).some(account => account.id === query)) setHistoryAccountId(query);
   }, [query, s.financialAccounts]);
   const partnerNames = Array.from(new Set([...(s.partnerNames || []), ...(s.partners || []).map(entry => entry.partner)].map(name => name.trim()).filter(Boolean))).sort((a, b) => a.localeCompare(b));
   const partnerAccounts = (s.financialAccounts || []).filter(account => account.active !== false);
-  const partnerLedgerEntries = (s.partners || [])
-    .filter(entry => !ledgerPartner || entry.partner === ledgerPartner)
-    .slice()
-    .sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
-  const partnerBalances = new Map<string, number>();
-  const partnerRunningBalances = new Map<string, number>();
-  let ledgerContributions = 0;
-  let ledgerWithdrawals = 0;
-  for (const entry of partnerLedgerEntries) {
-    const delta = entry.kind === "Contribution" ? entry.amount : -entry.amount;
-    const balance = (partnerBalances.get(entry.partner) || 0) + delta;
-    partnerBalances.set(entry.partner, balance);
-    partnerRunningBalances.set(entry.id, balance);
-    if (entry.kind === "Contribution") ledgerContributions += entry.amount;
-    else ledgerWithdrawals += entry.amount;
-  }
-  const partnerLedgerRows = partnerLedgerEntries.slice().reverse();
+  const partnerLedgerRows = partnerLedger.records;
+  const ledgerContributions = partnerLedger.aggregates?.contributions || 0;
+  const ledgerWithdrawals = partnerLedger.aggregates?.withdrawals || 0;
   const sharedLedger = sharedBankLedger(s);
   const trades = [...s.invoices, ...s.purchases];
-  const bankHistory = financialRows(s)
-    .filter((row) => row.financialAccountId && row.bank !== 0)
-    .filter((row) => (!bankHistoryFrom || row.date >= bankHistoryFrom) && (!bankHistoryTo || row.date <= bankHistoryTo))
-    .filter((row) => inRange(row.date) && matches(row.date, row.reference, row.type, row.head, row.method, row.contactId, row.bank))
-    .map((row) => {
+  const bankHistory = bankHistoryPage.records.map((row) => {
       const account = (s.financialAccounts || []).find((candidate) => candidate.id === row.financialAccountId);
       const trade = trades.find((candidate) => candidate.number === row.reference);
       const contact = trade
@@ -89,68 +78,14 @@ export function PaymentsView({
           ? cName(row.contactId, row.type.toLowerCase().includes("supplier"))
           : "—";
       return { row, account, trade, contact };
-    })
-    .sort((a, b) => b.row.date.localeCompare(a.row.date));
+    });
   const historyAccount = (s.financialAccounts || []).find(account => account.id === historyAccountId);
-  const accountHistory = historyAccount ? financialRows(s)
-    .filter(row => row.financialAccountId === historyAccount.id && row.bank !== 0)
-    .filter(row => (!accountHistoryFrom || row.date >= accountHistoryFrom) && (!accountHistoryTo || row.date <= accountHistoryTo))
-    .sort((a, b) => b.date.localeCompare(a.date)) : [];
-  const paymentHistoryEntries = [
-    ...s.invoices
-      .filter(t => t.status !== "draft" && t.status !== "void" && t.paid > 0)
-      .map(t => ({
-        id: t.id,
-        date: t.date,
-        contact: t.contactId ? cName(t.contactId) : [t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" · ") || "Walk-in customer",
-        reference: t.number,
-        kind: "Customer",
-        amount: t.paid,
-        balanceAfter: t.balanceAfter,
-        method: t.method,
-        cheque: "",
-        chequeStatus: undefined as string | undefined,
-        head: t.head,
-      })),
-    ...s.purchases
-      .filter(t => t.status !== "draft" && t.status !== "void" && t.paid > 0)
-      .map(t => ({
-        id: t.id,
-        date: t.date, contact: cName(t.contactId, true), reference: t.number,
-        kind: "Supplier", amount: t.paid, balanceAfter: t.balanceAfter, method: t.method, cheque: "",
-        chequeStatus: undefined as string | undefined, head: t.head,
-      })),
-    ...s.payments.map(p => ({
-      id: p.id,
-      date: p.date, contact: cName(p.contactId, p.kind === "Supplier"),
-      reference: p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "",
-      kind: p.kind, amount: p.amount, balanceAfter: p.balanceAfter,
-      method: p.chequeStatus ? `Cheque ${p.chequeStatus}` : p.method,
-      cheque: p.chequeNumber ? `${p.chequeNumber} · ${p.chequeBank} · due ${p.chequeDate}${p.clearedDate ? ` · cleared ${p.clearedDate}` : ""}` : "",
-      chequeStatus: p.chequeStatus, head: p.head,
-    })),
-    ...(s.partners || []).map(entry => ({
-      id: entry.id,
-      date: entry.date, contact: entry.partner, reference: entry.notes || "",
-      kind: `Partner ${entry.kind}`,
-      amount: entry.kind === "Contribution" ? entry.amount : -entry.amount,
-      balanceAfter: entry.balanceAfter,
-      method: entry.method, cheque: "", chequeStatus: undefined as string | undefined,
-      head: "Partner capital",
-    })),
-  ].filter(p => inRange(p.date) && matches(p.id, p.contact, p.reference, p.kind, p.head, p.cheque, p.method))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const paymentHistoryPageSize = 15;
-  const paymentHistoryPageCount = Math.ceil(paymentHistoryEntries.length / paymentHistoryPageSize);
-  const currentPaymentHistoryPage = Math.min(paymentHistoryPage, Math.max(0, paymentHistoryPageCount - 1));
-  const visiblePaymentHistory = paymentHistoryEntries.slice(
-    currentPaymentHistoryPage * paymentHistoryPageSize,
-    (currentPaymentHistoryPage + 1) * paymentHistoryPageSize,
-  );
+  const accountHistory = accountHistoryPage.records;
+  const visiblePaymentHistory = paymentHistory.records;
   const paymentHistorySection = <section className="card mt-8">
     <div className="section-head"><div><h2>Payment history</h2><p>Saved cash and bank balances immediately after each recorded transaction.</p></div></div>
-    <Table headers={["Date", "Contact", "Reference", "Type", "Amount", "Method", "Cash after", "Bank after", ...(s.financialAccounts || []).map(account => `${account.name} after`), "Account head", "Cheque details"]} rows={visiblePaymentHistory.map(payment => [payment.date, payment.contact, payment.reference, <Badge tone={payment.kind === "Customer" || payment.kind === "Partner Contribution" ? "green" : "amber"}>{payment.kind}</Badge>, money(payment.amount), payment.method, payment.balanceAfter ? money(payment.balanceAfter.cash) : "Not recorded", payment.balanceAfter ? money(payment.balanceAfter.bank) : "Not recorded", ...(s.financialAccounts || []).map(account => { const snapshot = payment.balanceAfter?.bankAccounts?.find(entry => entry.id === account.id); return !payment.balanceAfter?.bankAccounts ? "Not recorded" : snapshot ? money(snapshot.balance) : "Not configured"; }), payment.head || "—", payment.cheque || "—"])} />
-    {paymentHistoryPageCount > 1 && <nav className="account-week-pagination" aria-label="Payment history pages"><button className="secondary" disabled={currentPaymentHistoryPage === 0} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage - 1)}>← Previous</button><span aria-live="polite">Showing {currentPaymentHistoryPage * paymentHistoryPageSize + 1}–{Math.min((currentPaymentHistoryPage + 1) * paymentHistoryPageSize, paymentHistoryEntries.length)} of {paymentHistoryEntries.length} payments · Page {currentPaymentHistoryPage + 1} of {paymentHistoryPageCount}</span><button className="secondary" disabled={currentPaymentHistoryPage >= paymentHistoryPageCount - 1} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage + 1)}>Next →</button></nav>}
+    <Table headers={["Date", "Contact", "Reference", "Type", "Amount", "Method", "Cash after", "Bank after", ...(s.financialAccounts || []).map(account => `${account.name} after`), "Account head", "Cheque details"]} rows={visiblePaymentHistory.map(payment => [payment.date, payment.contact, payment.reference, <Badge tone={payment.kind === "Customer" || payment.kind === "Partner Contribution" ? "green" : "amber"}>{payment.kind}</Badge>, money(payment.amount), payment.method, payment.balanceAfter ? money(payment.balanceAfter.cash) : "Not recorded", payment.balanceAfter ? money(payment.balanceAfter.bank) : "Not recorded", ...(s.financialAccounts || []).map(account => { const snapshot = payment.balanceAfter?.bankAccounts?.find((entry: { id: string; balance: number }) => entry.id === account.id); return !payment.balanceAfter?.bankAccounts ? "Not recorded" : snapshot ? money(snapshot.balance) : "Not configured"; }), payment.head || "—", payment.cheque || "—"])} />
+    <ServerPagination page={paymentHistory.page} pageCount={paymentHistory.pageCount} count={paymentHistory.count} pageSize={paymentHistory.pageSize} setPage={paymentHistory.setPage} />
   </section>;
   return (
     <>
@@ -158,13 +93,13 @@ export function PaymentsView({
       <div className="stats-grid three">
         <Stat
           label="Customer receivables"
-          value={money(receivables)}
+          value={money(receivableStats.aggregates?.balance || 0)}
           detail="Net of settled customer credits"
           accent
         />
         <Stat
           label="Supplier payables"
-          value={money(payables)}
+          value={money(payableStats.aggregates?.balance || 0)}
           detail="Net of settled supplier credits"
         />
         <Stat
@@ -173,7 +108,7 @@ export function PaymentsView({
           detail={`Bank ${money(bank)}`}
         />
       </div>
-      <ChequeRegister s={s} actor={actor} matches={matches} commit={commit} query={query} />
+      <ChequeRegister s={s} actor={actor} commit={commit} query={query} />
       {historyAccount && <Modal title={`${historyAccount.name} history`} close={() => setHistoryAccountId("")}>
         <p>Bill receipts, deposits, supplier payments, expenses, cheque settlements, and vouchers recorded against this account.</p>
         <div className="form-grid">
@@ -185,11 +120,12 @@ export function PaymentsView({
           const contact = trade ? cName(trade.contactId, trade.number.startsWith("PUR")) : row.contactId ? cName(row.contactId, row.type.toLowerCase().includes("supplier")) : "—";
           return [row.date, <Badge tone={row.bank > 0 ? "green" : "amber"}>{row.bank > 0 ? "Received / deposited" : "Paid"}</Badge>, <div className="journal-register-reference"><span>{row.reference || "—"}</span><small>{trade ? (trade.number.startsWith("PUR") ? "Purchase" : "Sale") : row.type}</small></div>, contact, money(Math.abs(row.bank)), row.head || "—"];
         })} />
+        <ServerPagination page={accountHistoryPage.page} pageCount={accountHistoryPage.pageCount} count={accountHistoryPage.count} pageSize={accountHistoryPage.pageSize} setPage={accountHistoryPage.setPage} />
       </Modal>}
       <section className="card mt-8 partner-ledger-card">
         <div className="section-head">
           <div><h2>Partner ledger</h2><p>Review each partner’s complete contribution and withdrawal history with a running capital balance.</p></div>
-          <Badge>{partnerLedgerRows.length} entries</Badge>
+          <Badge>{partnerLedger.count} entries</Badge>
         </div>
         <div className="form-grid">
           <Field label="Partner"><GlassSelect value={ledgerPartner} onValueChange={setLedgerPartner}><option value="">All partners</option>{partnerNames.map(name => <option key={name} value={name}>{name}</option>)}</GlassSelect></Field>
@@ -210,9 +146,10 @@ export function PaymentsView({
             entry.kind === "Withdrawal" ? money(entry.amount) : "—",
             entry.method,
             entry.notes || "—",
-            money(partnerRunningBalances.get(entry.id) || 0),
+            money(entry.runningBalance),
           ])}
         />
+        {partnerLedger.error && <p className="form-error" role="alert">{partnerLedger.error}</p>}<ServerPagination page={partnerLedger.page} pageCount={partnerLedger.pageCount} count={partnerLedger.count} pageSize={partnerLedger.pageSize} setPage={partnerLedger.setPage} />
       </section>
       <section className="card mt-8">
         <div className="section-head">
@@ -264,7 +201,8 @@ export function PaymentsView({
             <button className="primary" type="submit">Record {partnerKind.toLowerCase()}</button>
           </div>
         </form>
-        <Table headers={["Date", "Partner", "Movement", "Amount", "Cash / bank account", "Notes"]} rows={(s.partners || []).filter(entry => inRange(entry.date) && matches(entry.id, entry.partner, entry.kind, entry.method, entry.notes)).slice().sort((a, b) => b.date.localeCompare(a.date)).map(entry => [entry.date, entry.partner, <Badge tone={entry.kind === "Contribution" ? "green" : "amber"}>{entry.kind}</Badge>, money(entry.amount), entry.method, entry.notes || "—"])} empty="No partner capital movements in this period" />
+        <Table headers={["Date", "Partner", "Movement", "Amount", "Cash / bank account", "Notes"]} rows={partnerMovements.records.map(entry => [entry.date, entry.partner, <Badge tone={entry.kind === "Contribution" ? "green" : "amber"}>{entry.kind}</Badge>, money(entry.amount), entry.method, entry.notes || "—"])} empty="No partner capital movements in this period" />
+        {partnerMovements.error && <p className="form-error" role="alert">{partnerMovements.error}</p>}<ServerPagination page={partnerMovements.page} pageCount={partnerMovements.pageCount} count={partnerMovements.count} pageSize={partnerMovements.pageSize} setPage={partnerMovements.setPage} />
       </section>
       <section className="card mt-8">
         <div className="section-head"><div><h2>Bank and wallet accounts</h2><p>All accounts share the Bank asset ledger while keeping separate balances and transaction histories.</p></div></div>
@@ -301,7 +239,7 @@ export function PaymentsView({
             <h2>Bank / wallet account history</h2>
             <p>Every bill receipt, supplier payment, expense, cheque settlement, and bank voucher posted to a named account.</p>
           </div>
-          <Badge>{bankHistory.length} entries</Badge>
+          <Badge>{bankHistoryPage.count} entries</Badge>
         </div>
         <div className="form-grid">
           <Field label="From date"><input type="date" value={bankHistoryFrom} max={bankHistoryTo || undefined} onChange={event => setBankHistoryFrom(event.target.value)} /></Field>
@@ -325,8 +263,10 @@ export function PaymentsView({
             row.head || "—",
           ])}
         />
+        {bankHistoryPage.error && <p className="form-error" role="alert">{bankHistoryPage.error}</p>}
+        <ServerPagination page={bankHistoryPage.page} pageCount={bankHistoryPage.pageCount} count={bankHistoryPage.count} pageSize={bankHistoryPage.pageSize} setPage={bankHistoryPage.setPage} />
       </section>
-      <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} query={query} />
+      <BankVouchersView actor={actor} s={s} matches={matches} inRange={inRange} commit={commit} query={query} from={from} to={to} />
       <section className="card mt-8">
         <div className="section-head">
           <h2>Payment history</h2>
@@ -358,11 +298,7 @@ export function PaymentsView({
               p.chequeStatus === "pending" ? "Use cheque register" : "",
             ])}
         />
-        {paymentHistoryPageCount > 1 && <nav className="account-week-pagination" aria-label="Payment history pages">
-          <button className="secondary" disabled={currentPaymentHistoryPage === 0} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage - 1)}>← Previous</button>
-          <span aria-live="polite">Showing {currentPaymentHistoryPage * paymentHistoryPageSize + 1}–{Math.min((currentPaymentHistoryPage + 1) * paymentHistoryPageSize, paymentHistoryEntries.length)} of {paymentHistoryEntries.length} payments · Page {currentPaymentHistoryPage + 1} of {paymentHistoryPageCount}</span>
-          <button className="secondary" disabled={currentPaymentHistoryPage >= paymentHistoryPageCount - 1} onClick={() => setPaymentHistoryPage(currentPaymentHistoryPage + 1)}>Next →</button>
-        </nav>}
+        <ServerPagination page={paymentHistory.page} pageCount={paymentHistory.pageCount} count={paymentHistory.count} pageSize={paymentHistory.pageSize} setPage={paymentHistory.setPage} />
       </section>
     </>
   );

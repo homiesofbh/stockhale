@@ -1,24 +1,23 @@
 "use client";
-import { Modal, Table } from "@/components/stockwell/ui";
+import { Modal, ServerPagination, Table } from "@/components/stockwell/ui";
 import {
-  balance,
   contactBalance,
-  isPosted,
   money,
   unappliedCreditBalance,
   type Contact,
   type Store,
   type Trade,
 } from "@/lib/stockwell/model";
-import { createReportData } from "@/lib/stockwell/reports";
-import { chequeSettlements } from "@/lib/stockwell/operations";
 import { ArrowDownLeft, ArrowUpRight, Building2, FileSpreadsheet, Mail, MapPin, Phone } from "lucide-react";
 import type { Dispatch, JSX, SetStateAction } from "react";
 import { useState } from "react";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
+import type { ReportData } from "@/lib/stockwell/reports";
+import { useEffect } from "react";
 type Props = {
   module: "Suppliers" | "Customers";
   s: Store;
-  matches: (...values: unknown[]) => boolean;
+  query: string;
   setDetailContact: Dispatch<SetStateAction<Contact | null>>;
   setEditContact: Dispatch<SetStateAction<Contact | null>>;
   open: (name: string) => void;
@@ -32,7 +31,7 @@ function queryEmptyMessage(module: "Suppliers" | "Customers") {
 export function ContactsView({
   module,
   s,
-  matches,
+  query,
   setDetailContact,
   setEditContact,
   open,
@@ -42,33 +41,48 @@ export function ContactsView({
 }: Props) {
   const [detailTab, setDetailTab] = useState<"history" | "ledger">("history");
   const [exporting, setExporting] = useState(false);
-  const ledgerReport = detailContact
-    ? createReportData(s, {
-        query: "",
-        from: "",
-        to: "",
-        status: "All",
-        paymentMethod: "All",
-        report: module === "Customers" ? "Customer ledger" : "Supplier ledger",
-        reportContact: detailContact.id,
-      })
-    : null;
   const detailKind = module === "Suppliers" ? "Supplier" : "Customer";
-  const contacts = (module === "Suppliers" ? s.suppliers : s.customers).slice().reverse()
-    .filter((c) => matches(c.name, c.company, c.phone, c.mobile, c.email, c.address, c.ntn, c.contactPerson, c.salesTaxNumber, c.description));
-  const outstandingCount = contacts.filter(c => contactBalance(s, detailKind, c.id) > 0).length;
-  const openBillBalance = detailContact ? (module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === detailContact.id && isPosted(t)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0) : 0;
+  const result = useServerCollection<Contact>({ collection: module === "Suppliers" ? "suppliers" : "customers", query, pageSize: 24 });
+  const contacts = result.records;
+  const tradePage = useServerCollection<Trade>({ collection: module === "Suppliers" ? "purchases" : "invoices", module: module === "Suppliers" ? "Inventory" : "Billing", contactId: detailContact?.id || "", pageSize: 15, enabled: !!detailContact && detailTab === "history" });
+  const paymentPage = useServerCollection<any>({ collection: "payments", module: "Payments", contactId: detailContact?.id || "", pageSize: 15, enabled: !!detailContact && detailTab === "history" });
+  const [ledger, setLedger] = useState<ReportData & { count: number; page: number; pageSize: number } | null>(null);
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerError, setLedgerError] = useState("");
+  const [ledgerExport, setLedgerExport] = useState<ReportData | null>(null);
+  useEffect(() => { setLedgerPage(1); setLedger(null); setLedgerExport(null); }, [detailContact?.id, module]);
+  useEffect(() => {
+    if (!detailContact || detailTab !== "ledger") return;
+    const controller = new AbortController();
+    const params = new URLSearchParams({ report: "1", name: module === "Customers" ? "Customer ledger" : "Supplier ledger", contact: detailContact.id, page: String(ledgerPage), pageSize: "15" });
+    fetch(`/api/workspace?${params}`, { cache: "no-store", signal: controller.signal }).then(async response => {
+      const value = await response.json();
+      if (!response.ok) throw new Error(value.error || "Could not load ledger.");
+      setLedger(value); setLedgerError("");
+    }).catch(error => { if (!controller.signal.aborted) setLedgerError(error instanceof Error ? error.message : "Could not load ledger."); });
+    return () => controller.abort();
+  }, [detailContact?.id, detailTab, ledgerPage, module]);
+  const openBillBalance = detailContact ? (result.meta?.billBalances as Record<string, number> | undefined)?.[detailContact.id] || 0 : 0;
   const unappliedCredits = detailContact ? unappliedCreditBalance(s, detailKind, detailContact.id) : 0;
   async function downloadLedger() {
-    if (!ledgerReport || !detailContact || exporting) return;
+    if (!detailContact || exporting) return;
     setExporting(true);
     try {
+      let full: ReportData | null = ledgerExport;
+      if (!full) {
+        const params = new URLSearchParams({ report: "1", name: module === "Customers" ? "Customer ledger" : "Supplier ledger", contact: detailContact.id, all: "1" });
+        const response = await fetch(`/api/workspace?${params}`, { cache: "no-store" });
+        full = await response.json();
+        if (!response.ok) throw new Error((full as any).error || "Could not load ledger export.");
+        setLedgerExport(full);
+      }
+      if (!full) throw new Error("Could not load ledger export.");
       const { Workbook } = await import("exceljs");
       const book = new Workbook();
       book.creator = "StockHale";
       const sheet = book.addWorksheet(`${module === "Customers" ? "Customer" : "Supplier"} ledger`);
-      sheet.addRow(ledgerReport.columns);
-      ledgerReport.rows.forEach(row => sheet.addRow(row));
+      sheet.addRow(full.columns);
+      full.rows.forEach(row => sheet.addRow(row));
       sheet.getRow(1).font = { bold: true };
       sheet.views = [{ state: "frozen", ySplit: 1 }];
       sheet.columns.forEach(column => { column.width = 22; });
@@ -88,14 +102,13 @@ export function ContactsView({
   return (
     <>
       <div className="contact-overview" aria-label={`${module} overview`}>
-        <div><span>{module === "Customers" ? "Customer accounts" : "Supplier accounts"}</span><strong>{contacts.length.toLocaleString("en-PK")}</strong><small>matching this search</small></div>
-        <div><span>{module === "Customers" ? "With receivable" : "With payable"}</span><strong>{outstandingCount.toLocaleString("en-PK")}</strong><small>accounts with an outstanding balance</small></div>
-        <div><span>{module === "Customers" ? "Total receivable" : "Total payable"}</span><strong>{money(contacts.reduce((sum, c) => sum + Math.max(contactBalance(s, detailKind, c.id), 0), 0))}</strong><small>across matching accounts</small></div>
+        <div><span>{module === "Customers" ? "Customer accounts" : "Supplier accounts"}</span><strong>{result.count.toLocaleString("en-PK")}</strong><small>matching this search</small></div>
       </div>
-      {contacts.length ? <section className="contact-card-grid" aria-label={`${module} directory`}>
+      {result.error && <p className="form-error" role="alert">{result.error}</p>}
+      {contacts.length ? <section className="contact-card-grid" aria-label={`${module} directory`} aria-busy={result.loading}>
         {contacts.map((c) => {
           const amount = contactBalance(s, detailKind, c.id);
-          const count = (module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === c.id && isPosted(t)).length;
+          const count = Number((result.meta?.billCounts as Record<string, number> | undefined)?.[c.id] || 0);
           const initials = c.name.trim().split(/\s+/).slice(0, 2).map(part => part[0]).join("").toUpperCase() || "?";
           return <article className="contact-card" key={c.id}>
             <div className="contact-card-top">
@@ -119,6 +132,7 @@ export function ContactsView({
           </article>;
         })}
       </section> : <section className="card contact-empty"><Table headers={[]} rows={[]} empty={queryEmptyMessage(module)} /></section>}
+      <ServerPagination page={result.page} pageCount={result.pageCount} count={result.count} pageSize={result.pageSize} setPage={result.setPage} />
       {detailContact && (
         <Modal title={detailContact.name} eyebrow={module === "Customers" ? "CUSTOMER PROFILE" : "SUPPLIER PROFILE"} close={() => setDetailContact(null)}>
           <div className="section-head">
@@ -148,24 +162,19 @@ export function ContactsView({
               ? "Purchase bill balances stay bill-specific. Account-level payments, advances, and forwarded cheques reduce the payable balance above without being assigned to one bill."
               : "Bill balances are shown per bill. Unapplied credits reduce the net account balance above, but remain separate until matched to a bill."}</p>}
             <div className="contact-table-scroll">
-              <Table
+            <Table
                 headers={module === "Suppliers" ? ["Purchase", "Prepared by", "Supplier", "Quantity", "UOM", "Net total", "Status", "Paid", "Balance", ""] : basicHeaders}
-                rows={tradeRows((module === "Suppliers" ? s.purchases : s.invoices).filter(t => t.contactId === detailContact.id), module === "Suppliers")}
+                rows={tradeRows(tradePage.records, module === "Suppliers")}
               />
+              <ServerPagination page={tradePage.page} pageCount={tradePage.pageCount} count={tradePage.count} pageSize={tradePage.pageSize} setPage={tradePage.setPage} />
             </div>
             <h3>Payment history</h3>
             <div className="contact-table-scroll">
               <Table
                 headers={["Date", "Reference", "Amount", "Method", "Notes"]}
-                rows={[
-                  ...(module === "Suppliers" ? s.purchases : s.invoices).filter(t => isPosted(t) && t.contactId === detailContact.id && t.paid > 0).map(t => [t.date, t.number, money(t.paid), t.method, "Paid at creation"]),
-                  ...s.payments.filter(p => p.contactId === detailContact.id).map(p => [p.date, p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "", money(p.amount), p.method, p.notes]),
-                  ...(module === "Suppliers" ? (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === detailContact.id).flatMap(c => {
-                    const source = s.payments.find(p => p.id === c.sourcePaymentId);
-                    return source?.method === "Cheque" ? chequeSettlements(s, source).filter(e => e.status === "cleared" || e.status === "bounced").map(e => [e.date, "Forwarded customer cheque", money(e.amount), "Cheque", source.chequeNumber || source.chequeBank || ""]) : [];
-                  }) : []),
-                ]}
+                rows={paymentPage.records.map(p => [p.date, p.accountLevel ? "Supplier account payment" : p.advance && !p.tradeId ? "Unapplied advance" : [...s.invoices, ...s.purchases].find(t => t.id === p.tradeId)?.number || "", money(p.amount), p.method, p.notes || ""])}
               />
+              <ServerPagination page={paymentPage.page} pageCount={paymentPage.pageCount} count={paymentPage.count} pageSize={paymentPage.pageSize} setPage={paymentPage.setPage} />
             </div>
           </> : <>
             <div className="section-head">
@@ -173,16 +182,18 @@ export function ContactsView({
               <button className="secondary-button" onClick={() => void downloadLedger()} disabled={exporting}><FileSpreadsheet size={16} /> {exporting ? "Preparing Excel…" : "Download Excel"}</button>
             </div>
             <div className="contact-table-scroll">
-              <Table headers={ledgerReport?.columns || []} rows={(ledgerReport?.rows || []).map(row => row.map(value => typeof value === "number" ? value.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : String(value)))} />
+              {ledgerError && <p className="form-error" role="alert">{ledgerError}</p>}
+              <Table headers={ledger?.columns || []} rows={(ledger?.rows || []).map(row => row.map(value => typeof value === "number" ? value.toLocaleString("en-PK", { maximumFractionDigits: 2 }) : String(value)))} />
+              {ledger && <ServerPagination page={ledger.page} pageCount={Math.max(1, Math.ceil(ledger.count / ledger.pageSize))} count={ledger.count} pageSize={ledger.pageSize} setPage={setLedgerPage} />}
             </div>
-            {ledgerReport?.contactSummary && <section className="contact-ledger-reconciliation" aria-label="Ledger totals">
+            {ledger?.contactSummary && <section className="contact-ledger-reconciliation" aria-label="Ledger totals">
               <div><h4>How the balance is calculated</h4><p>Charges minus payments and credits equals the remaining account balance.</p></div>
               <div className="contact-ledger-equation">
-                <div><small>Total charges after returns</small><strong>{money(ledgerReport.contactSummary.business)}</strong></div>
+                <div><small>Total charges after returns</small><strong>{money(ledger.contactSummary.business)}</strong></div>
                 <span aria-hidden="true">−</span>
-                <div><small>Payments &amp; cheque adjustments</small><strong>{money(ledgerReport.contactSummary.payments)}</strong></div>
+                <div><small>Payments &amp; cheque adjustments</small><strong>{money(ledger.contactSummary.payments)}</strong></div>
                 <span aria-hidden="true">=</span>
-                <div className="contact-ledger-result"><small>Remaining account balance</small><strong>{money(Math.abs(ledgerReport.contactSummary.outstanding))}</strong><span>{ledgerReport.contactSummary.outstanding < 0 ? module === "Suppliers" ? "Supplier credit owed to you" : "Customer credit" : module === "Suppliers" ? "Amount you owe" : "Amount customer owes"}</span></div>
+                <div className="contact-ledger-result"><small>Remaining account balance</small><strong>{money(Math.abs(ledger.contactSummary.outstanding))}</strong><span>{ledger.contactSummary.outstanding < 0 ? module === "Suppliers" ? "Supplier credit owed to you" : "Customer credit" : module === "Suppliers" ? "Amount you owe" : "Amount customer owes"}</span></div>
               </div>
             </section>}
           </>}

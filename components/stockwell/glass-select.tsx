@@ -25,6 +25,7 @@ type Props = {
   searchPlaceholder?: string;
   className?: string;
   "aria-label"?: string;
+  filter?: (option: { value: string; text: string; disabled?: boolean }) => boolean;
 };
 type OptionProps = { value?: string; children?: ReactNode; disabled?: boolean };
 
@@ -56,6 +57,7 @@ export function GlassSelect({
   searchPlaceholder = "Search…",
   className,
   "aria-label": label,
+  filter,
 }: Props) {
   const [portalContainer, setPortalContainer] = useState<HTMLElement | null>(
     null,
@@ -73,9 +75,10 @@ export function GlassSelect({
       disabled: option.props.disabled,
     }));
   const placeholder = options.find((option) => option.value === "")?.label;
+  const filteredOptions = filter ? options.filter(option => filter({ value: option.value, text: option.text, disabled: option.disabled })) : options;
   const visibleOptions = searchable && search.trim()
-    ? options.filter((option) => searchableText(option.text).includes(searchableText(search.trim())))
-    : options;
+    ? filteredOptions.filter((option) => searchableText(option.text).includes(searchableText(search.trim())))
+    : filteredOptions;
 
   return (
     <Select.Root<string>

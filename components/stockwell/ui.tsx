@@ -87,14 +87,6 @@ export function Table({
   rows: ReactNode[][];
   empty?: string;
 }) {
-  const pageSize = 25;
-  const [page, setPage] = useState(0);
-  // A filtered result can change while retaining the same number of rows.
-  // Reset when its source array changes so the table never stays on a stale page.
-  useEffect(() => setPage(0), [rows]);
-  const pageCount = Math.ceil(rows.length / pageSize);
-  const currentPage = Math.min(page, Math.max(0, pageCount - 1));
-  const visibleRows = rows.slice(currentPage * pageSize, (currentPage + 1) * pageSize);
   if (!rows.length) return <Empty title={empty} />;
   return <>
     <div className="table-scroll">
@@ -107,8 +99,8 @@ export function Table({
           </tr>
         </thead>
         <tbody>
-          {visibleRows.map((r, i) => (
-            <tr key={currentPage * pageSize + i}>
+          {rows.map((r, i) => (
+            <tr key={i}>
               {r.map((c, j) => (
                 <td key={j}>{c}</td>
               ))}
@@ -117,12 +109,15 @@ export function Table({
         </tbody>
       </table>
     </div>
-    {pageCount > 1 && <nav className="account-week-pagination" aria-label="Table pages">
-      <button type="button" className="secondary" disabled={currentPage === 0} onClick={() => setPage(currentPage - 1)}>← Previous</button>
-      <span aria-live="polite">Showing {currentPage * pageSize + 1}–{Math.min((currentPage + 1) * pageSize, rows.length)} of {rows.length} · Page {currentPage + 1} of {pageCount}</span>
-      <button type="button" className="secondary" disabled={currentPage >= pageCount - 1} onClick={() => setPage(currentPage + 1)}>Next →</button>
-    </nav>}
   </>;
+}
+export function ServerPagination({ page, pageCount, count, pageSize, setPage }: { page: number; pageCount: number; count: number; pageSize: number; setPage: (page: number) => void }) {
+  if (pageCount <= 1) return null;
+  return <nav className="account-week-pagination" aria-label="Table pages">
+    <button type="button" className="secondary" disabled={page <= 1} onClick={() => setPage(page - 1)}>← Previous</button>
+    <span aria-live="polite">Showing {(page - 1) * pageSize + 1}–{Math.min(page * pageSize, count)} of {count} · Page {page} of {pageCount}</span>
+    <button type="button" className="secondary" disabled={page >= pageCount} onClick={() => setPage(page + 1)}>Next →</button>
+  </nav>;
 }
 export function Modal({
   title,

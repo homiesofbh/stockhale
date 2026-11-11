@@ -3,7 +3,6 @@ import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
 import {
   balance,
-  compareTradeNumbersNewestFirst,
   contactBalance,
   money,
   unappliedCreditBalance,
@@ -15,6 +14,7 @@ import {
   type Store,
 } from "@/lib/stockwell/model";
 import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 import type { Dispatch, SetStateAction } from "react";
 import { type FormEvent } from "react";
 import { useState } from "react";
@@ -49,8 +49,16 @@ export function PaymentForm({
   const [forwardCheque, setForwardCheque] = useState(false);
   const [existingChequeId, setExistingChequeId] = useState("");
   const [destinationKind, setDestinationKind] = useState<"Supplier" | "Partner">("Supplier");
-  const receivedCustomerCheques = s.payments.filter((payment) => payment.kind === "Customer" && payment.method === "Cheque" && payment.amount > 0 && (payment.chequeStatus || "pending") === "pending" && !(s.crossCheques || []).some((crossCheque) => crossCheque.sourcePaymentId === payment.id));
+  const [contactQuery, setContactQuery] = useState("");
+  const [tradeQuery, setTradeQuery] = useState("");
+  const [walkInQuery, setWalkInQuery] = useState("");
+  const [chequeQuery, setChequeQuery] = useState("");
   const selectedContactId = selectedContact.startsWith("walkin:") ? "" : selectedContact;
+  const contacts = useServerCollection<any>({ collection: paymentKind === "Customer" ? "customers" : "suppliers", module: paymentKind === "Customer" ? "Customers" : "Suppliers", query: contactQuery, pageSize: 15 });
+  const trades = useServerCollection<any>({ collection: paymentKind === "Customer" ? "invoices" : "purchases", module: paymentKind === "Customer" ? "Billing" : "Purchases", query: tradeQuery, contactId: selectedContactId, noContactOnly: selectedContact.startsWith("walkin:"), postedOnly: true, unpaidOnly: true, pageSize: 15, enabled: !advance && !!selectedContact });
+  const walkInTrades = useServerCollection<any>({ collection: "invoices", module: "Billing", query: walkInQuery, postedOnly: true, noContactOnly: true, unpaidOnly: true, pageSize: 10, enabled: paymentKind === "Customer" });
+  const pendingCheques = useServerCollection<any>({ collection: "chequeRegister", module: "Payments", query: chequeQuery, status: "pending", pageSize: 10, enabled: forwardCheque && paymentKind === "Customer" });
+  const receivedCustomerCheques = pendingCheques.records.filter((payment) => payment.kind === "Customer" && payment.amount > 0 && !(s.crossCheques || []).some((crossCheque) => crossCheque.sourcePaymentId === payment.id));
   const contactKind = paymentKind === "Customer" ? "Customer" : "Supplier";
   const unappliedForContact = selectedContactId ? unappliedCreditBalance(s, contactKind, selectedContactId) : 0;
   const negativeAdvanceTotal = selectedContactId
@@ -120,7 +128,7 @@ export function PaymentForm({
             <option>Supplier</option>
           </GlassSelect>
         </Field>
-        <Field label={paymentKind}>
+        <Field label={paymentKind}><div className="server-select-field">
           <GlassSelect
             value={selectedContact}
             onValueChange={(e) => {
@@ -129,23 +137,26 @@ export function PaymentForm({
             }}
           >
             <option value="">Select contact</option>
-            {(paymentKind === "Customer" ? s.customers : s.suppliers).map(
+            {contacts.records.map(
               (c) => (
                 <option key={c.id} value={c.id}>
                   {c.name}
                 </option>
               ),
             )}
-            {paymentKind === "Customer" && s.invoices.filter((t) => !t.contactId && balance(s, t) !== 0).slice().sort(compareTradeNumbersNewestFirst).map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
+            {paymentKind === "Customer" && walkInTrades.records.map((t) => <option key={t.id} value={`walkin:${t.id}`}>Walk-in · {t.number} · {[t.walkInName, t.walkInCompany, t.walkInPhone].filter(Boolean).join(" / ") || "No details"}</option>)}
           </GlassSelect>
-        </Field>
+          <input type="search" aria-label={`Search ${paymentKind.toLowerCase()} contacts`} placeholder="Search contacts…" value={contactQuery} onChange={event => setContactQuery(event.target.value)} />
+          <button type="button" className="secondary-button" disabled={contacts.page <= 1} onClick={() => contacts.setPage(contacts.page - 1)}>Previous contacts</button><span>{contacts.page}/{contacts.pageCount}</span><button type="button" className="secondary-button" disabled={contacts.page >= contacts.pageCount} onClick={() => contacts.setPage(contacts.page + 1)}>More contacts</button>
+          {paymentKind === "Customer" && <><input type="search" aria-label="Search walk-in bills" placeholder="Search walk-in bills…" value={walkInQuery} onChange={event => setWalkInQuery(event.target.value)} /><button type="button" className="secondary-button" disabled={walkInTrades.page >= walkInTrades.pageCount} onClick={() => walkInTrades.setPage(walkInTrades.page + 1)}>More walk-ins</button></>}
+        </div></Field>
         <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={advance} onChange={e => { setAdvance(e.target.checked); setSelectedTrade(""); }} /> {paymentKind === "Supplier" ? "Supplier advance (prepayment beyond current payable)" : "Advance payment (not linked to a bill yet)"}</label>
         {advance && <p className="field-help payment-advance-help">
           {paymentKind === "Supplier"
             ? "A supplier advance is money paid now. It reduces cash or bank and appears as a credit on the supplier ledger until matched to a purchase."
             : "A customer advance is money received now. It increases cash or bank and appears as a credit on the customer ledger until matched to a sale."}
         </p>}
-        {paymentKind === "Customer" && <Field label="Bill with a pending balance or credit">
+        {paymentKind === "Customer" && <Field label="Bill with a pending balance or credit"><div className="server-select-field">
           <GlassSelect
             name="trade"
             required={!advance}
@@ -153,20 +164,16 @@ export function PaymentForm({
             onValueChange={(e) => setSelectedTrade(e)}
           >
             <option value="">{advance ? "No bill — unapplied advance" : "Select transaction"}</option>
-            {(paymentKind === "Customer" ? s.invoices : s.purchases)
-              .filter(
-                (t) => (selectedContact.startsWith("walkin:") ? `walkin:${t.id}` === selectedContact : t.contactId === selectedContact) && balance(s, t) !== 0,
-              )
-              .slice()
-              .sort(compareTradeNumbersNewestFirst)
-              .map((t) => (
+            {trades.records.map((t) => (
                 <option key={t.id} value={t.id}>
                   {t.number} · {money(Math.abs(balance(s, t)))}{" "}
                   {balance(s, t) < 0 ? "return credit" : "due"}
                 </option>
               ))}
           </GlassSelect>
-        </Field>}
+          <input type="search" aria-label="Search bills" placeholder="Search bills…" value={tradeQuery} onChange={event => setTradeQuery(event.target.value)} />
+          <button type="button" className="secondary-button" disabled={trades.page <= 1} onClick={() => trades.setPage(trades.page - 1)}>Previous bills</button><span>{trades.page}/{trades.pageCount}</span><button type="button" className="secondary-button" disabled={trades.page >= trades.pageCount} onClick={() => trades.setPage(trades.page + 1)}>More bills</button>
+        </div></Field>}
         {paymentKind === "Supplier" && !advance && <div className="payment-balance-summary" aria-live="polite"><div>
           <span>{supplierRemainingPayable < 0 ? "Supplier credit to collect" : "Remaining payable for this supplier"}</span>
           <strong>{money(Math.abs(supplierRemainingPayable))}</strong>
@@ -199,7 +206,7 @@ export function PaymentForm({
           {paymentKind === "Customer" && <>
             <label className="checkbox-row"><input type="checkbox" checked={forwardCheque} onChange={e => setForwardCheque(e.target.checked)} /> Submit this cheque to a supplier or partner</label>
             {forwardCheque && <>
-              <Field label="Received customer cheque (optional)"><GlassSelect value={existingChequeId} onValueChange={setExistingChequeId}><option value="">Forward the new cheque being recorded</option>{receivedCustomerCheques.map(payment => <option key={payment.id} value={payment.id}>{payment.chequeNumber} · {payment.chequeBank} · {money(Math.abs(payment.amount))}</option>)}</GlassSelect></Field>
+              <Field label="Received customer cheque (optional)"><div className="server-select-field"><GlassSelect value={existingChequeId} onValueChange={setExistingChequeId}><option value="">Forward the new cheque being recorded</option>{receivedCustomerCheques.map(payment => <option key={payment.id} value={payment.id}>{payment.chequeNumber} · {payment.chequeBank} · {money(Math.abs(payment.amount))}</option>)}</GlassSelect><input type="search" aria-label="Search pending cheques" placeholder="Search pending cheques…" value={chequeQuery} onChange={event => setChequeQuery(event.target.value)} /><button type="button" className="secondary-button" disabled={pendingCheques.page >= pendingCheques.pageCount} onClick={() => pendingCheques.setPage(pendingCheques.page + 1)}>More cheques</button></div></Field>
               <Field label="Submit to"><GlassSelect name="destinationKind" value={destinationKind} onValueChange={value => setDestinationKind(value as typeof destinationKind)}><option>Supplier</option><option>Partner</option></GlassSelect></Field>
               {destinationKind === "Supplier" ? <Field label="Supplier"><GlassSelect name="destination"><option value="">Select supplier</option>{s.suppliers.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}</GlassSelect></Field> : <Field label="Partner name"><input name="destination" placeholder="Partner name" required /></Field>}
               <Field label="Submission notes"><input name="destinationNotes" /></Field>

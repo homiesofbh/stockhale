@@ -1,21 +1,16 @@
 "use client";
 import { ReasonDialog } from "../reason-dialog";
 import { reverseVoucher, type Actor } from "@/lib/stockwell/operations";
-import { useEffect, useState } from "react";
-import { accountPath, chartAccounts, type Account } from "@/lib/stockwell/accounts";
+import { useState } from "react";
+import { chartAccounts, type Account } from "@/lib/stockwell/accounts";
 import { JournalForm } from "@/components/stockwell/forms/journal-form";
 import { journalTotals, journalAccountBalance, type JournalVoucher } from "@/lib/stockwell/journals";
 import { AccountForm } from "@/components/stockwell/forms/account-form";
 import type { FinancialRow } from "@/lib/stockwell/model";
-import { Badge, Table, Modal, Empty } from "@/components/stockwell/ui";
+import { Badge, Table, Modal, Empty, ServerPagination } from "@/components/stockwell/ui";
 import { money, round, today, type Store } from "@/lib/stockwell/model";
 import { bankBalanceSummary, sharedBankLedger } from "@/lib/stockwell/bank-vouchers";
-// Parse record dates in UTC so week boundaries do not shift with device timezone.
-function transactionWeek(date: string) {
-  const day = new Date(`${date}T00:00:00Z`);
-  day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7);
-  return day.toISOString().slice(0, 10);
-}
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 function weekLabel(start: string) {
   const first = new Date(`${start}T00:00:00Z`);
   const last = new Date(first);
@@ -28,55 +23,40 @@ type Props = {
   s: Store;
   commit: (next: Store, message: string) => void;
   matches: (...values: unknown[]) => boolean;
+  query: string;
+  from: string;
+  to: string;
   accounting: FinancialRow[];
   inRange: (date: string) => boolean;
 };
-export function AccountHeadsView({ s, matches, accounting, inRange, commit, actor }: Props) {
+export function AccountHeadsView({ s, matches, query, from, to, accounting, inRange, commit, actor }: Props) {
   const [reversing, setReversing] = useState("");
   const [editing, setEditing] = useState<Account | null>(null);
   const [journalEditor, setJournalEditor] = useState<JournalVoucher | "new" | null>(null);
   const [journalDetails, setJournalDetails] = useState<JournalVoucher | null>(null);
   const [selectedWeek, setSelectedWeek] = useState("");
-  const [accountPage, setAccountPage] = useState(0);
-  const transactions = accounting
-    .filter(r => inRange(r.date) && matches(r.head, r.reference, r.type))
-    .sort((a, b) => b.date.localeCompare(a.date));
-  const weeks = [...new Set(transactions.map(r => transactionWeek(r.date)))].sort().reverse();
+  const accountDirectory = useServerCollection<Account>({ collection: "accountDirectory", query, from, to, pageSize: 25 });
+  const journalPage = useServerCollection<JournalVoucher>({ collection: "journals", query, from, to, pageSize: 20 });
+  const transactionPage = useServerCollection<FinancialRow>({ collection: "financialTransactions", query, from, to, week: selectedWeek, pageSize: 25 });
+  const accountSummaries = (transactionPage.meta?.accountSummaries as Array<{ id: string; transactionCount: number; transactionTotal: number }> | undefined) || [];
+  const weeks = (transactionPage.meta?.weeks as string[] | undefined) || [];
   const weekIndex = Math.max(0, weeks.indexOf(selectedWeek));
-  const activeWeek = weeks[weekIndex];
-  const weeklyTransactions = transactions.filter(r => transactionWeek(r.date) === activeWeek);
+  const activeWeek = (transactionPage.meta?.activeWeek as string | undefined) || "";
+  const weeklyTransactions = transactionPage.records;
   const accounts = chartAccounts(s);
   const bankSummary = bankBalanceSummary(s);
   const sharedBank = sharedBankLedger(s);
   const sorted = [...accounts].sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
-  const visible = new Set(sorted.filter(a => matches(a.id, a.code, accountPath(accounts, a), a.type, a.description)).map(a => a.id));
-  // Retain parents as context when a search only matches a child.
-  for (const account of sorted.filter(a => visible.has(a.id))) {
-    let parentId = account.parentId;
-    const seen = new Set([account.id]);
-    while (parentId && !seen.has(parentId)) {
-      seen.add(parentId); visible.add(parentId);
-      parentId = accounts.find(a => a.id === parentId)?.parentId || "";
-    }
-  }
-  const journals = [...(s.journals || [])].filter(v => inRange(v.date) && matches(
-    v.id, v.number, v.reference, v.notes, v.status,
-    ...v.lines.flatMap(l => [accounts.find(a => a.id === l.accountId)?.name, l.description]),
-  )).sort((a, b) => b.date.localeCompare(a.date) || b.createdAt - a.createdAt);
-  const roots = sorted.filter(a => !a.parentId || !accounts.some(parent => parent.id === a.parentId));
-  const visibleRoots = roots.filter(account => visible.has(account.id));
-  const accountPageSize = 25;
-  const accountPageCount = Math.ceil(visibleRoots.length / accountPageSize);
-  const currentAccountPage = Math.min(accountPage, Math.max(0, accountPageCount - 1));
-  useEffect(() => setAccountPage(0), [visible.size, matches]);
+  const visible = new Set((accountDirectory.meta?.visibleIds as string[] | undefined) || []);
+  const visibleRoots = accountDirectory.records;
   function renderAccount(account: Account, ancestors: string[] = []) {
     if (!visible.has(account.id) || ancestors.includes(account.id)) return null;
     const children = sorted.filter(a => a.parentId === account.id && visible.has(a.id));
     const journalBalance = journalAccountBalance(s, account, today());
     const isBankLedger = account.id === sharedBank?.id || (s.financialAccounts || []).some(bank => bank.ledgerAccountId === account.id);
-    const accountTransactions = accounting.filter(r => r.head === account.name && inRange(r.date));
-    const count = accountTransactions.length;
-    const transactionTotal = round(accountTransactions.reduce((sum, row) => sum + row.amount, 0));
+    const summary = accountSummaries.find(item => item.id === account.id);
+    const count = Number(summary?.transactionCount || 0);
+    const transactionTotal = Number(summary?.transactionTotal || 0);
     return <li className="account-branch" key={account.id}>
       <article className="chart-account-card" aria-label={`Account ${account.name}`}>
         <div className="chart-account-top"><span className="chart-account-code">{account.code}</span><Badge>{account.type}</Badge></div>
@@ -100,26 +80,22 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
         {bankSummary.unassigned !== 0 && <p>Unassigned bank entries: <strong>{money(bankSummary.unassigned)}</strong></p>}
       </section>
       <section className="chart-accounts-section" aria-labelledby="chart-accounts-title">
-        <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{visible.size} of {accounts.length} accounts</Badge></div>
+        <div className="section-head mt-4"><div><h2 id="chart-accounts-title">Chart of accounts</h2><p>Browse account details and opening balances. Subaccounts are grouped under their parent.</p></div><Badge>{Number(accountDirectory.meta?.visibleCount || 0)} of {Number(accountDirectory.meta?.accountCount || 0)} accounts</Badge></div>
         {visible.size ? <>
-          <ul className="chart-accounts-grid">{visibleRoots.slice(currentAccountPage * accountPageSize, (currentAccountPage + 1) * accountPageSize).map(account => renderAccount(account))}</ul>
-          {accountPageCount > 1 && <nav className="account-week-pagination" aria-label="Chart of accounts pages">
-            <button className="secondary" disabled={currentAccountPage === 0} onClick={() => setAccountPage(currentAccountPage - 1)}>← Previous</button>
-            <span aria-live="polite">Showing {currentAccountPage * accountPageSize + 1}–{Math.min((currentAccountPage + 1) * accountPageSize, visibleRoots.length)} of {visibleRoots.length} account groups · Page {currentAccountPage + 1} of {accountPageCount}</span>
-            <button className="secondary" disabled={currentAccountPage >= accountPageCount - 1} onClick={() => setAccountPage(currentAccountPage + 1)}>Next →</button>
-          </nav>}
+          <ul className="chart-accounts-grid">{visibleRoots.map(account => renderAccount(account))}</ul>
+          <ServerPagination page={accountDirectory.page} pageCount={accountDirectory.pageCount} count={accountDirectory.count} pageSize={accountDirectory.pageSize} setPage={accountDirectory.setPage} />
         </> : <Empty title="No matching accounts">Try another account name, code, or type.</Empty>}
       </section>
       {editing && <Modal title="Edit account" close={() => setEditing(null)}><AccountForm s={s} account={editing} commit={(next, message) => { commit(next, message); setEditing(null); }} /></Modal>}
       <section className="card" aria-labelledby="journal-register-title">
         <div className="section-head">
           <div><h2 id="journal-register-title">Journal vouchers</h2><p>Drafts can be edited. Posted vouchers record balanced account entries.</p></div>
-          <div className="journal-register-actions"><Badge>{journals.length} vouchers</Badge><button className="primary" onClick={() => setJournalEditor("new")}>New journal</button></div>
+          <div className="journal-register-actions"><Badge>{journalPage.count} vouchers</Badge><button className="primary" onClick={() => setJournalEditor("new")}>New journal</button></div>
         </div>
         <Table
           headers={["Date", "Voucher", "Reference / notes", "Status", "Debit", "Credit", "Balance check", "Action"]}
           empty="No matching journal vouchers"
-          rows={journals.map(v => {
+          rows={journalPage.records.map(v => {
             const totals = journalTotals(v.lines);
             return [
               v.date,
@@ -133,6 +109,8 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
             ];
           })}
         />
+        {journalPage.error && <p className="form-error" role="alert">{journalPage.error}</p>}
+        <ServerPagination page={journalPage.page} pageCount={journalPage.pageCount} count={journalPage.count} pageSize={journalPage.pageSize} setPage={journalPage.setPage} />
       </section>
       {journalEditor && <Modal title={journalEditor === "new" ? "New journal voucher" : `Edit ${journalEditor.number}`} close={() => setJournalEditor(null)}><JournalForm s={s} voucher={journalEditor === "new" ? undefined : journalEditor} commit={(next, message) => { commit(next, message); setJournalEditor(null); }} /></Modal>}
       {journalDetails && <Modal title={journalDetails.number} close={() => setJournalDetails(null)}>
@@ -174,6 +152,8 @@ export function AccountHeadsView({ s, matches, accounting, inRange, commit, acto
             r.method,
           ])}
         />
+        {transactionPage.error && <p className="form-error" role="alert">{transactionPage.error}</p>}
+        <ServerPagination page={transactionPage.page} pageCount={transactionPage.pageCount} count={transactionPage.count} pageSize={transactionPage.pageSize} setPage={transactionPage.setPage} />
       </section>
     </>
   );

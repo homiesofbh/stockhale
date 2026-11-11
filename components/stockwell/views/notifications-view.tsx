@@ -1,13 +1,14 @@
 "use client";
 import { descriptions, type Module } from "@/components/stockwell/navigation";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { Table } from "@/components/stockwell/ui";
+import { ServerPagination, Table } from "@/components/stockwell/ui";
 import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import type { Workspace } from "@/lib/stockwell/workspace";
 import { getFirstRecordTarget } from "@/lib/stockwell/audit-target";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useState } from "react";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 type Props = {
   workspace: ReturnType<typeof useWorkspace>;
   account: Workspace;
@@ -28,12 +29,10 @@ export function NotificationsView({
   const [moduleFilter, setModuleFilter] = useState("All modules");
   const [from, setFrom] = useState("");
   const [to, setTo] = useState("");
-  const actors = Array.from(new Set(account.audit.map(event => event.actor))).sort();
-  const modules = Array.from(new Set(account.audit.map(event => event.module))).sort();
-  const entries = account.audit.filter(event => {
-    const date = event.occurredAt.slice(0, 10);
-    return (actorFilter === "All users" || event.actor === actorFilter) && (moduleFilter === "All modules" || event.module === moduleFilter) && (!from || date >= from) && (!to || date <= to);
-  });
+  const activity = useServerCollection<Workspace["audit"][number]>({ collection: "activityLog", actor: actorFilter === "All users" ? "" : actorFilter, moduleFilter: moduleFilter === "All modules" ? "" : moduleFilter, from, to, pageSize: 25 });
+  const actors = (activity.meta?.actors as string[] | undefined) || [];
+  const modules = (activity.meta?.modules as string[] | undefined) || [];
+  const entries = activity.records;
   return (
     <section className="settings-page">
       <div className="page-heading">
@@ -80,6 +79,8 @@ export function NotificationsView({
           a.emailStatus,
         ])}
       />
+      {activity.error && <p className="form-error" role="alert">{activity.error}</p>}
+      <ServerPagination page={activity.page} pageCount={activity.pageCount} count={activity.count} pageSize={activity.pageSize} setPage={activity.setPage} />
     </section>
   );
 }

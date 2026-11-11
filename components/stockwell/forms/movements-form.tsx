@@ -1,24 +1,24 @@
 "use client";
-import { Badge, Table } from "@/components/stockwell/ui";
-import { type Store } from "@/lib/stockwell/model";
+import { Badge, ServerPagination, Table } from "@/components/stockwell/ui";
+import { type Movement, type Store } from "@/lib/stockwell/model";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 type Props = {
   s: Store;
-  matches: (...values: unknown[]) => boolean;
+  query: string;
   pName: (id: string) => string;
 };
-export function MovementsForm({ s, matches, pName }: Props) {
+export function MovementsForm({ s, query, pName }: Props) {
+  const result = useServerCollection<Movement>({ collection: "movements", query, pageSize: 25 });
+  const movements = result.records;
   return (
     <>
       <div className="form-hint">
         Search products and references using the inventory search field.
       </div>
+      {result.error && <p className="form-error" role="alert">{result.error}</p>}
       <Table
         headers={["Date", "Time", "Product", "Type", "Quantity", "Reference", "Reason"]}
-        rows={s.movements
-          .filter((m) => matches(m.id, pName(m.productId), m.reference, m.reason))
-          .slice()
-          .sort((a, b) => b.date.localeCompare(a.date) || (b.createdAt || 0) - (a.createdAt || 0) || b.id.localeCompare(a.id))
-          .map((m) => [
+        rows={movements.map((m) => [
             m.date,
             m.createdAt ? new Date(m.createdAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "Not recorded",
             pName(m.productId),
@@ -31,6 +31,7 @@ export function MovementsForm({ s, matches, pName }: Props) {
             m.reason || "—",
           ])}
       />
+      <ServerPagination page={result.page} pageCount={result.pageCount} count={result.count} pageSize={result.pageSize} setPage={result.setPage} />
     </>
   );
 }

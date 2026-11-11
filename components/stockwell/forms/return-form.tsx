@@ -2,9 +2,11 @@
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field } from "@/components/stockwell/ui";
-import { balance, compareTradeNumbersNewestFirst, findProductByCode, isPosted, money, paid, recordPayment, recordReturn, roundQty, subtotal, today, total, uid, type Store } from "@/lib/stockwell/model";
+import { balance, findProductByCode, money, paid, recordPayment, recordReturn, roundQty, subtotal, today, total, uid, type Store, type Trade, type Product, type ReturnRecord } from "@/lib/stockwell/model";
 import type { Dispatch, SetStateAction } from "react";
 import { useState, type FormEvent } from "react";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
+import { ServerPagination } from "@/components/stockwell/ui";
 
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void) => void;
@@ -39,19 +41,14 @@ export function ReturnForm({
   const [tradeSearch, setTradeSearch] = useState("");
 
   const trades = returnKind === "Sales return" ? s.invoices : s.purchases;
-  const postedTrades = trades.filter(isPosted).slice().sort(compareTradeNumbersNewestFirst);
-  const selectedOriginal = trades.find((t) => t.id === selectedTrade);
-  const eligible = s.products.filter((p) => {
-    if (returnKind === "Damaged stock") return true;
-    if (!selectedOriginal) return false;
-    const originalQty = selectedOriginal.lines
-      .filter((line) => line.productId === p.id)
-      .reduce((sum, line) => sum + line.qty, 0);
-    const returnedQty = s.returns
-      .filter((entry) => entry.tradeId === selectedTrade && entry.productId === p.id)
-      .reduce((sum, entry) => sum + entry.qty, 0);
-    return originalQty > roundQty(returnedQty);
-  });
+  const tradePage = useServerCollection<Trade>({ collection: returnKind === "Sales return" ? "invoices" : "purchases", module: returnKind === "Sales return" ? "Billing" : "Purchases", query: tradeSearch, postedOnly: true, pageSize: 15, enabled: returnKind !== "Damaged stock" });
+  const productReturns = useServerCollection<ReturnRecord>({ collection: "returns", tradeId: selectedTrade, pageSize: 1, enabled: !!selectedTrade && returnKind !== "Damaged stock" });
+  const postedTrades = tradePage.records;
+  const selectedOriginalPage = useServerCollection<Trade>({ collection: returnKind === "Sales return" ? "invoices" : "purchases", module: returnKind === "Sales return" ? "Billing" : "Purchases", query: "", pageSize: 100, enabled: !!selectedTrade && returnKind !== "Damaged stock" });
+  const selectedOriginal = selectedOriginalPage.records.find((t) => t.id === selectedTrade) || trades.find((t) => t.id === selectedTrade);
+  const selectedTradeRecord = selectedOriginal;
+  const productPage = useServerCollection<Product>({ collection: "products", query: scan, productIds: returnKind === "Damaged stock" ? [] : selectedOriginal?.lines.map(line => line.productId) || [], pageSize: 100, enabled: returnKind === "Damaged stock" || !!selectedTrade });
+  const eligible = productPage.records;
   const selectedLineProducts = new Set(returnLines.map((line) => line.productId).filter(Boolean));
   const availableProducts = (lineProductId: string) =>
     eligible.filter((p) => p.id === lineProductId || !selectedLineProducts.has(p.id));
@@ -62,7 +59,7 @@ export function ReturnForm({
 
   function scanProduct(code = scan) {
     try {
-      const match = findProductByCode(s.products, code);
+      const match = findProductByCode(productPage.records, code);
       if (!eligible.some((p) => p.id === match.id))
         throw new Error("Select an original transaction containing this product first.");
       if (returnLines.some((line) => line.productId === match.id)) {
@@ -185,11 +182,12 @@ export function ReturnForm({
                 }}
                 aria-label="Search invoice or date"
               />
-              <datalist id="return-trade-options">
+      <datalist id="return-trade-options">
                 {postedTrades.map((t) => (
                   <option key={t.id} value={`${t.number} · ${t.date}`} />
                 ))}
               </datalist>
+      <ServerPagination page={tradePage.page} pageCount={tradePage.pageCount} count={tradePage.count} pageSize={tradePage.pageSize} setPage={tradePage.setPage} />
             </div>
           </Field>
         )}
@@ -214,23 +212,21 @@ export function ReturnForm({
           </div>
         )}
         <div className="return-lines" aria-label="Products to return">
-          <div className="return-lines-heading">
+      <div className="return-lines-heading">
             <span>Products to return</span>
             <small>{selectedOriginal ? `${eligible.length} product${eligible.length === 1 ? "" : "s"} from ${selectedOriginal.number}` : "Add one or more products"}</small>
           </div>
           {returnLines.map((line, index) => {
-            const lineProduct = s.products.find((p) => p.id === line.productId);
-            const originalLines = selectedOriginal?.lines.filter((item) => item.productId === line.productId) || [];
-            const originalQty = originalLines.reduce((sum, item) => sum + item.qty, 0);
-            const lineReturnedQty = selectedTrade && line.productId
-              ? s.returns.filter((entry) => entry.tradeId === selectedTrade && entry.productId === line.productId).reduce((sum, entry) => sum + entry.qty, 0)
-              : 0;
+            const lineProduct = productPage.records.find((p) => p.id === line.productId) || s.products.find((p) => p.id === line.productId);
+            const originalLines = selectedOriginal?.lines.filter((item: any) => item.productId === line.productId) || [];
+            const originalQty = originalLines.reduce((sum: number, item: any) => sum + item.qty, 0);
+            const lineReturnedQty = Number((productReturns.meta?.returnedByProduct as Record<string, number> | undefined)?.[line.productId] || 0);
             const lineRemainingQty = selectedOriginal && line.productId ? roundQty(Math.max(0, originalQty - lineReturnedQty)) : undefined;
             const lineUom = lineProduct?.unit || "piece";
-            const linePrice = originalLines.reduce((sum, item) => sum + item.qty * item.price, 0) / (originalQty || 1);
+            const linePrice = originalLines.reduce((sum: number, item: any) => sum + item.qty * item.price, 0) / (originalQty || 1);
             return (
               <div className="return-line" key={line.id}>
-                <Field label={`Product ${index + 1}`}>
+                <Field label={`Product ${index + 1}`}><div className="server-select-field">
                   <GlassSelect
                     required
                     value={line.productId}
@@ -241,7 +237,9 @@ export function ReturnForm({
                     <option value="">Select product</option>
                     {availableProducts(line.productId).map((p) => <option key={p.id} value={p.id}>{p.name} · {p.unit || "piece"}</option>)}
                   </GlassSelect>
-                </Field>
+                  <input type="search" aria-label={`Search products for line ${index + 1}`} placeholder="Search products…" value={scan} onChange={event => setScan(event.target.value)} />
+                  <ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} />
+                </div></Field>
                 <Field label={`Quantity (${lineUom})`}>
                   <input data-barcode-quantity={line.productId} type="number" min="0.001" max={lineRemainingQty} step="0.001" required value={line.qty} onChange={(e) => setReturnLines((lines) => lines.map((item) => item.id === line.id ? { ...item, qty: e.target.value } : item))} />
                 </Field>

@@ -17,6 +17,8 @@ import {
   renewAdminSubscription,
   workspaceRevision,
   workspaceDetails,
+  workspaceCollection,
+  workspaceReport,
 } from "@/lib/stockwell/server";
 import { withDatabase } from "@/lib/stockwell/database";
 import { readJsonBody } from "@/lib/stockwell/request-body";
@@ -61,8 +63,59 @@ export async function GET(request: Request) {
       console.info("Workspace request auth timing", { authMs: Date.now() - authStartedAt });
       if (new URL(request.url).searchParams.get("details") === "1")
         return Response.json(await workspaceDetails(user), { headers: sessionHeaders(authHeaders) });
-      if (new URL(request.url).searchParams.get("admin") === "overview")
-        return Response.json(await adminOverview(user), { headers: sessionHeaders(authHeaders) });
+      const collection = new URL(request.url).searchParams.get("collection");
+      if (collection) {
+        const params = new URL(request.url).searchParams;
+        return Response.json(await workspaceCollection(user, {
+          collection,
+          module: params.get("module") || "",
+          query: params.get("q") || "",
+          secondaryQuery: params.get("q2") || "",
+          productId: params.get("productId") || "",
+          productRole: params.get("productRole") || "",
+          actor: params.get("actor") || "",
+          moduleFilter: params.get("moduleFilter") || "",
+          week: params.get("week") || "",
+          accountId: params.get("accountId") || "",
+          bankOnly: params.get("bankOnly") === "1",
+          secondaryFrom: params.get("from2") || "",
+          secondaryTo: params.get("to2") || "",
+          from: params.get("from") || "",
+          to: params.get("to") || "",
+          category: params.get("category") || "All",
+          status: params.get("status") || "All",
+          paymentMethod: params.get("paymentMethod") || "All",
+          contactId: params.get("contactId") || "",
+          postedOnly: params.get("postedOnly") === "1",
+          noContactOnly: params.get("noContactOnly") === "1",
+          unpaidOnly: params.get("unpaidOnly") === "1",
+          tradeId: params.get("tradeId") || "",
+          productIds: (params.get("productIds") || "").split(",").filter(Boolean).slice(0, 5000),
+          page: Number(params.get("page") || 1),
+          pageSize: Number(params.get("pageSize") || 25),
+        }), { headers: sessionHeaders(authHeaders) });
+      }
+      if (new URL(request.url).searchParams.get("report") === "1") {
+        const params = new URL(request.url).searchParams;
+        return Response.json(await workspaceReport(user, {
+          query: params.get("q") || "", from: params.get("from") || "", to: params.get("to") || "",
+          status: params.get("status") || "All", paymentMethod: params.get("paymentMethod") || "All",
+          report: params.get("name") || "Billing report", reportContact: params.get("contact") || "",
+          reportProduct: params.get("product") || "", manufacturer: params.get("manufacturer") === "1",
+          page: Number(params.get("page") || 1), pageSize: Number(params.get("pageSize") || 25), all: params.get("all") === "1",
+        }), { headers: sessionHeaders(authHeaders) });
+      }
+      if (new URL(request.url).searchParams.get("admin") === "overview") {
+        const params = new URL(request.url).searchParams;
+        return Response.json(await adminOverview(user, {
+          query: params.get("q") || "",
+          subscription: params.get("subscription") || "All",
+          sort: params.get("sort") || "alphabetical",
+          direction: params.get("direction") || "asc",
+          page: Number(params.get("page") || 1),
+          pageSize: Number(params.get("pageSize") || 10),
+        }), { headers: sessionHeaders(authHeaders) });
+      }
       if (new URL(request.url).searchParams.get("admin") === "testimonials")
         return Response.json(await adminTestimonials(user), { headers: sessionHeaders(authHeaders) });
       const params = new URL(request.url).searchParams;

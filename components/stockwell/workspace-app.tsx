@@ -11,10 +11,8 @@ import {
   money,
   paid,
   periodMatch,
-  profit,
   returned,
   round,
-  stock,
   subtotal,
   today,
   total,
@@ -64,11 +62,9 @@ import { ProductionView } from "@/components/stockwell/views/production-view";
 import { BusinessSetup } from "@/components/stockwell/business-setup";
 import { WorkspaceHeader } from "@/components/stockwell/workspace-header";
 import {
-  filterTrades,
   getPaymentStatus,
   matchesQuery,
 } from "@/lib/stockwell/record-selectors";
-import { createReportData } from "@/lib/stockwell/reports";
 
 import { ProductSearch } from "./product-search";
 
@@ -328,20 +324,9 @@ export function WorkspaceApp() {
     (supplier ? s.suppliers : s.customers).find((c) => c.id === id)?.name ||
     "Walk-in customer";
   const paymentStatus = (trade: Trade) => getPaymentStatus(s, trade);
-  const filters = { query, from, to, status, paymentMethod };
-  const invoices = filterTrades(s, s.invoices, filters).filter(t => module !== "Sales" || isPosted(t));
-  const purchases = filterTrades(s, s.purchases, filters, true);
   const accounting = financialRows(s);
   const cash = accounting.reduce((n, r) => n + r.cash, 0);
   const bank = round((s.financialAccounts || []).reduce((n, a) => n + bankStatement(s, a).closing, 0) + accounting.filter(r => !r.financialAccountId).reduce((n, r) => n + r.bank, 0));
-  const receivables = s.customers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Customer", c.id), 0), s.invoices.filter(t => !s.customers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
-  const payables = s.suppliers.reduce((sum, c) => sum + Math.max(contactBalance(s, "Supplier", c.id), 0), s.purchases.filter(t => !s.suppliers.some(c => c.id === t.contactId)).reduce((sum, t) => sum + Math.max(balance(s, t), 0), 0));
-  const lowStock = s.products.filter((p) => stock(s, p.id) > 0 && stock(s, p.id) <= p.low);
-  const inventoryValue = s.products.reduce(
-    (n, p) => n + stock(s, p.id) * p.cost,
-    0,
-  );
-  const allProfit = profit(s);
   function addLine(id: string) {
     const p = s.products.find((p) => p.id === id);
     if (!p) return;
@@ -460,13 +445,6 @@ export function WorkspaceApp() {
     "Balance",
     "",
   ];
-  const reportResult = createReportData(s, {
-    ...filters,
-    report,
-    reportContact,
-    reportProduct,
-    manufacturer: account?.businessType === "manufacturer",
-  });
   useEffect(() => {
     setPdfError("");
   }, [invoice?.id, paper]);
@@ -476,10 +454,6 @@ export function WorkspaceApp() {
     start.setUTCDate(start.getUTCDate() - ((start.getUTCDay() + 6) % 7));
   const dashboardFrom =
     dashboardPeriod === "All time" ? "" : start.toISOString().slice(0, 10);
-  const dashboardProfit = profit(s, dashboardFrom, today());
-  const dashboardInvoices = s.invoices.filter(isPosted).filter((t) =>
-    periodMatch(t.date, dashboardFrom, today()),
-  );
   async function saveInvoicePdf() {
     if (!invoice || pdfBusy) return;
     if (!isPosted(invoice)) { setPdfError("Post the bill before issuing an invoice PDF."); return; }
@@ -655,13 +629,9 @@ export function WorkspaceApp() {
                       canAccess={canAccess}
                       dashboardPeriod={dashboardPeriod}
                       setDashboardPeriod={setDashboardPeriod}
-                      dashboardProfit={dashboardProfit}
-                      dashboardInvoices={dashboardInvoices}
                       s={s}
                       dashboardFrom={dashboardFrom}
-                      lowStock={lowStock}
                       go={go}
-                      inventoryValue={inventoryValue}
                       quickProduct={quickProduct}
                       setQuickProduct={setQuickProduct}
                       storageError={storageError}
@@ -672,9 +642,6 @@ export function WorkspaceApp() {
                       paymentStatus={paymentStatus}
                       cash={cash}
                       bank={bank}
-                      receivables={receivables}
-                      payables={payables}
-                      allProfit={allProfit}
                       pName={pName}
                       manufacturer={account.businessType === "manufacturer"}
                     />
@@ -721,8 +688,11 @@ export function WorkspaceApp() {
                       {(module === "Purchases" || module === "Billing") && (
                         <TradeHistoryView
                           module={module}
-                          invoices={invoices}
-                          purchases={purchases}
+                          query={query}
+                          from={from}
+                          to={to}
+                          status={status}
+                          paymentMethod={paymentMethod}
                           basicHeaders={basicHeaders}
                           tradeRows={tradeRows}
                         />
@@ -734,7 +704,9 @@ export function WorkspaceApp() {
                           setFrom={setFrom}
                           setTo={setTo}
                           s={s}
-                          invoices={invoices}
+                          query={query}
+                          status={status}
+                          paymentMethod={paymentMethod}
                           pName={pName}
                           setInvoice={setInvoice}
                           setPaper={setPaper}
@@ -747,6 +719,9 @@ export function WorkspaceApp() {
                           commit={commit}
                           s={s}
                           matches={matches}
+                          query={query}
+                          from={from}
+                          to={to}
                           accounting={accounting}
                           inRange={inRange}
                         />
@@ -754,9 +729,10 @@ export function WorkspaceApp() {
                       {module === "Expenses" && (
                         <ExpensesView
                           s={s}
-                          inRange={inRange}
-                          matches={matches}
                           category={category}
+                          query={query}
+                          from={from}
+                          to={to}
                           open={open}
                           owner={account.member.role === "owner"}
                           memberName={(id, name) => name || account.members.find(member => member.id === id)?.name || "Not recorded"}
@@ -766,8 +742,6 @@ export function WorkspaceApp() {
                       {module === "Payments" && (
                         <PaymentsView
                           actor={account.member}
-                          receivables={receivables}
-                          payables={payables}
                           cash={cash}
                           bank={bank}
                           s={s}
@@ -776,13 +750,15 @@ export function WorkspaceApp() {
                           matches={matches}
                           commit={commit}
                           query={query}
+                          from={from}
+                          to={to}
                         />
                       )}
                       {(module === "Customers" || module === "Suppliers") && (
                         <ContactsView
                           module={module}
                           s={s}
-                          matches={matches}
+                          query={query}
                           setDetailContact={setDetailContact}
                           setEditContact={setEditContact}
                           open={open}
@@ -794,8 +770,9 @@ export function WorkspaceApp() {
                       {module === "Returns & Damage" && (
                         <ReturnsView
                           s={s}
-                          inRange={inRange}
-                          matches={matches}
+                          query={query}
+                          from={from}
+                          to={to}
                           pName={pName}
                           setInvoice={(trade) => { setInvoice(trade); setPaper("A4"); }}
                         />
@@ -815,7 +792,9 @@ export function WorkspaceApp() {
                           from={from}
                           to={to}
                           s={s}
-                          reportResult={reportResult}
+                          query={query}
+                          status={status}
+                          paymentMethod={paymentMethod}
                         />
                       )}
                       {module === "Closing" && <DailyClosingView s={s} actor={account.member} query={query} commit={commit} reopenWithOwnerPassword={(closingId, reason, password) => workspace.action({ action: "reopen-day", closingId, reason, password })} />}
@@ -920,7 +899,7 @@ export function WorkspaceApp() {
             />
           )}
           {modal === "Movements" && (
-            <MovementsForm s={s} matches={matches} pName={pName} />
+            <MovementsForm s={s} query={query} pName={pName} />
           )}
           {modal === "Contact" && (
             <ContactForm

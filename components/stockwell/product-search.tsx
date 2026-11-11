@@ -2,8 +2,9 @@
 
 import { Search, X } from "lucide-react";
 import { money, stock, type Store } from "@/lib/stockwell/model";
-import { searchProducts } from "@/lib/stockwell/record-selectors";
 import { Empty, Table } from "./ui";
+import { ServerPagination } from "./ui";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 
 type Props = {
   store: Store;
@@ -17,9 +18,11 @@ type Props = {
 export function ProductSearch({ store, query, onChange, canSearch, canSearchCustomers = canSearch, canSearchSuppliers = canSearch }: Props) {
   if (!canSearch && !canSearchCustomers && !canSearchSuppliers) return null;
   const normalizedQuery = query.trim().toLowerCase();
-  const matchingProducts = canSearch ? searchProducts(store.products, query) : [];
-  const matchingContacts = [...(canSearchCustomers ? store.customers.map((contact) => [contact, "Customer"] as const) : []), ...(canSearchSuppliers ? store.suppliers.map((contact) => [contact, "Supplier"] as const) : [])]
-    .filter(([contact]) => [contact.name, contact.company, contact.phone, contact.mobile, contact.email].filter(Boolean).join(" ").toLowerCase().includes(normalizedQuery));
+  const productsPage = useServerCollection<any>({ collection: "products", query, pageSize: 10, enabled: canSearch && !!normalizedQuery });
+  const customersPage = useServerCollection<any>({ collection: "customers", query, module: "Customers", pageSize: 10, enabled: canSearchCustomers && !!normalizedQuery });
+  const suppliersPage = useServerCollection<any>({ collection: "suppliers", query, module: "Suppliers", pageSize: 10, enabled: canSearchSuppliers && !!normalizedQuery });
+  const matchingProducts = productsPage.records;
+  const matchingContacts = [...customersPage.records.map(contact => [contact, "Customer"] as const), ...suppliersPage.records.map(contact => [contact, "Supplier"] as const)];
   return (
     <>
       <form
@@ -72,6 +75,7 @@ export function ProductSearch({ store, query, onChange, canSearch, canSearchCust
                 money(product.price),
               ])}
             />
+            <ServerPagination page={productsPage.page} pageCount={productsPage.pageCount} count={productsPage.count} pageSize={productsPage.pageSize} setPage={productsPage.setPage} />
             </div>
           ) : null}
           {matchingContacts.length > 0 && <>
@@ -82,6 +86,8 @@ export function ProductSearch({ store, query, onChange, canSearch, canSearchCust
               rows={matchingContacts
                 .map(([contact, type]) => [contact.name || contact.company, type, contact.company || "—", contact.phone || contact.mobile || "—", contact.email || "—"])}
             />
+            <ServerPagination page={customersPage.page} pageCount={customersPage.pageCount} count={customersPage.count} pageSize={customersPage.pageSize} setPage={customersPage.setPage} />
+            <ServerPagination page={suppliersPage.page} pageCount={suppliersPage.pageCount} count={suppliersPage.count} pageSize={suppliersPage.pageSize} setPage={suppliersPage.setPage} />
           </>}
           {!matchingProducts.length && !matchingContacts.length && <Empty title="No matching records" />}
         </section>

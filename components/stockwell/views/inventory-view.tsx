@@ -1,8 +1,9 @@
 "use client";
-import { Badge, Empty } from "@/components/stockwell/ui";
+import { Empty, ServerPagination } from "@/components/stockwell/ui";
 import { ProductPlaceholder } from "@/components/stockwell/product-placeholder";
 import { money, stock, type Product, type Store } from "@/lib/stockwell/model";
 import { filterInventory } from "@/lib/stockwell/record-selectors";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 import { ArrowDownLeft, ArrowUpRight, Barcode, Box, Package, Pencil, Warehouse } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
 type Props = {
@@ -14,6 +15,7 @@ type Props = {
   status: string;
   setEditProduct: Dispatch<SetStateAction<Product | null>>;
   selectProduct: (product: Product) => void;
+  samplePreview?: boolean;
 };
 export function InventoryView({
   s,
@@ -24,11 +26,13 @@ export function InventoryView({
   status,
   setEditProduct,
   selectProduct,
+  samplePreview = false,
 }: Props) {
-  const products = filterInventory(s, query, category, status);
-  const totalStockValue = products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0);
-  const totalStockUnits = products.reduce((total, product) => total + stock(s, product.id), 0);
-  const lowStock = products.filter(product => stock(s, product.id) > 0 && stock(s, product.id) <= product.low).length;
+  const result = useServerCollection<Product>({ collection: "products", query, category, status, pageSize: 24, enabled: !samplePreview });
+  const products = samplePreview ? filterInventory(s, query, category, status) : result.records;
+  const totalStockValue = samplePreview ? products.reduce((total, product) => total + stock(s, product.id) * product.cost, 0) : result.aggregates?.stockValue || 0;
+  const totalStockUnits = samplePreview ? products.reduce((total, product) => total + stock(s, product.id), 0) : result.aggregates?.stockUnits || 0;
+  const lowStock = samplePreview ? products.filter(product => stock(s, product.id) > 0 && stock(s, product.id) <= product.low).length : result.aggregates?.lowStock || 0;
   const recipeInputs = new Set(s.recipes.flatMap(recipe => recipe.ingredients.map(ingredient => ingredient.productId)));
   const recipeOutputs = new Set(s.recipes.map(recipe => recipe.outputProductId));
   const role = (productId: string) => {
@@ -39,7 +43,7 @@ export function InventoryView({
     <>
       <section className="inventory-value-summary" aria-label="Inventory value"><div><span className="eyebrow">Inventory valuation</span><h2>{category !== "All" || status !== "All" || query.trim() ? "Stock value in view" : "Total value of stock"}</h2><p>Filtered products, valued at cost price.{manufacturer ? " Production transfers materials into finished stock at recorded cost." : ""}</p></div><div className="inventory-value-amount"><strong>{money(totalStockValue)}</strong><span>{totalStockUnits.toLocaleString("en-PK")} units in stock</span></div></section>
       <div className="sub-actions inventory-actions">
-        <span>{products.length} products <span className="muted">/ {lowStock} low stock</span></span>
+        <span>{samplePreview ? products.length : result.count} products <span className="muted">/ {lowStock} low stock</span></span>
         <div>
           <button className="secondary-button" onClick={() => open("Category")}>
             Categories
@@ -58,9 +62,10 @@ export function InventoryView({
           </button>
         </div>
       </div>
-      {products.length ? <section className="inventory-product-grid" aria-label="Products">
+      {result.error && <p className="form-error" role="alert">{result.error}</p>}
+      {products.length ? <section className="inventory-product-grid" aria-label="Products" aria-busy={!samplePreview && result.loading}>
         {products.map((p) => {
-          const quantity = stock(s, p.id);
+          const quantity = samplePreview ? stock(s, p.id) : Number((p as Product & { currentStock?: number }).currentStock || 0);
           const productSuppliers = (p.supplierIds || []).map(id => s.suppliers.find(supplier => supplier.id === id)?.name).filter(Boolean);
           return <article className="inventory-product-card" key={p.id}>
           <button className="inventory-product-visual" onClick={() => selectProduct(p)} aria-label={`View details for ${p.name}`}><ProductPlaceholder name={p.name} category={p.category} /><span className={`inventory-stock-pill${quantity === 0 || quantity <= p.low ? " low" : " healthy"}`}><i />{quantity === 0 ? "Out of stock" : quantity <= p.low ? "Low stock" : "In stock"}</span></button>
@@ -76,7 +81,8 @@ export function InventoryView({
             </div>
           </article>;
         })}
-      </section> : <section className="card inventory-empty"><Empty title={s.products.length ? "No products match these filters" : "Add your first product"}>Adjust your search or filters to see inventory.</Empty></section>}
+      </section> : <section className="card inventory-empty"><Empty title={!samplePreview && result.loading ? "Loading products" : samplePreview ? "No matching sample products" : s.products.length ? "No products match these filters" : "Add your first product"}>Adjust your search or filters to see inventory.</Empty></section>}
+      {!samplePreview && <ServerPagination page={result.page} pageCount={result.pageCount} count={result.count} pageSize={result.pageSize} setPage={result.setPage} />}
     </>
   );
 }

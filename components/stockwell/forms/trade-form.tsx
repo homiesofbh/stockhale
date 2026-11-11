@@ -2,6 +2,7 @@
 import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field, Modal, Table } from "@/components/stockwell/ui";
+import { ServerPagination } from "@/components/stockwell/ui";
 import { ProductForm } from "./product-form";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
@@ -23,6 +24,7 @@ import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useState, type FormEvent } from "react";
 import { uploadAttachment } from "@/lib/stockwell/attachment-client";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 const searchableContactText = (contact: Contact) => {
   const text = [contact.name, contact.company, contact.phone, contact.mobile, contact.email]
     .filter(Boolean)
@@ -109,6 +111,8 @@ export function TradeForm({
   const [productQuery, setProductQuery] = useState("");
   const [savingProduct, setSavingProduct] = useState(false);
   const [workingStore, setWorkingStore] = useState(s);
+  const contactPage = useServerCollection<any>({ collection: modal === "Purchase" ? "suppliers" : "customers", module: modal === "Purchase" ? "Suppliers" : "Customers", query: contactQuery, pageSize: 12 });
+  const productPage = useServerCollection<any>({ collection: "products", query: productQuery, pageSize: 12, enabled: true });
   useEffect(() => { setWorkingStore(current => current.products.length > s.products.length ? current : s); }, [s]);
   const [addingProduct, setAddingProduct] = useState(false);
   const [productError, setProductError] = useState("");
@@ -123,15 +127,9 @@ export function TradeForm({
   const [customer, setCustomer] = useState({ name: "", company: "", phone: "", mobile: "", address: "", email: "" });
   const contacts = modal === "Purchase" ? s.suppliers : s.customers;
   const contactSearch = contactQuery.trim().toLowerCase();
-  const matchingContacts = contactSearch
-    ? contacts.filter((c) => {
-        const searchable = searchableContactText(c);
-        const queryDigits = contactSearch.replace(/\D/g, "");
-        return searchable.text.includes(contactSearch) || (!!queryDigits && searchable.digits.includes(queryDigits));
-      })
-    : [];
+  const matchingContacts = contactPage.records;
   const productSearch = productQuery.trim().toLowerCase();
-  const selectableProducts = workingStore.products.filter((p) => p.active !== false && (!productSearch || [p.name, p.sku, p.barcode, p.category, p.color, p.gsm, p.unit].filter(Boolean).join(" ").toLowerCase().includes(productSearch)));
+  const selectableProducts = [...productPage.records, ...lines.map(line => workingStore.products.find(product => product.id === line.productId)).filter(Boolean)].filter((p, index, all) => p?.active !== false && all.findIndex(candidate => candidate?.id === p?.id) === index);
   const units = availableUnits(workingStore.units, workingStore.products.map(product => product.unit));
   const unpaidWalkIn = modal === "Bill" && !contact && paidAmount < billTotal;
   const insufficientStock = modal === "Bill"
@@ -246,7 +244,8 @@ export function TradeForm({
               ))}
             {matchingContacts.length === 0 && <p className="field-help">No matching {modal === "Purchase" ? "suppliers" : "customers"}.</p>}
           </div>}
-          {contact && !contactSearch && <p className="selected-contact">Selected: <b>{contacts.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.company}</b> <button type="button" className="link" onClick={() => setContact("")}>Clear</button></p>}
+          {contactSearch && <ServerPagination page={contactPage.page} pageCount={contactPage.pageCount} count={contactPage.count} pageSize={contactPage.pageSize} setPage={contactPage.setPage} />}
+          {contact && !contactSearch && <p className="selected-contact">Selected: <b>{contactPage.records.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.company}</b> <button type="button" className="link" onClick={() => setContact("")}>Clear</button></p>}
           <p className="field-help">Type a name, company, phone, mobile, or email to search. Select a result below.</p>
           </div>
           </Field>
@@ -310,8 +309,8 @@ export function TradeForm({
       )}
       <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
       {modal === "Purchase" && canAddProduct && <button type="button" className="secondary-button" onClick={() => { setProductError(""); setAddingProduct(true); }}>+ Add product</button>}
-      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(workingStore, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}</div>}</div></Field>
-      <Field label="Or choose a product">
+      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(workingStore, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}<ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} /></div>}</div></Field>
+      <Field label="Or choose a product"><div className="server-select-field">
         <GlassSelect value="" onValueChange={(e) => { addLine(e); setProductQuery(""); }}>
           <option value="">Select product to add</option>
           {selectableProducts.map((p) => (
@@ -320,6 +319,8 @@ export function TradeForm({
             </option>
           ))}
         </GlassSelect>
+        <ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} />
+        </div>
       </Field>
       </div>
       <div className="bill-lines">

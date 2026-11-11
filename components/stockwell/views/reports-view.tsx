@@ -2,11 +2,14 @@
 import { DailyClosingView } from "./daily-closing-view";
 import type { Actor } from "@/lib/stockwell/operations";
 import { GlassSelect } from "@/components/stockwell/glass-select";
-import { Badge, Field, Table } from "@/components/stockwell/ui";
+import { Badge, Field, ServerPagination, Table } from "@/components/stockwell/ui";
 import { csv } from "@/lib/stockwell/downloads";
 import { type Store } from "@/lib/stockwell/model";
 import { FileText } from "lucide-react";
 import type { Dispatch, SetStateAction } from "react";
+import { useEffect, useState } from "react";
+import type { ReportData } from "@/lib/stockwell/reports";
+import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 
 function printReport(report: string, columns: string[], rows: unknown[][], from: string, to: string) {
   const popup = window.open("", "_blank", "width=1100,height=800");
@@ -33,12 +36,11 @@ type Props = {
   from: string;
   to: string;
   s: Store;
-  reportResult: {
-    columns: string[];
-    rows: unknown[][];
-    customerIds?: string[];
-    contactSummary?: { business: number; payments: number; outstanding: number };
-  };
+  query: string;
+  status: string;
+  paymentMethod: string;
+  samplePreview?: boolean;
+  sampleReportResult?: ReportData;
 };
 export function ReportsView({
   actor, manufacturer, commit, reopenWithOwnerPassword,
@@ -51,8 +53,49 @@ export function ReportsView({
   from,
   to,
   s,
-  reportResult,
+  query,
+  status,
+  paymentMethod,
+  samplePreview = false,
+  sampleReportResult,
 }: Props) {
+  const [page, setPage] = useState(1);
+  const [reportResult, setReportResult] = useState<ReportData & { count: number; page: number; pageSize: number }>(() => sampleReportResult ? { ...sampleReportResult, count: sampleReportResult.rows.length, page: 1, pageSize: 25 } : { columns: [], rows: [], count: 0, page: 1, pageSize: 25 });
+  const [reportError, setReportError] = useState("");
+  const [exporting, setExporting] = useState(false);
+  const [reportContactQuery, setReportContactQuery] = useState("");
+  const [reportProductQuery, setReportProductQuery] = useState("");
+  const reportContacts = useServerCollection<any>({ collection: report === "Supplier ledger" ? "suppliers" : "customers", module: report === "Supplier ledger" ? "Suppliers" : "Customers", query: reportContactQuery, pageSize: 10, enabled: ["Customer business report", "Customer ledger", "Supplier ledger"].includes(report) });
+  const reportProducts = useServerCollection<any>({ collection: "products", query: reportProductQuery, pageSize: 10, enabled: report === "Stock movement report" || report === "Production ledger" });
+  const makeParams = (all = false) => new URLSearchParams({ report: "1", q: query, from, to, status, paymentMethod, name: report, contact: reportContact, product: reportProduct, manufacturer: manufacturer ? "1" : "0", page: String(page), pageSize: "25", ...(all ? { all: "1" } : {}) });
+  useEffect(() => { setPage(1); }, [query, from, to, status, paymentMethod, report, reportContact, reportProduct]);
+  useEffect(() => {
+    if (samplePreview) return;
+    const controller = new AbortController();
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch(`/api/workspace?${makeParams()}`, { cache: "no-store", signal: controller.signal });
+        const value = await response.json();
+        if (!response.ok) throw new Error(value.error || "Could not load report.");
+        setReportResult(value); setReportError("");
+      } catch (error) { if (!controller.signal.aborted) setReportError(error instanceof Error ? error.message : "Could not load report."); }
+    }, 100);
+    return () => { window.clearTimeout(timer); controller.abort(); };
+  }, [query, from, to, status, paymentMethod, report, reportContact, reportProduct, page, manufacturer, samplePreview]);
+  async function exportAll(kind: "csv" | "print") {
+    setExporting(true); setReportError("");
+    try {
+      let full: ReportData = reportResult;
+      if (!samplePreview) {
+        const response = await fetch(`/api/workspace?${makeParams(true)}`, { cache: "no-store" });
+        full = await response.json();
+        if (!response.ok) throw new Error((full as any).error || "Could not load report.");
+      }
+      if (kind === "csv") csv(report.toLowerCase().replaceAll(" ", "-"), full.columns, full.rows);
+      else printReport(report, full.columns, full.rows, from, to);
+    } catch (error) { setReportError(error instanceof Error ? error.message : "Could not export report."); }
+    finally { setExporting(false); }
+  }
   return (
     <>
       <div className="report-toolbar">
@@ -100,19 +143,19 @@ export function ReportsView({
               ))}
             </GlassSelect>
           </Field>
-          {(report === "Stock movement report" || report === "Production ledger") && <Field label={report === "Production ledger" ? "Production product" : "Product stock history"}><GlassSelect aria-label={report === "Production ledger" ? "Production product" : "Product stock history"} value={reportProduct} onValueChange={setReportProduct}><option value="">All products</option>{s.products.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</GlassSelect></Field>}
+          {(report === "Stock movement report" || report === "Production ledger") && <Field label={report === "Production ledger" ? "Production product" : "Product stock history"}><div className="server-select-field"><GlassSelect aria-label={report === "Production ledger" ? "Production product" : "Product stock history"} value={reportProduct} onValueChange={setReportProduct}><option value="">All products</option>{reportProducts.records.map(product => <option key={product.id} value={product.id}>{product.name} · {product.sku}</option>)}</GlassSelect><input type="search" aria-label="Search report products" placeholder="Search products…" value={reportProductQuery} onChange={event => setReportProductQuery(event.target.value)} /><ServerPagination page={reportProducts.page} pageCount={reportProducts.pageCount} count={reportProducts.count} pageSize={reportProducts.pageSize} setPage={reportProducts.setPage} /></div></Field>}
           {["Customer business report", "Customer ledger", "Supplier ledger"].includes(report) && (
             <Field
               label={report === "Customer ledger" ? "Customer" : "Supplier"}
             >
-              <GlassSelect
+              <div className="server-select-field"><GlassSelect
                 value={reportContact}
                 onValueChange={(e) => setReportContact(e)}
                 searchable
                 searchPlaceholder="Search contacts"
               >
                 <option value="">All contacts</option>
-                {(report === "Customer ledger" ? s.customers : s.suppliers).map(
+                {reportContacts.records.map(
                   (c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}
@@ -120,28 +163,27 @@ export function ReportsView({
                   ),
                 )}
               </GlassSelect>
+              <input type="search" aria-label="Search report contacts" placeholder="Search contacts…" value={reportContactQuery} onChange={event => setReportContactQuery(event.target.value)} />
+              <ServerPagination page={reportContacts.page} pageCount={reportContacts.pageCount} count={reportContacts.count} pageSize={reportContacts.pageSize} setPage={reportContacts.setPage} />
+              </div>
             </Field>
           )}
         </div>
         <div className="report-actions">
           <button
             className="secondary-button"
-            onClick={() =>
-              csv(
-                report.toLowerCase().replaceAll(" ", "-"),
-                reportResult.columns,
-                reportResult.rows,
-              )
-            }
+            disabled={exporting}
+            onClick={() => void exportAll("csv")}
           >
             <FileText size={16} /> Download CSV
           </button>
-          <button className="secondary-button" onClick={() => printReport(report, reportResult.columns, reportResult.rows, from, to)}>
+          <button className="secondary-button" disabled={exporting} onClick={() => void exportAll("print")}>
             Print report
           </button>
         </div>
       </div>
       <section className="card">
+        {reportError && <p className="form-error" role="alert">{reportError}</p>}
         <div className="section-head">
           <div>
             <h2>{report}</h2>
@@ -160,7 +202,7 @@ export function ReportsView({
               Amounts in PKR.
             </p>
           </div>
-          <Badge>{reportResult.rows.length} rows</Badge>
+          <Badge>{reportResult.count} rows</Badge>
         </div>
         <Table
           headers={reportResult.columns}
@@ -174,6 +216,7 @@ export function ReportsView({
             ),
           )}
         />
+        {!samplePreview && <ServerPagination page={reportResult.page} pageCount={Math.max(1, Math.ceil(reportResult.count / reportResult.pageSize))} count={reportResult.count} pageSize={reportResult.pageSize} setPage={setPage} />}
       </section>
       <DailyClosingView s={s} actor={actor} commit={commit} reopenWithOwnerPassword={reopenWithOwnerPassword} />
     </>

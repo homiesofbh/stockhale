@@ -1,16 +1,18 @@
 import { backupChecksum, validateRecoveryBackup, type RecoveryBackup } from "./recovery";
 import { validateStore } from "./operation-validation";
 import { validateBanks } from "./bank-vouchers";
-import { validateAccounts } from "./accounts";
+import { accountPath, chartAccounts, validateAccounts } from "./accounts";
 import { validateJournals } from "./journals";
 import { createHash, randomBytes, randomUUID, scryptSync, timingSafeEqual } from "node:crypto";
 import { verifyPassword } from "better-auth/crypto";
 import { isIP } from "node:net";
 import { getAuth, passwordResetDeliveryConfigured } from "./auth";
 import { query, transaction } from "./database";
-import { emptyStore, normalizeStore, type Store } from "./model";
+import { balance, contactBalance, emptyStore, financialRows, normalizeStore, profit, round, total, type Store } from "./model";
 import { modules, verifyChange, prepareSyncChange, applyStoreDelta, createStoreDelta, type Member, type StoreDelta } from "./workspace";
 import { reopenDay } from "./operations";
+import { filterTrades, matchesQuery } from "./record-selectors";
+import { createReportData } from "./reports";
 export { db } from "./database";
 type Row = Record<string, any>;
 const row = async (sql: string, ...args: unknown[]) =>
@@ -231,6 +233,380 @@ export async function workspaceDetails(user: Row) {
     };
   });
 }
+const COLLECTIONS = new Set([
+  "products", "customers", "suppliers", "purchases", "invoices", "movements",
+  "payments", "expenses", "returns", "partners", "bankVouchers", "journals", "chequeEvents",
+  "productionRuns", "recipes", "dailyCloses", "accounts", "financialAccounts", "accountDirectory", "paymentHistory", "chequeRegister", "partnerLedger", "activityLog", "financialTransactions", "walkInReview", "dashboardSummary",
+]);
+const COLLECTION_SEARCH: Record<string, string[]> = {
+  products: ["name", "sku", "barcode", "category", "color", "gsm", "packing", "store", "size"],
+  customers: ["name", "company", "phone", "mobile", "email", "address", "ntn", "contactPerson", "salesTaxNumber", "description"],
+  suppliers: ["name", "company", "phone", "mobile", "email", "address", "ntn", "contactPerson", "salesTaxNumber", "description"],
+  purchases: ["number", "reference", "date", "method", "status", "walkInName", "walkInCompany", "walkInPhone"],
+  invoices: ["number", "reference", "date", "method", "status", "walkInName", "walkInCompany", "walkInPhone"],
+  movements: ["id", "date", "type", "reference", "reason"],
+  walkInReview: ["number", "date", "walkInName", "walkInCompany", "walkInPhone"],
+  payments: ["id", "date", "kind", "method", "notes", "chequeNumber", "chequeBank"],
+  expenses: ["id", "date", "category", "head", "method", "notes"],
+  returns: ["id", "date", "kind", "reason", "notes"],
+  partners: ["id", "date", "partner", "kind", "method", "notes"],
+  bankVouchers: ["id", "date", "number", "reference", "notes", "kind", "status"],
+  journals: ["id", "date", "number", "reference", "description"],
+  productionRuns: ["id", "date", "reference", "recipeName"],
+  recipes: ["id", "name", "outputProductId"],
+  dailyCloses: ["id", "date", "actorName", "status"],
+  accounts: ["id", "name", "code", "type", "description"],
+  financialAccounts: ["id", "name", "type", "accountNumber", "description"],
+};
+export async function workspaceCollection(user: Row, options: { collection: string; module?: string; actor?: string; moduleFilter?: string; query?: string; secondaryQuery?: string; productId?: string; productIds?: string[]; productRole?: string; contactId?: string; postedOnly?: boolean; noContactOnly?: boolean; unpaidOnly?: boolean; tradeId?: string; week?: string; accountId?: string; bankOnly?: boolean; from?: string; to?: string; secondaryFrom?: string; secondaryTo?: string; category?: string; status?: string; paymentMethod?: string; page?: number; pageSize?: number }) {
+  if (!COLLECTIONS.has(options.collection)) throw Object.assign(new Error("Invalid collection."), { status: 400 });
+  return transaction(async () => {
+    await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const w = await workspace(user);
+    requireWorkspaceAccess(w);
+    const memberRecord = await member(w, user);
+    const moduleForCollection: Record<string, string> = { products: "Inventory", customers: "Customers", suppliers: "Suppliers", purchases: "Purchases", invoices: "Sales", movements: "Inventory", walkInReview: "Billing", dashboardSummary: "Billing", payments: "Payments", chequeEvents: "Payments", chequeRegister: "Payments", paymentHistory: "Payments", expenses: "Expenses", returns: "Returns & Damage", partners: "Payments", partnerLedger: "Payments", bankVouchers: "Accounts Heads", journals: "Accounts Heads", productionRuns: "Production", recipes: "Production", dailyCloses: "Closing", accounts: "Accounts Heads", financialAccounts: "Accounts Heads", accountDirectory: "Accounts Heads", activityLog: "Notifications", financialTransactions: "Accounts Heads" };
+    const allowedModules = options.collection === "dashboardSummary" ? [options.module === "Purchases" ? "Purchases" : "Billing"] : options.collection === "invoices" ? [options.module === "Billing" ? "Billing" : options.module === "Inventory" ? "Inventory" : "Sales"] : [options.collection === "purchases" && options.module === "Inventory" || options.collection === "productionRuns" && options.module === "Inventory" ? "Inventory" : moduleForCollection[options.collection]];
+    if (memberRecord.role !== "owner" && !allowedModules.some(name => memberRecord.modules.includes(name)))
+      throw Object.assign(new Error("You do not have permission to view this collection."), { status: 403 });
+    const conditions = ["workspace=$1", "collection=$2"];
+    const args: unknown[] = [w.id, options.collection];
+    const fields = COLLECTION_SEARCH[options.collection] || [];
+    const term = (options.query || "").trim().slice(0, 160);
+    if (term && fields.length) {
+      args.push(term);
+      conditions.push(`(${fields.map(field => `COALESCE(record->>'${field}', '') ILIKE '%' || $${args.length} || '%'`).join(" OR ")})`);
+    }
+    for (const [field, value, op] of [["date", options.from, ">="], ["date", options.to, "<="]] as const) {
+      if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) { args.push(value); conditions.push(`record->>'${field}' ${op} $${args.length}`); }
+    }
+    if (options.category && options.category !== "All" && ["products", "expenses", "partners"].includes(options.collection)) {
+      args.push(options.category); conditions.push(`record->>'category'=$${args.length}`);
+    }
+    if (options.status && options.status !== "All" && ["invoices", "purchases", "payments", "bankVouchers", "dailyCloses"].includes(options.collection)) {
+      const statusField = options.collection === "payments" ? "chequeStatus" : "status";
+      args.push(options.collection === "dailyCloses" ? options.status.toLowerCase() : options.status); conditions.push(`record->>'${statusField}'=$${args.length}`);
+    }
+    if (options.productId && options.collection === "movements") { args.push(options.productId); conditions.push(`record->>'productId'=$${args.length}`); }
+    if (options.contactId && ["invoices", "purchases", "payments"].includes(options.collection)) { args.push(options.contactId); conditions.push(`record->>'contactId'=$${args.length}`); }
+    if (options.productIds?.length && options.collection === "products") { args.push(options.productIds); conditions.push(`record->>'id'=ANY($${args.length}::text[])`); }
+    if (options.postedOnly && ["invoices", "purchases"].includes(options.collection)) conditions.push("record->>'status' NOT IN ('draft','void')");
+    if (options.noContactOnly && ["invoices", "purchases"].includes(options.collection)) conditions.push("COALESCE(record->>'contactId','')=''");
+    if (options.paymentMethod && options.paymentMethod !== "All" && ["invoices", "purchases", "payments", "expenses"].includes(options.collection)) {
+      args.push(options.paymentMethod); conditions.push(`record->>'method'=$${args.length}`);
+    }
+    if (options.collection === "payments" && options.module === "Payments" && options.status === "pending") conditions.push("COALESCE(record->>'chequeStatus','pending')='pending'");
+    const where = conditions.join(" AND ");
+    let count = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${where}`, ...args))?.count || 0);
+    let aggregates: Record<string, number> | undefined;
+    if (options.collection === "products") {
+      const productStatus = options.status || "All";
+      const filteredStatus = productStatus !== "All";
+      const statusCondition = filteredStatus
+        ? productStatus === "Out of stock" ? "COALESCE(stock.qty,0)=0"
+          : productStatus.toLowerCase() === "low stock" ? "COALESCE(stock.qty,0)>0 AND COALESCE(stock.qty,0)<=COALESCE((p.record->>'low')::numeric,0)"
+          : "COALESCE(stock.qty,0)>COALESCE((p.record->>'low')::numeric,0)"
+        : "TRUE";
+      const aggregate = await row(`SELECT COUNT(*)::int AS count, COALESCE(SUM(COALESCE((p.record->>'cost')::numeric,0)*COALESCE(stock.qty,0)),0) AS stock_value, COALESCE(SUM(COALESCE(stock.qty,0)),0) AS stock_units, COUNT(*) FILTER (WHERE COALESCE(stock.qty,0)>0 AND COALESCE(stock.qty,0)<=COALESCE((p.record->>'low')::numeric,0))::int AS low_stock FROM workspace_records p LEFT JOIN LATERAL (SELECT SUM((m.record->>'qty')::numeric) AS qty FROM workspace_records m WHERE m.workspace=p.workspace AND m.collection='movements' AND m.record->>'productId'=p.record->>'id') stock ON TRUE WHERE p.workspace=$1 AND p.collection='products' AND ($2='' OR ${fields.map(field => `COALESCE(p.record->>'${field}','') ILIKE '%' || $2 || '%'`).join(" OR ")}) AND ($3='All' OR p.record->>'category'=$3) AND (${statusCondition})`, w.id, term, options.category || "All");
+      aggregates = { stockValue: Number(aggregate?.stock_value || 0), stockUnits: Number(aggregate?.stock_units || 0), lowStock: Number(aggregate?.low_stock || 0) };
+      count = Number(aggregate?.count || 0);
+    }
+    if (options.collection === "expenses") {
+      const aggregate = await row(`SELECT COALESCE(SUM((record->>'amount')::numeric),0) AS total FROM workspace_records WHERE ${where}`, ...args);
+      aggregates = { total: Number(aggregate?.total || 0) };
+    }
+    const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 25)));
+    const page = Math.max(1, Math.floor(options.page || 1));
+    const offset = (page - 1) * pageSize;
+    if (options.collection === "dashboardSummary") {
+      const store = await loadWorkspaceStore(w);
+      const invoices = store.invoices.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
+      const purchases = store.purchases.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
+      const trades = options.module === "Purchases" ? purchases : invoices;
+      const balanceAmount = options.module === "Purchases"
+        ? store.suppliers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Supplier", contact.id), 0), 0) + purchases.filter(trade => !trade.contactId || !store.suppliers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0)
+        : store.customers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Customer", contact.id), 0), 0) + invoices.filter(trade => !trade.contactId || !store.customers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0);
+      return { records: trades.slice(offset, offset + pageSize), count: trades.length, page, pageSize, aggregates: { balance: balanceAmount, profit: profit(store, options.from || "", options.to || ""), invoiceCount: invoices.length } };
+    }
+    if (options.collection === "financialTransactions") {
+      const store = await loadWorkspaceStore(w);
+      const transactions = financialRows(store).filter(item => (!options.from || item.date >= options.from) && (!options.to || item.date <= options.to) && (!options.secondaryFrom || item.date >= options.secondaryFrom) && (!options.secondaryTo || item.date <= options.secondaryTo) && (!options.accountId || item.financialAccountId === options.accountId) && (!options.bankOnly || (!!item.financialAccountId && item.bank !== 0)) && matchesQuery(options.query || "", item.head, item.reference, item.type, item.contactId, item.method, item.bank)).sort((a, b) => b.date.localeCompare(a.date));
+      const weekStart = (date: string) => { const day = new Date(`${date}T00:00:00Z`); day.setUTCDate(day.getUTCDate() - (day.getUTCDay() + 6) % 7); return day.toISOString().slice(0, 10); };
+      const weeks = [...new Set(transactions.map(item => weekStart(item.date)))].sort().reverse();
+      const activeWeek = options.week && weeks.includes(options.week) ? options.week : weeks[0] || "";
+      const weekly = transactions.filter(item => weekStart(item.date) === activeWeek);
+      const accounts = chartAccounts(store);
+      const accountSummaries = accounts.map(account => {
+        const rows = transactions.filter(item => item.head === account.name);
+        return { id: account.id, transactionCount: rows.length, transactionTotal: round(rows.reduce((sum, item) => sum + item.amount, 0)) };
+      });
+      const unassigned = transactions.filter(item => !item.financialAccountId && item.bank !== 0);
+      return { records: weekly.slice(offset, offset + pageSize), count: weekly.length, page, pageSize, aggregates: { unassignedCount: unassigned.length, unassignedBank: round(unassigned.reduce((sum, item) => sum + item.bank, 0)) }, meta: { weeks, activeWeek, accountSummaries } };
+    }
+    if (options.collection === "productionRuns") {
+      const conditions = ["workspace=$1", "collection='productionRuns'"];
+      const runArgs: unknown[] = [w.id];
+      for (const [value, op] of [[options.from, ">="], [options.to, "<="]] as const) {
+        if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) { runArgs.push(value); conditions.push(`record->>'date' ${op} $${runArgs.length}`); }
+      }
+      if (options.productId) {
+        if (options.productRole === "output") conditions.push(`record->>'outputProductId'=$${(runArgs.push(options.productId), runArgs.length)}`);
+        else if (options.productRole === "use") {
+          runArgs.push(options.productId);
+          conditions.push(`EXISTS (SELECT 1 FROM json_array_elements(record->'ingredients') ingredient WHERE ingredient->>'productId'=$${runArgs.length})`);
+        } else {
+          runArgs.push(options.productId);
+          conditions.push(`(record->>'outputProductId'=$${runArgs.length} OR EXISTS (SELECT 1 FROM json_array_elements(record->'ingredients') ingredient WHERE ingredient->>'productId'=$${runArgs.length}))`);
+        }
+      }
+      if (term) { runArgs.push(term); conditions.push(`(record->>'id' ILIKE '%' || $${runArgs.length} || '%' OR record->>'reference' ILIKE '%' || $${runArgs.length} || '%' OR record->>'recipeName' ILIKE '%' || $${runArgs.length} || '%')`); }
+      const runWhere = conditions.join(" AND ");
+      const runCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${runWhere}`, ...runArgs))?.count || 0);
+      const totals = await row(`SELECT COALESCE(SUM((record->>'materialCost')::numeric),0) AS material_cost FROM workspace_records WHERE ${runWhere}`, ...runArgs);
+      const records = await all(`SELECT record FROM workspace_records WHERE ${runWhere} ORDER BY record->>'date' DESC,record_id DESC LIMIT $${runArgs.length + 1} OFFSET $${runArgs.length + 2}`, ...runArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: runCount, page, pageSize, aggregates: { materialCost: Number(totals?.material_cost || 0) } };
+    }
+    if (options.collection === "walkInReview") {
+      if (memberRecord.role !== "owner") throw Object.assign(new Error("Only the workspace owner can review historical walk-ins."), { status: 403 });
+      const conditions = ["workspace=$1", "collection='invoices'", "COALESCE(record->>'contactId','')=''", "record->>'status' NOT IN ('draft','void')"];
+      const walkArgs: unknown[] = [w.id];
+      if (term) { walkArgs.push(term); conditions.push(`concat_ws(' ',record->>'id',record->>'number',record->>'date',record->>'walkInName',record->>'walkInCompany',record->>'walkInPhone') ILIKE '%' || $${walkArgs.length} || '%'`); }
+      const walkWhere = conditions.join(" AND ");
+      const walkCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${walkWhere}`, ...walkArgs))?.count || 0);
+      const records = await all(`SELECT record FROM workspace_records WHERE ${walkWhere} ORDER BY record->>'date' DESC,record->>'number' DESC LIMIT $${walkArgs.length + 1} OFFSET $${walkArgs.length + 2}`, ...walkArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: walkCount, page, pageSize };
+    }
+    if (options.collection === "chequeEvents") {
+      const eventArgs: unknown[] = [w.id];
+      let eventWhere = "workspace=$1 AND collection='chequeEvents'";
+      if (options.contactId) { eventArgs.push(options.contactId); eventWhere += ` AND record->>'paymentId'=$${eventArgs.length}`; }
+      const eventCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${eventWhere}`, ...eventArgs))?.count || 0);
+      const records = await all(`SELECT record FROM workspace_records WHERE ${eventWhere} ORDER BY record->>'date' DESC,record_id DESC LIMIT $${eventArgs.length + 1} OFFSET $${eventArgs.length + 2}`, ...eventArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: eventCount, page, pageSize };
+    }
+    if (options.collection === "activityLog") {
+      if (memberRecord.role !== "owner") throw Object.assign(new Error("Only the workspace owner can view activity logs."), { status: 403 });
+      const conditions = ["workspace=$1"];
+      const args: unknown[] = [w.id];
+      for (const [value, op] of [[options.from, ">="], [options.to, "<="]] as const) {
+        if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) { args.push(value); conditions.push(`LEFT("occurredAt"::text,10) ${op} $${args.length}`); }
+      }
+      if (options.actor) { args.push(options.actor); conditions.push(`actor=$${args.length}`); }
+      if (options.moduleFilter) { args.push(options.moduleFilter); conditions.push(`module=$${args.length}`); }
+      const term = (options.query || "").trim().slice(0, 160);
+      if (term) { args.push(term); conditions.push(`(actor ILIKE '%' || $${args.length} || '%' OR module ILIKE '%' || $${args.length} || '%' OR action ILIKE '%' || $${args.length} || '%' OR records ILIKE '%' || $${args.length} || '%')`); }
+      const where = conditions.join(" AND ");
+      const activityCount = Number((await row(`SELECT COUNT(*)::int AS count FROM events WHERE ${where}`, ...args))?.count || 0);
+      const records = await all(`SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE ${where} ORDER BY "receivedAt" DESC,id DESC LIMIT $${args.length + 1} OFFSET $${args.length + 2}`, ...args, pageSize, offset);
+      const [actors, modules] = await Promise.all([
+        all('SELECT DISTINCT actor FROM events WHERE workspace=$1 ORDER BY actor', w.id),
+        all('SELECT DISTINCT module FROM events WHERE workspace=$1 ORDER BY module', w.id),
+      ]);
+      return { records, count: activityCount, page, pageSize, meta: { actors: actors.map(item => item.actor), modules: modules.map(item => item.module) } };
+    }
+    if (options.collection === "accountDirectory") {
+      const store = await loadWorkspaceStore(w);
+      const accounts = chartAccounts(store).sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+      const term = (options.query || "").trim().toLowerCase();
+      const visible = new Set(accounts.filter(account => !term || [account.id, account.code, accountPath(accounts, account), account.type, account.description].join(" ").toLowerCase().includes(term)).map(account => account.id));
+      for (const account of accounts.filter(item => visible.has(item.id))) {
+        let parentId = account.parentId;
+        const seen = new Set([account.id]);
+        while (parentId && !seen.has(parentId)) {
+          seen.add(parentId); visible.add(parentId);
+          parentId = accounts.find(item => item.id === parentId)?.parentId || "";
+        }
+      }
+      const roots = accounts.filter(account => !account.parentId || !accounts.some(parent => parent.id === account.parentId)).filter(account => visible.has(account.id));
+      return { records: roots.slice(offset, offset + pageSize), count: roots.length, page, pageSize, meta: { visibleIds: [...visible], visibleCount: visible.size, accountCount: accounts.length } };
+    }
+    if (options.collection === "accounts") {
+      const store = await loadWorkspaceStore(w);
+      const accounts = chartAccounts(store);
+      const transactions = financialRows(store).filter(item => (!options.from || item.date >= options.from) && (!options.to || item.date <= options.to));
+      const byHead = new Map<string, { transactionTotal: number; transactionCount: number }>();
+      for (const item of transactions) {
+        const entry = byHead.get(item.head) || { transactionTotal: 0, transactionCount: 0 };
+        entry.transactionTotal = round(entry.transactionTotal + item.amount);
+        entry.transactionCount++;
+        byHead.set(item.head, entry);
+      }
+      const term = (options.query || "").trim().toLowerCase();
+      const filtered = accounts.filter(account => !term || [account.id, account.code, account.name, account.type, account.description].join(" ").toLowerCase().includes(term))
+        .map(account => ({ ...account, ...(byHead.get(account.name) || { transactionTotal: 0, transactionCount: 0 }) }))
+        .sort((a, b) => a.code.localeCompare(b.code, undefined, { numeric: true }));
+      return { records: filtered.slice(offset, offset + pageSize), count: filtered.length, page, pageSize };
+    }
+    if (options.collection === "returns") {
+      const returnArgs: unknown[] = [w.id];
+      const conditions = ["r.workspace=$1", "r.collection='returns'"];
+      for (const [value, op] of [[options.from, ">="], [options.to, "<="]] as const) {
+        if (value && /^\d{4}-\d{2}-\d{2}$/.test(value)) { returnArgs.push(value); conditions.push(`r.record->>'date' ${op} $${returnArgs.length}`); }
+      }
+      if (options.tradeId) { returnArgs.push(options.tradeId); conditions.push(`r.record->>'tradeId'=$${returnArgs.length}`); }
+      const searchParts: string[] = [];
+      for (const termValue of [options.query, options.secondaryQuery].filter(Boolean)) {
+        returnArgs.push(`%${termValue!.trim()}%`);
+        searchParts.push(`(r.record->>'id' ILIKE $${returnArgs.length} OR r.record->>'kind' ILIKE $${returnArgs.length} OR r.record->>'reason' ILIKE $${returnArgs.length} OR r.record->>'date' ILIKE $${returnArgs.length} OR EXISTS (SELECT 1 FROM workspace_records p WHERE p.workspace=r.workspace AND p.collection='products' AND p.record->>'id'=r.record->>'productId' AND concat_ws(' ',p.record->>'name',p.record->>'unit',p.record->>'sku') ILIKE $${returnArgs.length}) OR EXISTS (SELECT 1 FROM workspace_records t WHERE t.workspace=r.workspace AND t.collection IN ('invoices','purchases') AND t.record->>'id'=r.record->>'tradeId' AND t.record->>'number' ILIKE $${returnArgs.length}))`);
+      }
+      conditions.push(...searchParts);
+      const returnWhere = conditions.join(" AND ");
+      const returnCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records r WHERE ${returnWhere}`, ...returnArgs))?.count || 0);
+      const returnedByProduct = options.tradeId
+        ? Object.fromEntries((await all(`SELECT record->>'productId' AS product_id,COALESCE(SUM((record->>'qty')::numeric),0) AS qty FROM workspace_records WHERE workspace=$1 AND collection='returns' AND record->>'tradeId'=$2 GROUP BY record->>'productId'`, w.id, options.tradeId)).map(item => [item.product_id, Number(item.qty || 0)]))
+        : {};
+      const records = await all(`SELECT r.record FROM workspace_records r WHERE ${returnWhere} ORDER BY r.ordinal DESC LIMIT $${returnArgs.length + 1} OFFSET $${returnArgs.length + 2}`, ...returnArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: returnCount, page, pageSize, meta: { returnedByProduct } };
+    }
+    if (options.collection === "chequeRegister") {
+      const conditions = ["workspace=$1", "collection='payments'", "record->>'method'='Cheque'"];
+      const chequeArgs: unknown[] = [w.id];
+      const status = options.status || "All";
+      if (status !== "All") {
+        if (status === "pending") conditions.push("COALESCE(record->>'chequeStatus','pending')='pending'");
+        else { chequeArgs.push(status); conditions.push(`record->>'chequeStatus'=$${chequeArgs.length}`); }
+      }
+      if (term) { chequeArgs.push(term); conditions.push(`(record->>'chequeNumber' ILIKE '%' || $${chequeArgs.length} || '%' OR record->>'chequeBank' ILIKE '%' || $${chequeArgs.length} || '%' OR record->>'id' ILIKE '%' || $${chequeArgs.length} || '%' OR EXISTS (SELECT 1 FROM workspace_records c WHERE c.workspace=workspace_records.workspace AND c.collection IN ('customers','suppliers') AND c.record->>'id'=workspace_records.record->>'contactId' AND (c.record->>'name' ILIKE '%' || $${chequeArgs.length} || '%' OR c.record->>'company' ILIKE '%' || $${chequeArgs.length} || '%')) OR EXISTS (SELECT 1 FROM workspace_records x WHERE x.workspace=workspace_records.workspace AND x.collection='crossCheques' AND x.record->>'sourcePaymentId'=workspace_records.record->>'id' AND (x.record->>'id' ILIKE '%' || $${chequeArgs.length} || '%' OR x.record->>'destinationName' ILIKE '%' || $${chequeArgs.length} || '%')))`); }
+      const chequeWhere = conditions.join(" AND ");
+      const chequeCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${chequeWhere}`, ...chequeArgs))?.count || 0);
+      const rows = await all(`SELECT record FROM workspace_records WHERE ${chequeWhere} ORDER BY COALESCE(record->>'chequeDate',record->>'date') ASC,record_id ASC LIMIT $${chequeArgs.length + 1} OFFSET $${chequeArgs.length + 2}`, ...chequeArgs, pageSize, offset);
+      return { records: rows.map(item => item.record), count: chequeCount, page, pageSize };
+    }
+    if (options.collection === "bankVouchers") {
+      const voucherArgs: unknown[] = [w.id];
+      const conditions = ["workspace=$1", "collection='bankVouchers'"];
+      if (options.from) { voucherArgs.push(options.from); conditions.push(`record->>'date'>=$${voucherArgs.length}`); }
+      if (options.to) { voucherArgs.push(options.to); conditions.push(`record->>'date'<=$${voucherArgs.length}`); }
+      if (term) { voucherArgs.push(`%${term}%`); conditions.push(`concat_ws(' ',record->>'id',record->>'number',record->>'reference',record->>'notes',record->>'kind',record->>'status') ILIKE $${voucherArgs.length}`); }
+      const voucherWhere = conditions.join(" AND ");
+      const voucherCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${voucherWhere}`, ...voucherArgs))?.count || 0);
+      const records = await all(`SELECT record FROM workspace_records WHERE ${voucherWhere} ORDER BY record->>'date' DESC,COALESCE((record->>'createdAt')::bigint,0) DESC LIMIT $${voucherArgs.length + 1} OFFSET $${voucherArgs.length + 2}`, ...voucherArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: voucherCount, page, pageSize };
+    }
+    if (options.collection === "partnerLedger") {
+      const store = await loadWorkspaceStore(w);
+      const entries = (store.partners || []).filter(entry => !options.category || options.category === "All" || entry.partner === options.category)
+        .slice().sort((a, b) => a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+      const balances = new Map<string, number>();
+      let contributions = 0, withdrawals = 0;
+      const withBalances = entries.map(entry => {
+        const delta = entry.kind === "Contribution" ? entry.amount : -entry.amount;
+        const runningBalance = (balances.get(entry.partner) || 0) + delta;
+        balances.set(entry.partner, runningBalance);
+        if (entry.kind === "Contribution") contributions += entry.amount; else withdrawals += entry.amount;
+        return { ...entry, runningBalance };
+      }).reverse();
+      return { records: withBalances.slice(offset, offset + pageSize), count: withBalances.length, page, pageSize, aggregates: { contributions, withdrawals } };
+    }
+    if (options.collection === "journals") {
+      const journalArgs: unknown[] = [w.id];
+      const conditions = ["j.workspace=$1", "j.collection='journals'"];
+      if (options.from) { journalArgs.push(options.from); conditions.push(`j.record->>'date'>=$${journalArgs.length}`); }
+      if (options.to) { journalArgs.push(options.to); conditions.push(`j.record->>'date'<=$${journalArgs.length}`); }
+      if (term) { journalArgs.push(`%${term}%`); conditions.push(`(concat_ws(' ',j.record->>'id',j.record->>'number',j.record->>'reference',j.record->>'notes',j.record->>'status') ILIKE $${journalArgs.length} OR EXISTS (SELECT 1 FROM json_array_elements(j.record->'lines') line WHERE concat_ws(' ',line->>'description',line->>'accountId') ILIKE $${journalArgs.length}))`); }
+      const journalWhere = conditions.join(" AND ");
+      const journalCount = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records j WHERE ${journalWhere}`, ...journalArgs))?.count || 0);
+      const records = await all(`SELECT j.record FROM workspace_records j WHERE ${journalWhere} ORDER BY j.record->>'date' DESC,COALESCE((j.record->>'createdAt')::bigint,0) DESC LIMIT $${journalArgs.length + 1} OFFSET $${journalArgs.length + 2}`, ...journalArgs, pageSize, offset);
+      return { records: records.map(item => item.record), count: journalCount, page, pageSize };
+    }
+    if (options.collection === "paymentHistory") {
+      const unionArgs: unknown[] = [w.id];
+      const datePredicates = (alias: string) => {
+        const predicates: string[] = [];
+        if (options.from) { unionArgs.push(options.from); predicates.push(`${alias}.record->>'date'>=$${unionArgs.length}`); }
+        if (options.to) { unionArgs.push(options.to); predicates.push(`${alias}.record->>'date'<=$${unionArgs.length}`); }
+        return predicates.length ? ` AND ${predicates.join(" AND ")}` : "";
+      };
+      const invoiceDate = datePredicates("i"), purchaseDate = datePredicates("p"), paymentDate = datePredicates("pm"), partnerDate = datePredicates("pe");
+      const invoiceTerm = term ? (unionArgs.push(`%${term}%`), ` AND concat_ws(' ',i.record->>'id',i.record->>'number',i.record->>'method',i.record->>'head',c.record->>'name',c.record->>'company',i.record->>'walkInName',i.record->>'walkInCompany',i.record->>'walkInPhone') ILIKE $${unionArgs.length}`) : "";
+      const purchaseTerm = term ? (unionArgs.push(`%${term}%`), ` AND concat_ws(' ',p.record->>'id',p.record->>'number',p.record->>'method',p.record->>'head',c.record->>'name',c.record->>'company') ILIKE $${unionArgs.length}`) : "";
+      const paymentTerm = term ? (unionArgs.push(`%${term}%`), ` AND concat_ws(' ',pm.record->>'id',pm.record->>'method',pm.record->>'head',pm.record->>'notes',pm.record->>'chequeNumber',pm.record->>'chequeBank',c.record->>'name',c.record->>'company',t.record->>'number') ILIKE $${unionArgs.length}`) : "";
+      const partnerTerm = term ? (unionArgs.push(`%${term}%`), ` AND concat_ws(' ',pe.record->>'id',pe.record->>'partner',pe.record->>'notes',pe.record->>'method') ILIKE $${unionArgs.length}`) : "";
+      const historyUnion = `SELECT i.record->>'id' id,i.record->>'date' date,COALESCE(NULLIF(concat_ws(' · ',NULLIF(c.record->>'name',''),NULLIF(c.record->>'company','')),''),NULLIF(concat_ws(' · ',NULLIF(i.record->>'walkInName',''),NULLIF(i.record->>'walkInCompany',''),NULLIF(i.record->>'walkInPhone','')),''),'Walk-in customer') contact,i.record->>'number' reference,'Customer' kind,(i.record->>'paid')::numeric amount,i.record->'balanceAfter' balanceAfter,i.record->>'method' method,'' cheque,NULL::text chequeStatus,i.record->>'head' head FROM workspace_records i LEFT JOIN workspace_records c ON c.workspace=i.workspace AND c.collection='customers' AND c.record->>'id'=i.record->>'contactId' WHERE i.workspace=$1 AND i.collection='invoices' AND i.record->>'status' NOT IN ('draft','void') AND COALESCE((i.record->>'paid')::numeric,0)>0${invoiceDate}${invoiceTerm}
+        UNION ALL SELECT p.record->>'id',p.record->>'date',COALESCE(c.record->>'name','Walk-in customer'),p.record->>'number','Supplier',(p.record->>'paid')::numeric,p.record->'balanceAfter',p.record->>'method','',NULL::text,p.record->>'head' FROM workspace_records p LEFT JOIN workspace_records c ON c.workspace=p.workspace AND c.collection='suppliers' AND c.record->>'id'=p.record->>'contactId' WHERE p.workspace=$1 AND p.collection='purchases' AND p.record->>'status' NOT IN ('draft','void') AND COALESCE((p.record->>'paid')::numeric,0)>0${purchaseDate}${purchaseTerm}
+        UNION ALL SELECT pm.record->>'id',pm.record->>'date',COALESCE(c.record->>'name','Walk-in customer'),CASE WHEN pm.record->>'accountLevel'='true' THEN 'Supplier account payment' WHEN pm.record->>'advance'='true' AND COALESCE(pm.record->>'tradeId','')='' THEN 'Unapplied advance' ELSE COALESCE(t.record->>'number','') END,pm.record->>'kind',(pm.record->>'amount')::numeric,pm.record->'balanceAfter',CASE WHEN pm.record->>'chequeStatus' IS NOT NULL THEN 'Cheque '||pm.record->>'chequeStatus' ELSE pm.record->>'method' END,CASE WHEN COALESCE(pm.record->>'chequeNumber','')<>'' THEN concat_ws(' · ',pm.record->>'chequeNumber',pm.record->>'chequeBank','due '||pm.record->>'chequeDate',CASE WHEN pm.record->>'clearedDate' IS NOT NULL THEN 'cleared '||pm.record->>'clearedDate' END) ELSE '' END,pm.record->>'chequeStatus',pm.record->>'head' FROM workspace_records pm LEFT JOIN workspace_records c ON c.workspace=pm.workspace AND c.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'suppliers' ELSE 'customers' END AND c.record->>'id'=pm.record->>'contactId' LEFT JOIN workspace_records t ON t.workspace=pm.workspace AND t.collection=CASE WHEN pm.record->>'kind'='Supplier' THEN 'purchases' ELSE 'invoices' END AND t.record->>'id'=pm.record->>'tradeId' WHERE pm.workspace=$1 AND pm.collection='payments'${paymentDate}${paymentTerm}
+        UNION ALL SELECT pe.record->>'id',pe.record->>'date',pe.record->>'partner',COALESCE(pe.record->>'notes',''),'Partner '||pe.record->>'kind',CASE WHEN pe.record->>'kind'='Contribution' THEN (pe.record->>'amount')::numeric ELSE -(pe.record->>'amount')::numeric END,pe.record->'balanceAfter',pe.record->>'method','',NULL::text,'Partner capital' FROM workspace_records pe WHERE pe.workspace=$1 AND pe.collection='partners'${partnerDate}${partnerTerm}`;
+      const filteredUnion = term ? `SELECT * FROM (${historyUnion}) h WHERE concat_ws(' ',h.id,h.date,h.contact,h.reference,h.kind,h.method,h.cheque,h.head) ILIKE $${unionArgs.push(`%${term}%`)}` : historyUnion;
+      const countResult = await row(`SELECT COUNT(*)::int AS count FROM (${filteredUnion}) history`, ...unionArgs);
+      const records = await all(`SELECT * FROM (${filteredUnion}) history ORDER BY date DESC,id DESC LIMIT $${unionArgs.length + 1} OFFSET $${unionArgs.length + 2}`, ...unionArgs, pageSize, offset);
+      return { records: records.map(item => ({ ...item, amount: Number(item.amount || 0) })), count: Number(countResult?.count || 0), page, pageSize };
+    }
+    if (["invoices", "purchases"].includes(options.collection)) {
+      const store = await loadWorkspaceStore(w);
+      const trades = options.collection === "invoices" ? store.invoices : store.purchases;
+      let filtered = filterTrades(store, trades, { query: options.query || "", from: options.from || "", to: options.to || "", status: options.status || "All", paymentMethod: options.paymentMethod || "All" }, options.collection === "purchases");
+      if (options.contactId) filtered = filtered.filter(trade => trade.contactId === options.contactId);
+      if (options.postedOnly) filtered = filtered.filter(trade => trade.status !== "draft" && trade.status !== "void");
+      if (options.noContactOnly) filtered = filtered.filter(trade => !trade.contactId);
+      if (options.unpaidOnly) filtered = filtered.filter(trade => balance(store, trade) !== 0);
+      if (options.collection === "invoices" && options.module === "Payments" && options.paymentMethod === "Cheque") filtered = filtered.filter(trade => !trade.contactId);
+      if (options.module === "Sales" || options.module === "Inventory") filtered = filtered.filter(trade => trade.status !== "draft" && trade.status !== "void");
+      if (options.productId) filtered = filtered.filter(trade => trade.lines.some(line => line.productId === options.productId));
+      const sorted = filtered.slice().sort((a, b) => b.date.localeCompare(a.date) || b.number.localeCompare(a.number, undefined, { numeric: true }));
+      const records = sorted.slice(offset, offset + pageSize).map(trade => options.productId ? { ...trade, lines: trade.lines.filter(line => line.productId === options.productId) } : trade);
+      return { records, count: sorted.length, page, pageSize, aggregates: options.module === "Sales" ? { quantity: sorted.reduce((sum, trade) => sum + trade.lines.filter(line => !options.productId || line.productId === options.productId).reduce((n, line) => n + line.qty, 0), 0), revenue: profit(store, options.from || "", options.to || "").revenue } : options.module === "Billing" ? { total: sorted.reduce((sum, trade) => sum + total(trade), 0) } : undefined };
+    }
+    const orderBy = options.collection === "products" ? "ordinal ASC" : options.collection === "dailyCloses" ? "record->>'date' DESC, record->>'closedAt' DESC" : options.collection === "movements" ? "record->>'date' DESC, COALESCE((record->>'createdAt')::bigint,0) DESC,record_id DESC" : "ordinal DESC";
+    const records = await all(`SELECT record_id,ordinal,record FROM workspace_records WHERE ${where} ORDER BY ${orderBy} LIMIT $${args.length + 1} OFFSET $${args.length + 2}`, ...args, pageSize, offset);
+    const meta = options.collection === "customers" || options.collection === "suppliers" ? await contactBillCounts(w, options.collection, records.map(item => item.record.id)) : undefined;
+    if (options.collection === "products") {
+      const products = records.map(item => item.record);
+      const movementRows = await all("SELECT record FROM workspace_records WHERE workspace=$1 AND collection='movements' AND record->>'productId'=ANY($2::text[])", w.id, products.map(product => product.id));
+      const stockByProduct = new Map<string, number>();
+      for (const movement of movementRows) stockByProduct.set(movement.record.productId, round((stockByProduct.get(movement.record.productId) || 0) + Number(movement.record.qty || 0)));
+      const enriched = products.map(product => ({ ...product, currentStock: stockByProduct.get(product.id) || 0 }));
+      return { records: enriched, count, page, pageSize, aggregates, meta: { lowStockCount: aggregates?.lowStock || 0 } };
+    }
+    if (options.collection === "products") {
+      const products = records.map(item => item.record);
+      const movementRows = await all("SELECT record FROM workspace_records WHERE workspace=$1 AND collection='movements' AND record->>'productId'=ANY($2::text[])", w.id, products.map(product => product.id));
+      const stockByProduct = new Map<string, number>();
+      for (const movement of movementRows) stockByProduct.set(movement.record.productId, round((stockByProduct.get(movement.record.productId) || 0) + Number(movement.record.qty || 0)));
+      return { records: products.map(product => ({ ...product, currentStock: stockByProduct.get(product.id) || 0 })), count, page, pageSize, aggregates };
+    }
+    return { records: records.map(item => item.record), count, page, pageSize, aggregates, ...(meta ? { meta } : {}) };
+  });
+}
+async function contactBillCounts(w: Row, collection: "customers" | "suppliers", ids: string[]) {
+  if (!ids.length) return { billCounts: {} as Record<string, number>, billBalances: {} as Record<string, number> };
+  const tradeCollection = collection === "customers" ? "invoices" : "purchases";
+  const store = await loadWorkspaceStore(w);
+  const tradeRows = await all(`SELECT record FROM workspace_records WHERE workspace=$1 AND collection=$2 AND record->>'contactId'=ANY($3::text[]) AND record->>'status' NOT IN ('draft','void')`, w.id, tradeCollection, ids);
+  const rows = new Map<string, { count: number }>();
+  for (const entry of tradeRows) {
+    const trade = entry.record;
+    const prior = rows.get(trade.contactId) || { count: 0 };
+    prior.count++;
+    rows.set(trade.contactId, prior);
+  }
+  return {
+    billCounts: Object.fromEntries([...rows].map(([id, item]) => [id, item.count])) as Record<string, number>,
+    billBalances: Object.fromEntries(ids.map(id => [id, contactBalance(store, collection === "customers" ? "Customer" : "Supplier", id)])) as Record<string, number>,
+  };
+}
+export async function workspaceReport(user: Row, options: { query?: string; from?: string; to?: string; status?: string; paymentMethod?: string; report: string; reportContact?: string; reportProduct?: string; manufacturer?: boolean; page?: number; pageSize?: number; all?: boolean }) {
+  return transaction(async () => {
+    await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const w = await workspace(user);
+    requireWorkspaceAccess(w);
+    const memberRecord = await member(w, user);
+    if (memberRecord.role !== "owner" && !memberRecord.modules.includes("Reports"))
+      throw Object.assign(new Error("You do not have permission to view Reports."), { status: 403 });
+    const store = await loadWorkspaceStore(w);
+    const data = createReportData(store, {
+      query: options.query || "", from: options.from || "", to: options.to || "",
+      status: options.status || "All", paymentMethod: options.paymentMethod || "All",
+      report: options.report, reportContact: options.reportContact || "",
+      reportProduct: options.reportProduct || "", manufacturer: !!options.manufacturer && w.business_type === "manufacturer",
+    });
+    const count = data.rows.length;
+    const pageSize = Math.max(1, Math.min(100, Math.floor(options.pageSize || 25)));
+    const page = Math.max(1, Math.floor(options.page || 1));
+    if (options.all) return { ...data, count, page: 1, pageSize: count || 1 };
+    const offset = (page - 1) * pageSize;
+    return { ...data, rows: data.rows.slice(offset, offset + pageSize), customerIds: data.customerIds?.slice(offset, offset + pageSize), count, page, pageSize };
+  });
+}
 function trialAccess(w: Row) {
   const startedAt = w.trial_started_at ? new Date(w.trial_started_at).toISOString() : null;
   const endsAt = startedAt ? new Date(Date.parse(startedAt) + 72 * 60 * 60 * 1000).toISOString() : null;
@@ -268,10 +644,28 @@ function requireAdmin(user: Row) {
     throw Object.assign(new Error("Admin access is restricted."), { status: 403 });
 }
 
-export async function adminOverview(user: Row) {
+export async function adminOverview(user: Row, options: { query?: string; subscription?: string; sort?: string; direction?: string; page?: number; pageSize?: number } = {}) {
   requireAdmin(user);
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
+    const term = (options.query || "").trim().slice(0, 160);
+    const subscription = options.subscription || "All";
+    const sortColumns: Record<string, string> = {
+      alphabetical: "w.name",
+      accountCreated: 'u."createdAt"',
+      planActivated: "w.plan_activated_at",
+      planExpires: "w.plan_expires_at",
+      subscription: "w.subscription",
+    };
+    const sortColumn = sortColumns[options.sort || "alphabetical"] || "w.name";
+    const direction = options.direction === "desc" ? "DESC" : "ASC";
+    const pageSize = Math.max(1, Math.min(50, Math.floor(options.pageSize || 10)));
+    const page = Math.max(1, Math.floor(options.page || 1));
+    const predicates = ["($1 = '' OR w.name ILIKE '%' || $1 || '%' OR u.name ILIKE '%' || $1 || '%' OR u.email ILIKE '%' || $1 || '%' OR w.id ILIKE '%' || $1 || '%')", "($2 = 'All' OR w.subscription = $2)"];
+    const params = [term, subscription];
+    const where = predicates.join(" AND ");
+    const count = Number((await row(`SELECT COUNT(*)::int AS count FROM workspaces w JOIN users u ON u.id=w.owner WHERE ${where}`, ...params))?.count || 0);
+    const offset = (page - 1) * pageSize;
     const workspaces = await all(
       `SELECT w.id, w.name, w.subscription, w.revision, w.trial_started_at, w.plan_active, w.plan_activated_at, w.plan_expires_at, w.country_code, w.access_revoked_at, u.id AS owner_id, u.name AS owner_name, u.email AS owner_email, u."createdAt" AS owner_created_at,
         (SELECT COUNT(*)::int FROM workspace_records r WHERE r.workspace=w.id AND r.collection='products') AS product_count,
@@ -283,15 +677,19 @@ export async function adminOverview(user: Row) {
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id) AS activity_count,
         (SELECT MAX(e."receivedAt") FROM events e WHERE e.workspace=w.id AND COALESCE(e.action,'') <> 'Plan renewal reminder') AS last_activity_at,
         (SELECT COUNT(*)::int FROM events e WHERE e.workspace=w.id AND e.action ILIKE '%sale%') AS sales_count
-       FROM workspaces w JOIN users u ON u.id=w.owner ORDER BY w.name, w.id`,
+       FROM workspaces w JOIN users u ON u.id=w.owner WHERE ${where} ORDER BY ${sortColumn} ${direction} NULLS LAST, w.id ${direction} LIMIT $3 OFFSET $4`,
+      ...params, pageSize, offset,
     );
     return {
       plans: ADMIN_PLANS,
       totals: {
         users: (await row("SELECT COUNT(*)::int AS count FROM users"))?.count || 0,
-        workspaces: workspaces.length,
-        workforceEmails: workspaces.reduce((sum, item) => sum + Number(item.workforce_email_count), 0),
+        workspaces: Number((await row("SELECT COUNT(*)::int AS count FROM workspaces"))?.count || 0),
+        workforceEmails: Number((await row("SELECT COUNT(*)::int AS count FROM users workforce JOIN members wm ON wm.\"user\"=workforce.id JOIN workspaces w ON w.id=wm.workspace WHERE wm.\"user\"<>w.owner AND workforce.email <> ''"))?.count || 0),
       },
+      filteredCount: count,
+      page,
+      pageSize,
       workspaces: workspaces.map((item) => {
         return {
           id: item.id,
