@@ -19,7 +19,7 @@ type Props = {
   setSelectedTrade: Dispatch<SetStateAction<string>>;
 };
 
-type RefundMode = "Refund payment" | "Adjust in ledger";
+type RefundMode = "Refund payment" | "Adjust in ledger" | "Keep as advance";
 type ReturnLineDraft = { id: string; productId: string; qty: string };
 
 export function ReturnForm({
@@ -115,7 +115,7 @@ export function ReturnForm({
           const canRefund = credit > 0 && (
             hasParty ? refundMode === "Refund payment" : true
           );
-          const next = canRefund
+          let next = canRefund
             ? recordPayment(returned, {
               id: uid(),
               date: text(f, "date"),
@@ -128,11 +128,28 @@ export function ReturnForm({
               notes: `Automatic refund for return ${lines.map((line) => line.productId).join(", ")}`,
             })
             : returned;
+          const keepAsAdvance = credit > 0 && hasParty && refundMode === "Keep as advance";
+          if (keepAsAdvance) {
+            next = recordPayment(next, {
+              id: uid(), date: text(f, "date"), kind: kind === "Sales return" ? "Customer" : "Supplier",
+              contactId: original!.contactId, tradeId: original!.id, amount: -credit,
+              method: "Credit adjustment", head: kind === "Sales return" ? "Customer payments" : "Supplier payments",
+              notes: `Return credit transferred to advance for ${original!.number}`,
+            });
+            next = recordPayment(next, {
+              id: uid(), date: text(f, "date"), kind: kind === "Sales return" ? "Customer" : "Supplier",
+              contactId: original!.contactId, tradeId: "", advance: true, amount: credit,
+              method: "Credit adjustment", head: kind === "Sales return" ? "Customer payments" : "Supplier payments",
+              notes: `Return credit held as advance from ${original!.number}`,
+            });
+          }
           commit(
             next,
             canRefund
               ? "Return recorded and payment refunded."
-              : credit > 0 && hasParty
+              : credit > 0 && hasParty && keepAsAdvance
+                ? `Return recorded. ${money(credit)} credit transferred to the party's available advances.`
+                : credit > 0 && hasParty
                 ? `Return recorded. ${money(credit)} credit left on the party ledger.`
                 : "Return / damage recorded. Stock and balances updated.",
           );
@@ -265,6 +282,7 @@ export function ReturnForm({
               >
                 <option>Refund payment</option>
                 <option>Adjust in ledger</option>
+                <option>Keep as advance</option>
               </GlassSelect>
             </Field>
             {refundMode === "Refund payment" && (
@@ -294,9 +312,8 @@ export function ReturnForm({
       <p className="form-hint">
         Returns use the original transaction prices, proportional discounts, and
         taxes. Sales returns put stock back; purchase returns and damage remove
-        stock. If the return creates a credit on a linked paid transaction, you
-        can either refund it using the selected method or leave it as a credit
-        on the party ledger. Walk-in returns are always refunded.
+        stock. If a return creates a credit, refund it, leave it on this bill, or
+        transfer it to the party's available advances. Walk-in returns are refunded.
       </p>
       <div className="form-foot">
         <button className="primary">Record return / damage</button>

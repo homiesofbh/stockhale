@@ -1,8 +1,8 @@
 import { chartAccounts } from "./accounts";
-import { balance, emptyStore, isPosted, recordPayment, recordReturn, recordTrade, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
+import { balance, emptyStore, isPosted, isSettledPayment, recordPayment, recordReturn, recordTrade, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
 import { productionMovements, validateRecipe } from "./production";
-import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
+import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, deletePaidPurchase, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
 export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?: string; allowLateExpense?: boolean };
 const clean = (value: any): any => Array.isArray(value) ? value.map(clean) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, clean(value[k])])) : value;
 export const same = (a: unknown, b: unknown) => JSON.stringify(clean(a)) === JSON.stringify(clean(b));
@@ -10,7 +10,7 @@ const without = (value: any, keys: string[]) => Object.fromEntries(Object.entrie
 const additions = <T extends { id: string }>(before: T[], after: T[]) => { const ids = new Set(before.map(b => b.id)); return after.filter(a => !ids.has(a.id)); };
 function immutable<T extends { id: string }>(before: T[], after: T[], label: string) { const next = new Map(after.map(record => [record.id, record])); for (const old of before) check(next.has(old.id) && same(old, next.get(old.id)), `${label} cannot be changed or deleted.`); }
 const movementKey = (m: Store["movements"][number]) => JSON.stringify(clean(without(m, ["id", "createdAt"])));
-export function validateStore(s: Store) {
+export function validateStore(s: Store, before?: Store) {
   check(!!s && s.version === 1, "Unsupported store version.");
   for (const key of Object.keys(emptyStore())) if (key !== "version") check(Array.isArray((s as any)[key]), `Invalid collection: ${key}.`);
   for (const [key, value] of Object.entries(s)) {
@@ -58,7 +58,9 @@ export function validateStore(s: Store) {
   for (const trade of [...s.invoices, ...s.purchases]) {
     check(validDate(trade.date) && typeof trade.number === "string" && !!trade.number && [undefined, "draft", "posted", "void"].includes(trade.status), "Invalid bill details.");
     check(Array.isArray(trade.lines) && trade.lines.length > 0 && trade.lines.every(l => productIds.has(l.productId) && [l.qty, l.price, l.cost].every(Number.isFinite) && l.qty > 0 && l.price >= 0 && l.cost >= 0), "Invalid bill lines.");
-    check(Number.isFinite(trade.paid) && trade.paid >= 0 && trade.paid <= total(trade) && Number.isFinite(trade.discount) && trade.discount >= 0 && trade.discount <= trade.lines.reduce((n, l) => n + l.price * l.qty, 0) && Number.isFinite(trade.tax) && trade.tax >= 0 && trade.tax <= 100, "Invalid bill amounts.");
+    const previous = before && [...before.invoices, ...before.purchases].find(old => old.id === trade.id);
+    const unchangedLegacyOverpayment = previous && previous.paid === trade.paid && previous.discount === trade.discount && previous.tax === trade.tax && same(previous.lines, trade.lines) && (previous.status === trade.status || trade.status === "void");
+    check(Number.isFinite(trade.paid) && trade.paid >= 0 && (trade.status === "draft" || trade.paid <= total(trade) || !!unchangedLegacyOverpayment) && Number.isFinite(trade.discount) && trade.discount >= 0 && trade.discount <= trade.lines.reduce((n, l) => n + l.price * l.qty, 0) && Number.isFinite(trade.tax) && trade.tax >= 0 && trade.tax <= 100, "Invalid bill amounts.");
     check(typeof trade.contactId === "string" && (!trade.contactId || (invoiceIds.has(trade.id) ? customerIds : supplierIds).has(trade.contactId)), "Bill references an unknown customer or supplier.");
     check(s.heads.includes(trade.head), "Bill references an unknown account head.");
   }
@@ -76,8 +78,27 @@ export function validateStore(s: Store) {
       check(!p.tradeId && !!p.contactId && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid advance payment.");
       continue;
     }
+    if (p.advanceApplication) {
+      const source = s.payments.find(payment => payment.id === p.sourceAdvanceId && payment.advance && !payment.tradeId && payment.kind === p.kind && payment.contactId === p.contactId);
+      check(!p.advance && !p.accountLevel && !!p.tradeId && !!source && !!trade && isPosted(trade) && trade.contactId === p.contactId && p.method === "Credit adjustment" && validDate(p.date) && Number.isFinite(p.amount) && p.amount > 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid advance application.");
+      continue;
+    }
+    if (p.allocations?.length) {
+      check(!p.tradeId && !p.accountLevel && validDate(p.date) && Number.isFinite(p.amount) && p.amount > 0 && round(p.amount) === p.amount && s.heads.includes(p.head) && p.allocations.every(allocation => Number.isFinite(allocation.amount) && allocation.amount > 0 && round(allocation.amount) === allocation.amount) && new Set(p.allocations.map(allocation => allocation.tradeId)).size === p.allocations.length && round(p.allocations.reduce((sum, allocation) => sum + allocation.amount, 0)) === p.amount, "Invalid payment allocations.");
+      for (const allocation of p.allocations) {
+        const allocatedTrade = (p.kind === "Customer" ? s.invoices : s.purchases).find(item => item.id === allocation.tradeId);
+        check(!!allocatedTrade && isPosted(allocatedTrade) && allocatedTrade.contactId === p.contactId, "Payment allocations must link to posted bills belonging to the same contact.");
+      }
+      check(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || !!s.financialAccounts?.some(account => account.name === p.method), "Invalid payment method.");
+      check(p.method !== "Cheque" || !!p.chequeNumber && !!p.chequeBank && validDate(p.chequeDate || "") && ["pending", "cleared", "bounced", "cancelled"].includes(p.chequeStatus || "pending"), "Invalid cheque details.");
+      continue;
+    }
     check(!!trade && isPosted(trade) && trade.contactId === p.contactId && validDate(p.date) && Number.isFinite(p.amount) && p.amount !== 0 && round(p.amount) === p.amount && s.heads.includes(p.head), "Invalid payment link or amount.");
     check(p.method !== "Cheque" || !!p.chequeNumber && !!p.chequeBank && validDate(p.chequeDate || "") && ["pending", "cleared", "bounced", "cancelled"].includes(p.chequeStatus || "pending"), "Invalid cheque details.");
+  }
+  for (const source of s.payments.filter(payment => payment.advance && !payment.tradeId)) {
+    const applied = s.payments.filter(payment => payment.advanceApplication && payment.sourceAdvanceId === source.id && isSettledPayment(payment)).reduce((sum, payment) => sum + payment.amount, 0);
+    check(applied <= source.amount, "Advance applications exceed the available balance.");
   }
   for (const e of s.expenses) check(validDate(e.date) && Number.isFinite(e.amount) && e.amount > 0 && round(e.amount) === e.amount && s.heads.includes(e.head) && s.expenseCategories.includes(e.category), "Invalid expense.");
   for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && productIds.has(r.productId) && (r.kind === "Damaged stock" || (tradeById.has(r.tradeId) && isPosted(tradeById.get(r.tradeId)!))), "Invalid return.");
@@ -105,8 +126,27 @@ export function validateStore(s: Store) {
   for (const c of s.dailyCloses || []) check(validDate(c.date) && ["closed", "reopened"].includes(c.status) && [c.expected, c.counted, c.variance].every(Number.isFinite) && c.counted >= 0 && round(c.counted - c.expected) === c.variance && !!c.actorId && Number.isFinite(Date.parse(c.closedAt)), "Invalid daily closing.");
 }
 export function validateOperations(before: Store, after: Store, module: string, context: ValidationContext) {
-  validateStore(after);
+  validateStore(after, before);
   const actor = context.actor, received = context.receivedAt || new Date().toISOString();
+  for (const key of ["customers", "suppliers"] as const) {
+    const trades = key === "customers" ? before.invoices : before.purchases;
+    for (const contact of after[key]) {
+      const old = before[key].find(candidate => candidate.id === contact.id);
+      const openingBalance = contact.openingBalance ?? 0;
+      const openingDate = contact.openingBalanceDate || "";
+      if (openingBalance > 0 && !openingDate) check(!!old && (old.openingBalance ?? 0) === openingBalance && !old.openingBalanceDate, "Enter the opening balance date.");
+      const changed = (old?.openingBalance ?? 0) !== openingBalance || (old?.openingBalanceDate || "") !== openingDate;
+      if (changed && (openingBalance > 0 || (old?.openingBalance ?? 0) > 0 || !!openingDate)) {
+        check(actor.role === "owner", "Only the workspace owner can set or change a contact opening balance.");
+        check(!trades.some(trade => trade.contactId === contact.id) && !before.payments.some(payment => payment.contactId === contact.id), "Contact opening balances are locked after transactions; use a payment or correction entry.");
+        if (openingBalance > 0) requireOpenDate(before, openingDate);
+      }
+    }
+  }
+  for (const key of ["invoices", "purchases"] as const) for (const trade of after[key]) {
+    const old = before[key].find(candidate => candidate.id === trade.id);
+    if (!old || !same(old.lines, trade.lines)) check(trade.lines.every(line => line.qty >= 0.5 && line.price >= 1), "Bill quantities must be at least 0.5 and rates at least 1.");
+  }
   check(Number.isFinite(Date.parse(context.occurredAt)) && Date.parse(context.occurredAt) <= Date.parse(received) + 300000, "Invalid creation time or device clock. Pending data has been preserved.");
   if (actor.role !== "owner") {
     for (const key of ["heads", "accounts", "financialAccounts"] as const) check(same(before[key] || [], after[key] || []), "Only the owner can create or edit account heads and payment accounts. Members may select existing heads.");
@@ -124,7 +164,11 @@ export function validateOperations(before: Store, after: Store, module: string, 
   immutable(before.movements, after.movements, "Stock movements");
   immutable(before.productionRuns || [], after.productionRuns || [], "Production runs");
   immutable(before.returns, after.returns, "Returns");
-  immutable(before.expenses, after.expenses, "Expenses");
+  for (const old of before.expenses) {
+    const next = after.expenses.find(expense => expense.id === old.id);
+    check(!!next, "Expenses cannot be deleted.");
+    if (!same(old, next)) check(actor.role === "owner" && next!.createdAt === old.createdAt && next!.createdBy === old.createdBy && next!.createdByName === old.createdByName && same(next!.attachments || [], old.attachments || []), "Only the owner can correct an expense while preserving its original creator, date, and attachments.");
+  }
   const afterProducts = new Map(after.products.map(product => [product.id, product]));
   const manufacturingProducts = new Set<string>();
   for (const recipe of before.recipes || []) {
@@ -207,13 +251,24 @@ export function validateOperations(before: Store, after: Store, module: string, 
     const kind = key === "invoices" ? "Sale" : "Purchase";
     for (const old of before[key]) {
       const next = after[key].find(t => t.id === old.id);
-      check(!!next, "Bills cannot be deleted. Reverse a posted bill or keep the draft.");
+      if (!next) {
+        if (key === "purchases" && isPosted(old) && actor.role === "owner") {
+          const replay = deletePaidPurchase(before, old.id, actor);
+          check(same(replay.payments, after.payments) && same(replay.products, after.products), "Purchase deletion must retain linked payments as supplier advances and restore product costs.");
+          expectedProducts = replay.products;
+          expectedMovements.push(...replay.movements.slice(before.movements.length));
+          continue;
+        }
+        check(old.status === "draft" && old.paid === 0 && !before.payments.some(payment => payment.tradeId === old.id), "Only unpaid drafts can be deleted.");
+        if (kind === "Sale") check(actor.role === "owner" || old.createdBy === actor.id, "Only the creator or workspace owner can delete this sales draft.");
+        continue;
+      }
       if (same(old, next) || newLinks.some(link => link.tradeId === old.id)) continue;
       const correction = additions(before.corrections || [], after.corrections || []).find(c => c.tradeId === old.id);
       if (isPosted(old)) { check(!!correction && same(correction.after, next), "Posted bills are locked. Use an owner correction with a reason."); continue; }
       check(old.status === "draft" && next!.status !== "void", "Voided bills are locked.");
       requireOpenDate(before, old.date);
-      check(old.number === next!.number, "Draft bill reference cannot change.");
+      check(old.number === next!.number || old.status === "draft" && next!.status === "draft" && /^(?:SL|PRO)-\d{5}$/.test(next!.number) || old.status === "draft" && next!.status === "posted" && /^(?:INV|PUR)-\d+$/.test(next!.number), "Draft bill reference cannot change except when posting.");
     }
     for (const trade of after[key].filter(t => !before[key].some(old => old.id === t.id && same(old, t)) && !newLinks.some(link => link.tradeId === t.id) && !(after.corrections || []).some(c => c.tradeId === t.id && !before.corrections?.some(old => old.id === c.id)))) {
       requireOpenDate(before, trade.date);
@@ -271,11 +326,20 @@ export function validateOperations(before: Store, after: Store, module: string, 
     } else {
       check(crossCheque.destinationKind === "Partner" && typeof crossCheque.destinationId === "string" && !!crossCheque.destinationId.trim() && crossCheque.destinationName === crossCheque.destinationId, "Enter a valid partner as the forwarded cheque destination.");
     }
+    check((crossCheque.allocations || []).every(allocation => Number.isFinite(allocation.amount) && allocation.amount > 0 && round(allocation.amount) === allocation.amount) && round((crossCheque.allocations || []).reduce((sum, allocation) => sum + allocation.amount, 0)) <= crossCheque.amount, "Invalid forwarded cheque allocations.");
+    for (const allocation of crossCheque.allocations || []) {
+      const trade = after.purchases.find(item => item.id === allocation.tradeId && item.contactId === crossCheque.destinationId);
+      check(crossCheque.destinationKind === "Supplier" && !!trade && isPosted(trade), "Forwarded cheque allocations must link to posted purchases for the selected supplier.");
+      const pendingPayments = after.payments.filter(payment => payment.chequeStatus === "pending" && (payment.tradeId === allocation.tradeId || payment.allocations?.some(item => item.tradeId === allocation.tradeId))).reduce((sum, payment) => sum + (payment.allocations?.find(item => item.tradeId === allocation.tradeId)?.amount || (payment.tradeId === allocation.tradeId ? Math.abs(payment.amount) : 0)), 0);
+      const pendingForwarded = oldCrossCheques.filter(item => item.destinationKind === "Supplier" && item.destinationId === crossCheque.destinationId && ["pending", "submitted"].includes(item.status)).reduce((sum, item) => sum + (item.allocations || []).filter(row => row.tradeId === allocation.tradeId).reduce((n, row) => n + row.amount, 0), 0);
+      check(allocation.amount + pendingPayments + pendingForwarded <= Math.max(0, balance(after, trade!)), "Forwarded cheque allocation exceeds the purchase balance after pending payments.");
+    }
   }
   for (const p of before.payments) {
     const next = after.payments.find(a => a.id === p.id);
     check(!!next, "Payments cannot be deleted.");
-    if (!same(p, next) && !newLinks.some(link => link.tradeId === p.tradeId)) check(additions(before.chequeEvents || [], after.chequeEvents || []).some(e => e.paymentId === p.id), "Payments are locked; use the cheque lifecycle or a refund.");
+    const detachedPurchasePayment = p.kind === "Supplier" && !!p.tradeId && !after.purchases.some(trade => trade.id === p.tradeId) && next!.tradeId === "" && next!.advance === true;
+    if (!same(p, next) && !detachedPurchasePayment && !newLinks.some(link => link.tradeId === p.tradeId)) check(additions(before.chequeEvents || [], after.chequeEvents || []).some(e => e.paymentId === p.id), "Payments are locked; use the cheque lifecycle or a refund.");
   }
   let paymentBase = { ...before, invoices: after.invoices, purchases: after.purchases, customers: after.customers };
   for (const p of additions(before.payments, after.payments)) {

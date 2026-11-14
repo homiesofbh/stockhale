@@ -16,6 +16,22 @@ export type RecordFilters = {
   paymentMethod: string;
 };
 
+function normalizeProductSearchText(value: unknown) {
+  return String(value ?? "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().trim();
+}
+
+export function matchesProductQuery(query: string, product: Product) {
+  const normalizedQuery = normalizeProductSearchText(query);
+  if (!normalizedQuery) return true;
+  const fields = [product.name, product.sku, product.barcode, product.category, product.color,
+    product.gsm != null ? `${product.gsm} GSM` : "", product.unit || "piece", product.packing,
+    product.store, product.size].map(normalizeProductSearchText).filter(Boolean);
+  const searchable = fields.join(" ");
+  const compactQuery = normalizedQuery.replace(/\s+/g, "");
+  const compactFields = fields.join("").replace(/\s+/g, "");
+  return normalizedQuery.split(/\s+/).every(term => searchable.includes(term)) || compactFields.includes(compactQuery);
+}
+
 export function matchesQuery(query: string, ...values: unknown[]) {
   return values.join(" ").toLowerCase().includes(query.trim().toLowerCase());
 }

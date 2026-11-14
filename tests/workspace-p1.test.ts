@@ -106,5 +106,38 @@ test("P1 API controls and recoverable backup/restore", async t => {
       assert.equal(recovered.store.expenses.length, expense.expenses.length);
       await validateRecoveryBackup(recovered, identity);
     });
+    await t.test("development cleanup is development-only, owner-only, confirmed, recoverable, and revision-checked", async () => {
+      const before = await server.snapshot(owner);
+      assert.ok(before.store.products.length);
+      const environment = process.env as Record<string, string | undefined>;
+      const originalEnvironment = environment.NODE_ENV;
+      try {
+        environment.NODE_ENV = "production";
+        await assert.rejects(server.mutate(owner, { action: "development-reset", confirmation: before.name, revision: before.revision }), /development server/);
+        environment.NODE_ENV = "development";
+        await assert.rejects(server.mutate(clerk, { action: "development-reset", confirmation: before.name, revision: before.revision }), /workspace owner/);
+        await assert.rejects(server.mutate(owner, { action: "development-reset", confirmation: "wrong", revision: before.revision }), /exact workspace name/);
+        await assert.rejects(server.mutate(owner, { action: "development-reset", confirmation: before.name, revision: before.revision - 1 }), /Workspace changed/);
+        const result = await server.mutate(owner, { action: "development-reset", confirmation: before.name, revision: before.revision });
+        assert.ok("store" in result);
+        assert.ok("name" in result);
+        assert.equal(result.revision, before.revision + 1);
+        assert.deepEqual(result.store.products, []);
+        assert.deepEqual(result.store.expenses, []);
+        assert.equal(result.name, before.name);
+        const backupResult = await server.mutate(owner, { action: "backup" });
+        assert.ok("backup" in backupResult && backupResult.backup);
+        const point = backupResult.backup.audit.find((entry: any) => entry.action === "Development cleanup pre-reset snapshot");
+        assert.ok(point);
+        assert.ok(JSON.parse(point.records).store.products.length);
+        const recoveryResult = await server.mutate(owner, { action: "backup-recovery", eventId: point.id });
+        assert.ok("backup" in recoveryResult && recoveryResult.backup);
+        assert.ok(recoveryResult.backup.store.products.length);
+        await validateRecoveryBackup(recoveryResult.backup, identity);
+      } finally {
+        if (originalEnvironment === undefined) delete environment.NODE_ENV;
+        else environment.NODE_ENV = originalEnvironment;
+      }
+    });
   } finally { await closeDatabase(); await admin.query(`DROP DATABASE "${name}" WITH (FORCE)`); await admin.end(); }
 });

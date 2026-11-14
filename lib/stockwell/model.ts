@@ -1,4 +1,4 @@
-import { cashChequeSettlement, chequeSettlements, requireOpenDate, type ChequeEvent, type DailyClose, type TradeCorrection, type WalkInLink } from "./operations";
+import { cashChequeSettlement, chequeSettlements, requireOpenDate, validDate, type ChequeEvent, type DailyClose, type TradeCorrection, type WalkInLink } from "./operations";
 import { bankVoucherLines } from "./bank-vouchers";
 import type { BankVoucher } from "./bank-vouchers";
 import type { JournalVoucher } from "./journals";
@@ -93,6 +93,10 @@ export type Movement = {
   supplierId?: string;
   packageCount?: number;
   packageSize?: number;
+  financialAmount?: number;
+  originalPurchaseDate?: string;
+  financialHead?: string;
+  financialContactId?: string;
 };
 export type PartnerEntry = {
   createdAt?: number;
@@ -114,7 +118,10 @@ export type Payment = {
   kind: "Customer" | "Supplier";
   contactId: string;
   tradeId: string;
+  allocations?: { tradeId: string; amount: number }[];
   advance?: boolean;
+  advanceApplication?: boolean;
+  sourceAdvanceId?: string;
   accountLevel?: boolean;
   amount: number;
   method: string;
@@ -136,7 +143,8 @@ export type CrossCheque = {
   destinationId: string;
   destinationName: string;
   amount: number;
-  status: "pending" | "submitted" | "cleared" | "bounced";
+  allocations?: { tradeId: string; amount: number }[];
+  status: "pending" | "submitted" | "cleared" | "bounced" | "cancelled";
   notes: string;
 };
 export type Expense = {
@@ -329,20 +337,33 @@ export const paid = (s: Store, t: Trade) =>
   !isPosted(t) ? 0 : round(
     t.paid +
       s.payments
-        .filter((p) => p.tradeId === t.id && isSettledPayment(p))
-        .reduce((n, p) => n + p.amount, 0),
+        .filter((p) => isSettledPayment(p))
+        .reduce((n, p) => n + (p.tradeId === t.id ? p.amount : p.allocations?.filter(a => a.tradeId === t.id).reduce((sum, a) => sum + a.amount, 0) || 0), 0) +
+      (s.crossCheques || []).filter(cheque => cheque.destinationKind === "Supplier" && cheque.destinationId === t.contactId)
+        .reduce((sum, cheque) => {
+          const source = s.payments.find(payment => payment.id === cheque.sourcePaymentId);
+          const allocated = (cheque.allocations || []).filter(allocation => allocation.tradeId === t.id).reduce((n, allocation) => n + allocation.amount, 0);
+          const settledRatio = source ? chequeSettlements(s, source).reduce((n, entry) => n + entry.amount, 0) / Math.max(cheque.amount, 1) : 0;
+          return sum + allocated * settledRatio;
+        }, 0),
   );
 // A negative balance is a credit owed back to the customer, or due back from the supplier.
 export const balance = (s: Store, t: Trade) =>
   isPosted(t) ? round(total(t) - returned(s, t.id) - paid(s, t)) : 0;
 /** Settled advances and supplier account payments not matched to individual bills. */
-export const unappliedAdvanceBalance = (s: Store, kind: "Customer" | "Supplier", id: string) => round(
-  s.payments.filter(p => p.kind === kind && p.contactId === id && p.advance && !p.tradeId && isSettledPayment(p)).reduce((sum, p) => sum + p.amount, 0),
-);
+export const unappliedAdvanceBalance = (s: Store, kind: "Customer" | "Supplier", id: string) => round(availableAdvancePayments(s, kind, id).reduce((sum, item) => sum + item.amount, 0));
+export const availableAdvancePayments = (s: Store, kind: "Customer" | "Supplier", id: string) =>
+  s.payments.filter(payment => payment.kind === kind && payment.contactId === id && payment.advance && !payment.tradeId && isSettledPayment(payment) && !(s.crossCheques || []).some(cheque => cheque.sourcePaymentId === payment.id))
+    .map(payment => {
+      const applied = s.payments.filter(item => item.advanceApplication && item.sourceAdvanceId === payment.id && isSettledPayment(item)).reduce((sum, item) => sum + item.amount, 0);
+      return { payment, amount: round(payment.amount - applied) };
+    }).filter(item => item.amount > 0);
+export const advanceAppliedToTrade = (s: Store, tradeId: string) => round(s.payments.filter(payment => payment.advanceApplication && payment.tradeId === tradeId && isSettledPayment(payment)).reduce((sum, payment) => sum + payment.amount, 0));
 export const forwardedSupplierChequeBalance = (s: Store, supplierId: string) => round(
-  (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === supplierId).reduce((sum, c) => {
-    const source = s.payments.find(p => p.id === c.sourcePaymentId);
-    return sum + (source?.method === "Cheque" ? chequeSettlements(s, source).reduce((settled, entry) => settled + entry.amount, 0) : 0);
+  (s.crossCheques || []).filter(c => c.destinationKind === "Supplier" && c.destinationId === supplierId).reduce((sum, cheque) => {
+    const source = s.payments.find(payment => payment.id === cheque.sourcePaymentId);
+    const unallocated = Math.max(0, cheque.amount - (cheque.allocations || []).reduce((n, allocation) => n + allocation.amount, 0));
+    return sum + (source?.method === "Cheque" ? chequeSettlements(s, source).reduce((settled, entry) => settled + entry.amount, 0) * (unallocated / Math.max(cheque.amount, 1)) : 0);
   }, 0),
 );
 export const unappliedCreditBalance = (s: Store, kind: "Customer" | "Supplier", id: string) => round(
@@ -359,7 +380,7 @@ export const contactBalance = (
     (kind === "Customer" ? s.invoices : s.purchases)
       .filter((t) => t.contactId === id)
       .reduce((n, t) => n + balance(s, t), 0),
-  ) + (s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === id)?.openingBalance || 0)
+  ) + (() => { const contact = s[kind === "Customer" ? "customers" : "suppliers"].find(c => c.id === id); return contact?.openingBalanceDate && contact.openingBalanceDate > today() ? 0 : contact?.openingBalance || 0; })()
     - unappliedCreditBalance(s, kind, id);
 export const supplierPayableBalance = (s: Store, supplierId: string) => {
   const balance = contactBalance(s, "Supplier", supplierId);
@@ -392,6 +413,10 @@ export function findProductByCode(products: Product[], input: string): Product {
   return matches[0];
 }
 export function saveContact(s: Store, kind: "Customer" | "Supplier", contact: Contact): Store {
+  const key = kind === "Customer" ? "customers" : "suppliers";
+  const previous = s[key].find(existing => existing.id === contact.id);
+  const openingBalance = contact.openingBalance ?? 0;
+  const openingBalanceDate = (contact.openingBalanceDate || "").trim();
   const c = {
     ...contact,
     name: contact.name.trim(),
@@ -400,9 +425,11 @@ export function saveContact(s: Store, kind: "Customer" | "Supplier", contact: Co
     address: (contact.address || "").trim(),
     ntn: (contact.ntn || "").trim(),
   };
-  assert(!!c.name, kind === "Customer" ? "Company name is required." : "Supplier name is required.");
+  assert(!!c.name, kind === "Customer" ? "Enter a customer or company name." : "Enter a supplier name.");
   assert(!c.email || /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(c.email), "Enter a valid email or leave it blank.");
-  const key = kind === "Customer" ? "customers" : "suppliers";
+  assert(Number.isFinite(openingBalance) && openingBalance >= 0 && round(openingBalance) === openingBalance, "Opening balance must be zero or more, with no more than two decimals.");
+  assert(!openingBalanceDate || validDate(openingBalanceDate), "Enter a real calendar date for the opening balance.");
+  assert(openingBalance === 0 || !!openingBalanceDate || previous?.openingBalance === openingBalance, "Enter the date when this opening balance took effect.");
   return { ...s, [key]: s[key].some((x) => x.id === c.id)
     ? s[key].map((x) => x.id === c.id ? c : x) : [...s[key], c] };
 }
@@ -499,8 +526,10 @@ export function recordTrade(
   s: Store,
   kind: "Sale" | "Purchase",
   t: Trade,
+  editingPurchaseDraft = false,
 ): Store {
-  requireOpenDate(s, t.date);
+  if (editingPurchaseDraft && kind === "Purchase" && t.status === "draft") assert(validDate(t.date), "Enter a valid date.");
+  else requireOpenDate(s, t.date);
   assert(![...s.invoices, ...s.purchases].some(old => old.id === t.id), "Bill ID already exists.");
   assert(t.status === "draft" || t.date <= today(), "Future bills must remain drafts until the bill date.");
   assert(t.lines.length > 0, "Add at least one product.");
@@ -527,10 +556,7 @@ export function recordTrade(
       t.discount + lineDiscount(t) <= subtotal(t),
     "Discount must not exceed the subtotal; tax must be between 0 and 100%.",
   );
-  assert(
-    validNumber(t.paid) && round(t.paid) === t.paid && t.paid <= total(t),
-    "Paid amount must be between zero and the net total.",
-  );
+  assert(validNumber(t.paid) && round(t.paid) === t.paid && (t.status === "draft" || t.paid <= total(t)), "Paid amount cannot exceed the bill's net total.");
   assert(
     kind !== "Sale" || !!t.contactId || t.paid === total(t) || !!(t.walkInName?.trim() || t.walkInCompany?.trim() || t.walkInPhone?.trim()),
     "Enter a walk-in customer name, company, or contact number for a credit bill.",
@@ -542,8 +568,8 @@ export function recordTrade(
       "A selected product no longer exists.",
     );
     assert(
-      validNumber(l.qty, 0.001) && roundQty(l.qty) === l.qty && validNumber(l.price) && validNumber(l.cost) && validNumber(l.discount || 0) && (l.discount || 0) <= l.qty * l.price,
-      "Quantities must be positive and prices non-negative.",
+      validNumber(l.qty, 0.5) && roundQty(l.qty) === l.qty && validNumber(l.price, 1) && validNumber(l.cost) && validNumber(l.discount || 0) && (l.discount || 0) <= l.qty * l.price,
+      "Quantities must be at least 0.5 with up to three decimals, rates at least 1, and line discounts within the line subtotal.",
     );
     demand.set(l.productId, roundQty((demand.get(l.productId) || 0) + l.qty));
   });
@@ -558,8 +584,15 @@ export function recordTrade(
   assert(Number.isFinite(total(t)) && Number.isSafeInteger(Math.round(total(t) * 100)), "Bill amount exceeds safe currency limits.");
   const list = kind === "Sale" ? s.invoices : s.purchases;
   const prefix = kind === "Sale" ? "INV" : "PUR";
-  const number = t.number || `${prefix}-${String(list.reduce((max, old) => Math.max(max, Number(old.number.split("-")[1]) || 0), 0) + 1).padStart(5, "0")}`;
-  assert(!list.some(old => old.number === number), "Bill number already exists.");
+  const draftPrefix = kind === "Sale" ? "SL" : "PRO";
+  const officialSequence = [...s.invoices, ...s.purchases].filter(old => old.status !== "draft");
+  const maxOfficialNumber = officialSequence.reduce((max, old) => Math.max(max, Number(/^(?:INV|PUR)-(\d+)$/.exec(old.number)?.[1] || 0)), 0);
+  const maxDraftNumber = list.reduce((max, old) => Math.max(max, Number(new RegExp("^" + draftPrefix + "-(\\d{5})$").exec(old.number)?.[1] || 0)), 0);
+  const draftPattern = new RegExp("^" + draftPrefix + "-\\d{5}$");
+  const number = t.status === "draft"
+    ? draftPattern.test(t.number || "") ? t.number : draftPrefix + "-" + String(maxDraftNumber + 1).padStart(5, "0")
+    : t.number?.startsWith(prefix + "-") ? t.number : prefix + "-" + String(maxOfficialNumber + 1).padStart(5, "0");
+  assert(![...s.invoices, ...s.purchases].some(old => old.number === number), "This bill reference is already in use. Refresh the bill list and try again to get a new reference.");
   let customers = s.customers;
   if (kind === "Sale" && !t.contactId) {
     const phone = (t.walkInPhone || "").replace(/[^0-9+]/g, "");
@@ -636,11 +669,41 @@ export function recordPayment(s: Store, p: Payment): Store {
     }
     return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
   }
+  if (p.advanceApplication) {
+    const source = s.payments.find(payment => payment.id === p.sourceAdvanceId && payment.advance && !payment.tradeId && payment.kind === p.kind && payment.contactId === p.contactId && isSettledPayment(payment));
+    const used = s.payments.filter(payment => payment.advanceApplication && payment.sourceAdvanceId === p.sourceAdvanceId && isSettledPayment(payment)).reduce((sum, payment) => sum + payment.amount, 0);
+    assert(!!source && !(s.crossCheques || []).some(cheque => cheque.sourcePaymentId === source!.id), "Choose an available, settled advance for this bill.");
+    assert(p.method === "Credit adjustment" && !!t && isPosted(t) && t.contactId === p.contactId, "Advance applications must be linked to a posted bill for the same contact.");
+    assert(Number.isFinite(p.amount) && p.amount > 0 && round(p.amount) === p.amount && p.amount <= source!.amount - used, "The applied amount exceeds the remaining advance balance.");
+    assert(p.amount <= Math.max(0, balance(s, t!)), "The applied advance exceeds this bill's remaining balance.");
+    assert(s.heads.includes(p.head), "Choose an existing account head from the list.");
+    return { ...s, payments: [...s.payments, { ...p, createdAt: Date.now() }] };
+  }
   if (p.advance) {
     assert(!p.tradeId && !!p.contactId, "Select a customer or supplier for the advance payment.");
     assert(Number.isFinite(p.amount) && p.amount >= 0.01 && round(p.amount) === p.amount, "Advance payment must be greater than zero.");
     assert(s.heads.includes(p.head), "Select a valid account head.");
     assert(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some(a => a.name === p.method && a.active !== false), "Select a valid payment method.");
+    if (p.method === "Cheque") {
+      assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
+      p.chequeStatus = "pending";
+    }
+    return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
+  }
+  if (p.allocations?.length) {
+    assert(!p.tradeId && !p.accountLevel && !!p.contactId, "Choose a saved contact before allocating this payment to bills.");
+    assert(p.allocations.every(allocation => Number.isFinite(allocation.amount) && allocation.amount > 0 && round(allocation.amount) === allocation.amount), "Every bill allocation must be a positive amount with up to two decimals.");
+    assert(new Set(p.allocations.map(allocation => allocation.tradeId)).size === p.allocations.length, "A bill can only appear once in the payment allocations.");
+    assert(round(p.allocations.reduce((sum, allocation) => sum + allocation.amount, 0)) === p.amount, "The payment amount must equal the total allocated across selected bills.");
+    for (const allocation of p.allocations) {
+      const allocatedTrade = (p.kind === "Customer" ? s.invoices : s.purchases).find(item => item.id === allocation.tradeId && item.contactId === p.contactId);
+      assert(!!allocatedTrade && isPosted(allocatedTrade), "Select posted bills belonging to this contact.");
+      const pending = s.payments.filter(payment => payment.chequeStatus === "pending" && (payment.tradeId === allocatedTrade!.id || payment.allocations?.some(item => item.tradeId === allocatedTrade!.id))).reduce((sum, payment) => sum + (payment.allocations?.find(item => item.tradeId === allocatedTrade!.id)?.amount || (payment.tradeId === allocatedTrade!.id ? Math.abs(payment.amount) : 0)), 0);
+      const pendingForwarded = (s.crossCheques || []).filter(cheque => cheque.destinationKind === "Supplier" && cheque.destinationId === allocatedTrade!.contactId && ["pending", "submitted"].includes(cheque.status)).reduce((sum, cheque) => sum + (cheque.allocations || []).filter(item => item.tradeId === allocatedTrade!.id).reduce((n, item) => n + item.amount, 0), 0);
+      assert(allocation.amount + pending + pendingForwarded <= Math.max(0, balance(s, allocatedTrade!)), "An allocation exceeds a selected bill's remaining balance after pending cheques.");
+    }
+    assert(s.heads.includes(p.head), "Choose an existing account head from the list.");
+    assert(p.method === "Cash" || p.method === "Bank" || p.method === "Cheque" || (s.financialAccounts || []).some(account => account.name === p.method && account.active !== false), "Choose Cash, Bank, Cheque, or an active payment account from the list.");
     if (p.method === "Cheque") {
       assert(!!p.chequeNumber?.trim() && !!p.chequeBank?.trim() && !!p.chequeDate, "Enter the cheque number, bank, and expected clearance date.");
       p.chequeStatus = "pending";
@@ -671,6 +734,22 @@ export function recordPayment(s: Store, p: Payment): Store {
     p.chequeStatus = "pending";
   }
   return { ...s, payments: [...s.payments, { ...p, financialAccountId: paymentAccountId(s, p.method), createdAt: Date.now() }] };
+}
+export function applyAdvanceToTrade(s: Store, trade: Trade, amount: number, date = trade.date): Store {
+  assert(isPosted(trade) && !!trade.contactId, "Post a bill with a saved customer or supplier before applying an advance.");
+  assert(Number.isFinite(amount) && amount > 0 && round(amount) === amount && amount <= balance(s, trade), "Enter an advance amount within this bill's remaining balance.");
+  const kind = trade.number.startsWith("PUR") ? "Supplier" : "Customer";
+  let next = s, remaining = amount;
+  for (const source of availableAdvancePayments(next, kind, trade.contactId)) {
+    if (remaining <= 0) break;
+    const available = source.amount;
+    const portion = round(Math.min(remaining, available));
+    if (portion <= 0) continue;
+    next = recordPayment(next, { id: uid(), date, kind, contactId: trade.contactId, tradeId: trade.id, advanceApplication: true, sourceAdvanceId: source.payment.id, amount: portion, method: "Credit adjustment", head: trade.head, notes: "Advance applied to " + trade.number });
+    remaining = round(remaining - portion);
+  }
+  assert(remaining === 0, "The available advance changed before it could be applied. Refresh the bill and try again.");
+  return next;
 }
 export function clearCheque(s: Store, paymentId: string): Store {
   const payment = s.payments.find((p) => p.id === paymentId && p.chequeStatus === "pending");
@@ -817,6 +896,15 @@ export function financialRows(s: Store): FinancialRow[] {
       t.financialAccountId,
     ),
   );
+  for (const movement of s.movements) {
+    if (movement.type !== "Purchase deletion reversal" || movement.financialAmount === undefined) continue;
+    const head = movement.financialHead || "Purchases";
+    const contactId = movement.financialContactId || "";
+    // Keep the original accrual and reverse it on the deletion date. The retained
+    // supplier advance below represents the cash already paid separately.
+    push(movement.originalPurchaseDate || movement.date, movement.reference, "Purchase", head, "Credit adjustment", -movement.financialAmount, 0, contactId);
+    push(movement.date, movement.reference, "Purchase deletion reversal", head, "Credit adjustment", movement.financialAmount, 0, contactId);
+  }
   s.expenses.forEach((e) =>
     push(
       e.date,
@@ -831,11 +919,17 @@ export function financialRows(s: Store): FinancialRow[] {
     ),
   );
   s.payments.forEach(p => {
+    if (p.advanceApplication) return;
     const settlements = p.method === "Cheque" ? chequeSettlements(s, p) : [{ date: p.date, amount: p.amount, accountId: p.financialAccountId, status: "paid" }];
     const forwarded = p.method === "Cheque" && (s.crossCheques || []).some(c => c.sourcePaymentId === p.id);
-    settlements.forEach(entry => push(entry.date, (p.kind === "Customer" ? s.invoices : s.purchases).find(t => t.id === p.tradeId)?.number || (p.accountLevel ? "Supplier account payment" : ""), `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
-      forwarded ? "Credit adjustment" : entry.accountId === cashChequeSettlement ? "Cash" : p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
-      entry.amount * (p.kind === "Customer" ? 1 : -1), entry.amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId === cashChequeSettlement ? "" : entry.accountId));
+    const tradeList = p.kind === "Customer" ? s.invoices : s.purchases;
+    const allocations = p.allocations?.length ? p.allocations.map(allocation => ({ reference: tradeList.find(trade => trade.id === allocation.tradeId)?.number || "", amount: allocation.amount })) : [{ reference: tradeList.find(trade => trade.id === p.tradeId)?.number || (p.accountLevel ? "Supplier account payment" : ""), amount: p.amount }];
+    settlements.forEach(entry => allocations.forEach(allocation => {
+      const amount = p.allocations?.length ? entry.amount * allocation.amount / p.amount : entry.amount;
+      push(entry.date, allocation.reference, `${p.kind} payment${entry.status === "bounced" ? " reversal" : ""}`, p.head,
+        forwarded ? "Credit adjustment" : entry.accountId === cashChequeSettlement ? "Cash" : p.method === "Cheque" && entry.accountId ? s.financialAccounts?.find(a => a.id === entry.accountId)?.name || "Cheque" : p.method,
+        amount * (p.kind === "Customer" ? 1 : -1), amount * (p.kind === "Customer" ? 1 : -1), p.contactId, entry.accountId === cashChequeSettlement ? "" : entry.accountId);
+    }));
   });
   (s.partners || []).forEach(p => {
     const contribution = p.kind === "Contribution";

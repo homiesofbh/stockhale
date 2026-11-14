@@ -18,6 +18,7 @@ import {
   total,
   normalizeStore,
   type Contact,
+  type Expense,
   type Line,
   type Product,
   type Store,
@@ -90,6 +91,7 @@ export function WorkspaceApp() {
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [editContact, setEditContact] = useState<Contact | null>(null);
+  const [editExpense, setEditExpense] = useState<Expense | null>(null);
   const [detailContact, setDetailContact] = useState<Contact | null>(null);
   const [invoice, setInvoice] = useState<Trade | null>(null);
   const [paper, setPaper] = useState<InvoicePaper>("A4");
@@ -524,6 +526,7 @@ export function WorkspaceApp() {
           setProductSearch={setProductSearch}
           setModule={setModule}
           setNotice={setNotice}
+          setStore={setS}
           isPlatformAdmin={isPlatformAdmin}
           openAdmin={() => window.location.assign("/workspace/admin")}
         />
@@ -694,6 +697,7 @@ export function WorkspaceApp() {
                           status={status}
                           paymentMethod={paymentMethod}
                           basicHeaders={basicHeaders}
+                          products={s.products}
                           tradeRows={tradeRows}
                         />
                       )}
@@ -730,13 +734,13 @@ export function WorkspaceApp() {
                         <ExpensesView
                           s={s}
                           category={category}
-                          query={query}
-                          from={from}
-                          to={to}
+                          inRange={inRange}
+                          matches={matches}
                           open={open}
                           owner={account.member.role === "owner"}
                           memberName={(id, name) => name || account.members.find(member => member.id === id)?.name || "Not recorded"}
                           commit={commit}
+                          onEdit={(expense) => { setEditExpense(expense); open("Edit expense"); }}
                         />
                       )}
                       {module === "Payments" && (
@@ -979,14 +983,16 @@ export function WorkspaceApp() {
               }}
             />
           )}
-          {modal === "Expense" && (
+          {(modal === "Expense" || modal === "Edit expense") && (
             <ExpenseForm
-              commitInline={(next, message) => commitInline(next, message, "Expenses")}
+              commitInline={async (next, message) => commitInline(next, message, "Expenses")}
               actor={account.member}
+              expense={modal === "Edit expense" ? editExpense || undefined : undefined}
+              onSaved={() => { setModal(""); setEditExpense(null); }}
               workspaceId={account.id}
               submit={submit}
               num={num}
-              commit={commit}
+              commit={async (next, message) => commit(next, message)}
               s={s}
               text={text}
             />
@@ -1000,7 +1006,6 @@ export function WorkspaceApp() {
               paymentKind={paymentKind}
               selectedContact={selectedContact}
               num={num}
-              selectedTrade={selectedTrade}
               setPaymentKind={setPaymentKind}
               setSelectedContact={setSelectedContact}
               setSelectedTrade={setSelectedTrade}

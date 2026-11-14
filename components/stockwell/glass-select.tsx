@@ -63,6 +63,7 @@ export function GlassSelect({
     null,
   );
   const [search, setSearch] = useState("");
+  const [open, setOpen] = useState(false);
   const triggerRef = useCallback((node: HTMLButtonElement | null) => {
     if (node) setPortalContainer(node.closest("dialog"));
   }, []);
@@ -86,6 +87,7 @@ export function GlassSelect({
       id={id}
       required={required}
       disabled={disabled}
+      open={open}
       value={value}
       defaultValue={defaultValue ?? options[0]?.value ?? ""}
       items={options}
@@ -94,6 +96,7 @@ export function GlassSelect({
         onValueChange?.(next ?? "");
       }}
       onOpenChange={(open) => {
+        setOpen(open);
         if (!open) setSearch("");
       }}
       modal={false}
@@ -125,7 +128,16 @@ export function GlassSelect({
                 className={styles.search}
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
-                onKeyDown={(event) => event.stopPropagation()}
+                onKeyDown={(event) => {
+                  event.stopPropagation();
+                  if (event.key !== "Enter") return;
+                  event.preventDefault();
+                  const firstMatch = visibleOptions.find(option => option.value !== "" && !option.disabled);
+                  if (!firstMatch) return;
+                  onValueChange?.(firstMatch.value);
+                  setSearch("");
+                  setOpen(false);
+                }}
                 onPointerDown={(event) => event.stopPropagation()}
                 placeholder={searchPlaceholder}
                 aria-label={searchPlaceholder}

@@ -1126,13 +1126,31 @@ export async function mutate(user: Row, body: Row) {
       await event(w, user, "Closing", "Daily close reopened with workspace owner password approval", records, randomUUID(), occurredAt);
       return readSnapshot(user);
     }
+    if (body.action === "development-reset") {
+      if (process.env.NODE_ENV !== "development")
+        throw Object.assign(new Error("Development cleanup is available only on the development server."), { status: 403 });
+      const m = await member(w, user);
+      if (m.role !== "owner")
+        throw Object.assign(new Error("Only the workspace owner can clear development records."), { status: 403 });
+      if (Array.isArray(body.confirmation) || typeof body.confirmation !== "string" || body.confirmation.length > 200 || body.confirmation !== w.name)
+        throw new Error("Type the exact workspace name to confirm development cleanup.");
+      if (body.revision !== w.revision)
+        throw Object.assign(new Error("Workspace changed. Reload and review cleanup again."), { status: 409 });
+      const before = await loadWorkspaceStore(w);
+      const removed = Object.fromEntries(Object.entries(before).map(([key, value]) => [key, Array.isArray(value) ? value.length : 0]));
+      const reason = `Development workspace records cleared by ${user.name} <${user.email}>.`;
+      await event(w, user, "Settings", "Development cleanup pre-reset snapshot", JSON.stringify({ store: before, revision: w.revision, savedAt: new Date().toISOString(), reason }));
+      await persistWorkspaceStore(w, before, emptyStore(), Number(w.revision) + 1);
+      await event(w, user, "Settings", "Development workspace records cleared", JSON.stringify({ removed, reason }));
+      return readSnapshot(user);
+    }
     owner(w, user);
     if (body.action === "backup" || body.action === "backup-recovery") {
       const audit = await all('SELECT id,actor,module,action,records,"occurredAt","receivedAt","emailStatus" FROM events WHERE workspace=$1 ORDER BY "receivedAt" DESC,id DESC', w.id);
       const beforeStore = await loadWorkspaceStore(w);
       let store = beforeStore;
       if (body.action === "backup-recovery") {
-        const point = await row("SELECT records FROM events WHERE id=$1 AND workspace=$2 AND action=$3", required(body.eventId), w.id, "Pre-restore safety snapshot");
+        const point = await row("SELECT records FROM events WHERE id=$1 AND workspace=$2 AND action=ANY($3::text[])", required(body.eventId), w.id, ["Pre-restore safety snapshot", "Development cleanup pre-reset snapshot"]);
         if (!point) throw new Error("Recovery point not found.");
         store = JSON.parse(point.records).store;
       }

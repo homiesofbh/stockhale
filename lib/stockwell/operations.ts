@@ -1,4 +1,4 @@
-import { balance, financialRows, isPosted, recordTrade, round, roundQty, stock, today, total, uid, type Expense, type FinancialBalanceSnapshot, type Payment, type Store, type Trade } from "./model";
+import { applyAdvanceToTrade, availableAdvancePayments, balance, financialRows, isPosted, recordPayment, recordTrade, round, roundQty, stock, today, total, uid, type Expense, type FinancialBalanceSnapshot, type Payment, type Store, type Trade } from "./model";
 import { chartAccounts } from "./accounts";
 import { bankBalanceSummary, bankStatement, saveBankVoucher } from "./bank-vouchers";
 import { saveJournal } from "./journals";
@@ -20,17 +20,28 @@ export function saveExpense(s: Store, expense: Expense, actor: Actor, occurredAt
   requireOpenDate(s, expense.date);
   check(Number.isFinite(expense.amount) && expense.amount > 0 && round(expense.amount) === expense.amount, "Enter a positive expense amount with at most two decimals.");
   check(s.heads.includes(expense.head) && s.expenseCategories.includes(expense.category), "Select a valid expense head and category.");
-  check(expense.method === "Cash" || (s.financialAccounts || []).some(a => a.name === expense.method && a.active !== false), "Select an active payment account.");
   const old = s.expenses.find(e => e.id === expense.id);
+  check(expense.method === "Cash" || (s.financialAccounts || []).some(a => a.name === expense.method && (a.active !== false || old?.method === expense.method)), "Select an active payment account.");
   check(!old || actor.role === "owner", "Only the owner can correct an expense.");
-  check(!old, "Recorded expenses are locked; enter a journal correction with a reason.");
+  if (old) {
+    requireOpenDate(s, old.date);
+    requireOpenDate(s, expense.date);
+    return { ...s, expenses: s.expenses.map(e => e.id === expense.id ? { ...old, ...expense, createdAt: old.createdAt, createdBy: old.createdBy, createdByName: old.createdByName, attachments: old.attachments } : e) };
+  }
   return { ...s, expenses: [...s.expenses, { ...expense, createdAt: occurredAt, createdBy: actor.id, createdByName: actor.name || "" }] };
 }
-export function postTrade(s: Store, kind: "Sale" | "Purchase", id: string): Store {
+export function postTrade(s: Store, kind: "Sale" | "Purchase", id: string, applyAdvance = false): Store {
   const key = kind === "Sale" ? "invoices" : "purchases", trade = s[key].find(t => t.id === id);
   check(!!trade && trade.status === "draft", "Only a draft can be posted.");
   requireOpenDate(s, trade!.date);
-  return recordTrade({ ...s, [key]: s[key].filter(t => t.id !== id) }, kind, { ...trade!, status: "posted", postedAt: new Date().toISOString() });
+  const billTotal = total(trade!);
+  const advance = applyAdvance && trade!.contactId ? round(Math.min(Math.max(0, billTotal - trade!.paid), availableAdvancePayments(s, kind === "Sale" ? "Customer" : "Supplier", trade!.contactId).reduce((sum, item) => sum + item.amount, 0))) : 0;
+  const billPaid = Math.min(trade!.paid, billTotal), excess = round(Math.max(0, trade!.paid - billTotal));
+  let posted = recordTrade({ ...s, [key]: s[key].filter(t => t.id !== id) }, kind, { ...trade!, paid: billPaid, number: "", status: "posted", postedAt: new Date().toISOString() });
+  const saved = (kind === "Sale" ? posted.invoices : posted.purchases).find(item => item.id === id)!;
+  if (advance > 0) posted = applyAdvanceToTrade(posted, saved, Math.min(advance, balance(posted, saved)), saved.date);
+  if (!excess) return posted;
+  return recordPayment(posted, { id: uid(), date: saved.date, kind: kind === "Sale" ? "Customer" : "Supplier", contactId: saved.contactId, tradeId: "", advance: true, amount: excess, method: saved.method, financialAccountId: saved.financialAccountId, head: saved.head, notes: `Excess paid with ${saved.number}`, chequeNumber: saved.chequeNumber, chequeBank: saved.chequeBank, chequeDate: saved.chequeDate });
 }
 export function tradeDateAllowed(date: string, actor: Actor, occurredAt = new Date().toISOString(), kind: "Sale" | "Purchase" = "Sale") {
   const businessDate = today(new Date(occurredAt));
@@ -41,12 +52,14 @@ export function correctTrade(s: Store, kind: "Sale" | "Purchase", replacement: T
   check(!!reason.trim(), "A correction reason is required.");
   const key = kind === "Sale" ? "invoices" : "purchases", old = s[key].find(t => t.id === replacement.id);
   check(!!old && isPosted(old), "Select a posted bill.");
-  check(!s.payments.some(p => p.tradeId === old!.id) && !s.returns.some(r => r.tradeId === old!.id), "Bills with linked payments, cheques, or returns are locked. Use linked returns/refunds or separate adjustment vouchers instead of rewriting them.");
+  check(!s.payments.some(p => p.tradeId === old!.id || p.allocations?.some(allocation => allocation.tradeId === old!.id)) && !(s.crossCheques || []).some(cheque => cheque.allocations?.some(allocation => allocation.tradeId === old!.id)) && !s.returns.some(r => r.tradeId === old!.id), "Bills with linked payments, forwarded cheques, or returns are locked. Use linked returns/refunds or separate adjustment vouchers instead of rewriting them.");
   requireOpenDate(s, old!.date); requireOpenDate(s, date);
   check(date >= old!.date && date <= today(), "Correction date must be on or after the bill date and no later than today.");
   check(["id", "number", "date", "contactId", "method", "financialAccountId", "createdAt", "postedAt", "replacementOf"].every(k => (old as any)[k] === (replacement as any)[k]), "Bill identity, date, customer/supplier, and payment account cannot change after posting.");
   check(replacement.status === "void" || replacement.status === "posted" || !replacement.status, "Invalid correction status.");
   const normalized = kind === "Purchase" ? { ...replacement, lines: replacement.lines.map(l => ({ ...l, cost: l.price })), costBefore: Object.fromEntries(replacement.lines.map(l => [l.productId, old!.costBefore?.[l.productId] ?? s.products.find(p => p.id === l.productId)?.cost ?? l.cost])) } : replacement;
+  const excessPaid = replacement.status === "void" ? 0 : round(Math.max(0, normalized.paid - total(normalized)));
+  if (replacement.status !== "void") normalized.paid = Math.min(normalized.paid, total(normalized));
   const after = { ...(replacement.status === "void" ? old! : normalized), status: replacement.status === "void" ? "void" as const : "posted" as const };
   const oldQty = new Map<string, number>(), newQty = new Map<string, number>();
   old!.lines.forEach(l => oldQty.set(l.productId, (oldQty.get(l.productId) || 0) + l.qty));
@@ -65,7 +78,13 @@ export function correctTrade(s: Store, kind: "Sale" | "Purchase", replacement: T
     return { ...p, cost };
   }) : s.products;
   const correction: TradeCorrection = { id: uid(), tradeId: old!.id, kind, date, reason: reason.trim(), actorId: actor.id, occurredAt: new Date().toISOString(), before: old!, after };
-  return { ...s, [key]: s[key].map(t => t.id === old!.id ? after : t), products, movements: [...s.movements, ...moves], corrections: [...(s.corrections || []), correction] };
+  const corrected = { ...s, [key]: s[key].map(t => t.id === old!.id ? after : t), products, movements: [...s.movements, ...moves], corrections: [...(s.corrections || []), correction] };
+  return excessPaid > 0 ? recordPayment(corrected, {
+    id: uid(), date, kind: kind === "Sale" ? "Customer" : "Supplier", contactId: old!.contactId,
+    tradeId: "", advance: true, amount: excessPaid, method: old!.method,
+    financialAccountId: old!.financialAccountId, head: old!.head,
+    notes: `Excess paid with corrected ${old!.number}`,
+  }) : corrected;
 }
 export function tradeAt(s: Store, trade: Trade, through = ""): Trade {
   if (!through) return trade;
@@ -103,14 +122,21 @@ export function changeCheque(s: Store, paymentId: string, status: ChequeEvent["s
       ? !!chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset")
       : !!s.financialAccounts?.find(a => a.id === accountId && a.active !== false), "Select Cash in hand or an active bank / wallet for cheque settlement.");
     const trade = [...s.invoices, ...s.purchases].find(t => t.id === p!.tradeId);
-    if (trade) {
+    if (p!.allocations?.length) {
+      for (const allocation of p!.allocations) {
+        const allocatedTrade = [...s.invoices, ...s.purchases].find(t => t.id === allocation.tradeId);
+        const pendingOther = s.payments.filter(payment => payment.id !== p!.id && payment.chequeStatus === "pending" && (payment.tradeId === allocation.tradeId || payment.allocations?.some(item => item.tradeId === allocation.tradeId)))
+          .reduce((sum, payment) => sum + (payment.allocations?.find(item => item.tradeId === allocation.tradeId)?.amount || (payment.tradeId === allocation.tradeId ? Math.abs(payment.amount) : 0)), 0);
+        check(!!allocatedTrade && isPosted(allocatedTrade) && allocation.amount + pendingOther <= Math.max(0, balance(s, allocatedTrade)), "This cheque allocation exceeds a selected bill’s remaining balance.");
+      }
+    } else if (trade) {
       check(isPosted(trade), "Cheque must belong to a posted bill.");
       const due = balance(s, trade);
       check(p!.amount > 0 ? p!.amount <= due : p!.amount >= due, "Cheque exceeds the remaining bill balance.");
     } else check(!!p!.advance || !!p!.accountLevel, "A cheque without a bill must be an advance or account-level payment.");
   }
   const event: ChequeEvent = { id: uid(), paymentId, status, date, accountId: status === "cleared" ? accountId : p!.financialAccountId || "", reason: reason.trim(), actorId: actor.id, occurredAt: new Date().toISOString() };
-  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, ...(accountId && accountId !== cashChequeSettlement ? { financialAccountId: accountId } : { financialAccountId: undefined }) } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), crossCheques: forwarded ? (s.crossCheques || []).map(c => c.id === forwarded.id ? { ...c, status: status === "cleared" ? "cleared" : status === "bounced" ? "bounced" : c.status } : c) : s.crossCheques, chequeEvents: [...(s.chequeEvents || []), event] };
+  return { ...s, payments: s.payments.map(payment => payment.id === paymentId ? { ...payment, chequeStatus: status, ...(status === "cleared" ? { clearedDate: date, ...(accountId && accountId !== cashChequeSettlement ? { financialAccountId: accountId } : { financialAccountId: undefined }) } : p!.chequeStatus === "cleared" ? { clearedDate: p!.clearedDate || p!.date } : {}) } : payment), crossCheques: forwarded ? (s.crossCheques || []).map(c => c.id === forwarded.id ? { ...c, status: status === "cleared" ? "cleared" : status === "bounced" ? "bounced" : status === "cancelled" ? "cancelled" : c.status } : c) : s.crossCheques, chequeEvents: [...(s.chequeEvents || []), event] };
 }
 export function cashStatement(s: Store, from = "", to = today()) {
   const cash = chartAccounts(s).find(a => a.name === "Cash" && a.type === "Asset");
@@ -205,8 +231,41 @@ export function reverseVoucher(s: Store, type: "Journal" | "Bank", id: string, d
 export function updateDraft(s: Store, kind: "Sale" | "Purchase", replacement: Trade): Store {
   const key = kind === "Sale" ? "invoices" : "purchases", old = s[key].find(t => t.id === replacement.id);
   check(!!old && old.status === "draft", "Only drafts can be edited directly.");
-  requireOpenDate(s, old!.date);
-  return recordTrade({ ...s, [key]: s[key].filter(t => t.id !== replacement.id) }, kind, { ...replacement, number: old!.number, status: "draft" });
+  if (kind !== "Purchase") requireOpenDate(s, old!.date);
+  return recordTrade({ ...s, [key]: s[key].filter(t => t.id !== replacement.id) }, kind, { ...replacement, number: old!.number, status: "draft" }, kind === "Purchase");
+}
+
+export function deleteDraft(s: Store, kind: "Sale" | "Purchase", id: string): Store {
+  const key = kind === "Sale" ? "invoices" : "purchases";
+  const trade = s[key].find(item => item.id === id);
+  check(!!trade && trade.status === "draft", "Only a draft can be deleted.");
+  check(trade!.paid === 0 && !s.payments.some(payment => payment.tradeId === id), "Only unpaid drafts can be deleted.");
+  return { ...s, [key]: s[key].filter(item => item.id !== id) };
+}
+export function deletePaidPurchase(s: Store, id: string, actor: Actor): Store {
+  check(actor.role === "owner", "Only the workspace owner can delete a posted purchase.");
+  const trade = s.purchases.find(item => item.id === id && isPosted(item));
+  check(!!trade, "Select a posted purchase.");
+  check(trade!.paid > 0 || s.payments.some(payment => payment.tradeId === id || payment.allocations?.some(allocation => allocation.tradeId === id)), "Only a paid purchase can be deleted with this action.");
+  check(!s.payments.some(payment => payment.allocations?.some(allocation => allocation.tradeId === id)) && !(s.crossCheques || []).some(cheque => cheque.allocations?.some(allocation => allocation.tradeId === id)), "This purchase has allocated payments or forwarded cheques. Resolve those links before deleting it.");
+  check(!(s.returns || []).some(record => record.tradeId === id) && !(s.corrections || []).some(record => record.tradeId === id), "Purchases with returns or corrections cannot be deleted.");
+  requireOpenDate(s, today());
+  const payments = s.payments.map(payment => payment.tradeId === id
+    ? { ...payment, tradeId: "", advance: true, notes: `${payment.notes ? `${payment.notes}; ` : ""}Purchase ${trade!.number} deleted by workspace owner; retained as supplier advance.` }
+    : payment);
+  if (trade!.paid > 0) payments.push({ id: `purchase-advance:${id}`, date: trade!.date, kind: "Supplier", contactId: trade!.contactId, tradeId: "", advance: true, amount: trade!.paid, method: trade!.method, financialAccountId: trade!.financialAccountId, head: trade!.head, notes: `Purchase ${trade!.number} deleted by workspace owner; paid amount retained as supplier advance.`, createdAt: trade!.createdAt || 0 });
+  const movements = trade!.lines.map((line, index) => ({ id: uid(), productId: line.productId, qty: -line.qty, date: today(), type: "Purchase deletion reversal", reference: trade!.number, reason: "Posted purchase deleted by workspace owner.", ...(index === 0 ? { financialAmount: total(trade!), originalPurchaseDate: trade!.date, financialHead: trade!.head, financialContactId: trade!.contactId } : {}) }));
+  const purchases = s.purchases.filter(item => item.id !== id);
+  const affectedProducts = new Set(trade!.lines.map(line => line.productId));
+  const products = s.products.map(product => {
+    if (!affectedProducts.has(product.id)) return product;
+    const latest = purchases.filter(purchase => isPosted(purchase) && purchase.lines.some(line => line.productId === product.id)).sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0))[0];
+    if (latest && (latest.createdAt || 0) > (trade!.createdAt || 0)) return product;
+    const lines = latest?.lines.filter(line => line.productId === product.id) || [];
+    const cost = lines.length ? round(lines.reduce((sum, line) => sum + line.qty * line.price, 0) / lines.reduce((sum, line) => sum + line.qty, 0)) : trade!.costBefore?.[product.id] ?? product.cost;
+    return { ...product, cost };
+  });
+  return { ...s, purchases, payments, products, movements: [...s.movements, ...movements] };
 }
 
 export type WalkInLink = { id: string; tradeId: string; customerId: string; reason: string; actorId: string; occurredAt: string };
@@ -225,5 +284,5 @@ export function linkLegacyWalkIn(s: Store, tradeId: string, customerId: string, 
 
 export function unpostTrade(s: Store, kind: "Sale" | "Purchase", replacement: Trade, reason: string, actor: Actor, date = today()): Store {
   const reversed = correctTrade(s, kind, { ...replacement, status: "void" }, reason, actor, date);
-  return recordTrade(reversed, kind, { ...replacement, id: uid(), number: "", date, status: "draft", postedAt: undefined, replacementOf: replacement.id });
+  return recordTrade(reversed, kind, { ...replacement, id: uid(), number: "", date, status: "draft", postedAt: undefined, paid: 0, replacementOf: replacement.id, createdBy: actor.id, createdByName: actor.name, previousNumbers: undefined });
 }

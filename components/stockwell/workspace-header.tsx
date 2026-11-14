@@ -6,8 +6,8 @@ import type { Workspace } from "@/lib/stockwell/workspace";
 import { recordCollectionLabels } from "@/lib/stockwell/workspace";
 import { Bell, ChevronDown, Download, LogOut, RefreshCw, Settings, ShieldAlert, Trash2 } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
-import { useEffect, useState } from "react";
-import { Modal } from "@/components/stockwell/ui";
+import { useEffect, useState, type FormEvent } from "react";
+import { Field, Modal } from "@/components/stockwell/ui";
 type Props = {
   go: (m: Module) => void;
   canAccess: (name: string) => boolean;
@@ -19,6 +19,7 @@ type Props = {
   setProductSearch: Dispatch<SetStateAction<string>>;
   setModule: Dispatch<SetStateAction<Module>>;
   setNotice: Dispatch<SetStateAction<string>>;
+  setStore: Dispatch<SetStateAction<import("@/lib/stockwell/model").Store>>;
   isPlatformAdmin: boolean;
   openAdmin: () => void;
 };
@@ -33,6 +34,7 @@ export function WorkspaceHeader({
   setProductSearch,
   setModule,
   setNotice,
+  setStore,
   isPlatformAdmin,
   openAdmin,
 }: Props) {
@@ -40,6 +42,10 @@ export function WorkspaceHeader({
   const [reviewError, setReviewError] = useState("");
   const [reviewLoading, setReviewLoading] = useState(false);
   const [reviewActing, setReviewActing] = useState(false);
+  const [developmentCleanupOpen, setDevelopmentCleanupOpen] = useState(false);
+  const [developmentCleanupName, setDevelopmentCleanupName] = useState("");
+  const [developmentCleanupError, setDevelopmentCleanupError] = useState("");
+  const [developmentCleanupBusy, setDevelopmentCleanupBusy] = useState(false);
   const reviewBusy = reviewLoading || reviewActing || workspace.syncing;
   const hasConflict = workspace.review?.conflict || workspace.syncStatus.startsWith("Conflict");
   const needsHelp = hasConflict && workspace.review?.canRecover === false;
@@ -76,6 +82,23 @@ export function WorkspaceHeader({
   function openReview() {
     if (profileMenu.current) profileMenu.current.open = false;
     setReviewOpen(true);
+  }
+  async function clearDevelopmentRecords(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (developmentCleanupBusy || workspace.syncing || workspace.cache?.queue.length) return;
+    setDevelopmentCleanupBusy(true);
+    setDevelopmentCleanupError("");
+    try {
+      const result = await workspace.action({ action: "development-reset", confirmation: developmentCleanupName, revision: account.revision });
+      setStore(result.store);
+      setDevelopmentCleanupOpen(false);
+      setDevelopmentCleanupName("");
+      setNotice("Development records cleared. A pre-cleanup recovery snapshot was added to Notifications & logs.");
+    } catch (error) {
+      setDevelopmentCleanupError(error instanceof Error ? error.message : "Development records could not be cleared.");
+    } finally {
+      setDevelopmentCleanupBusy(false);
+    }
   }
   const readIndex = account.audit.findIndex((event) => event.id === account.readEvent);
   const unreadCount = account.member.role === "owner"
@@ -190,6 +213,12 @@ export function WorkspaceHeader({
               </button>
             </>
           )}
+          {process.env.NODE_ENV === "development" && account.member.role === "owner" && <button onClick={() => {
+            setDevelopmentCleanupError("");
+            setDevelopmentCleanupName("");
+            setDevelopmentCleanupOpen(true);
+            if (profileMenu.current) profileMenu.current.open = false;
+          }}><Trash2 size={16} /> Development cleanup</button>}
           <button
             onClick={() =>
               void workspace.signout().catch((e) => setNotice(e.message))
@@ -206,6 +235,16 @@ export function WorkspaceHeader({
           )}
         </div>
       </details>
+      {developmentCleanupOpen && <Modal title="Clear development workspace" eyebrow="DEVELOPMENT ONLY · OWNER ACCESS" close={() => { if (!developmentCleanupBusy) setDevelopmentCleanupOpen(false); }}>
+        <p>This clears all workspace business records, including products, stock history, purchases, sales, payments, contacts, expenses, returns, accounts, and settings entries. Workspace users and profile settings stay in place.</p>
+        <p>A recovery snapshot and cleanup summary will be added to Notifications &amp; logs. Export a backup first if you may need these records later.</p>
+        {workspace.cache?.queue.length ? <p className="form-error" role="alert">Sync or resolve the {workspace.cache.queue.length} pending device change{workspace.cache.queue.length === 1 ? "" : "s"} before cleanup.</p> : null}
+        <form onSubmit={clearDevelopmentRecords}>
+          <Field label={`Type ${account.name} to confirm`}><input value={developmentCleanupName} onChange={event => setDevelopmentCleanupName(event.target.value)} autoComplete="off" required /></Field>
+          {developmentCleanupError && <p className="form-error" role="alert">{developmentCleanupError}</p>}
+          <div className="form-foot"><button type="button" className="secondary" disabled={developmentCleanupBusy} onClick={() => setDevelopmentCleanupOpen(false)}>Cancel</button><button className="primary" disabled={developmentCleanupBusy || workspace.syncing || !!workspace.cache?.queue.length || developmentCleanupName !== account.name}>{developmentCleanupBusy ? "Clearing…" : "Clear development records"}</button></div>
+        </form>
+      </Modal>}
       {reviewOpen && workspace.cache && <Modal className={styles.syncReviewModal} title="Your saved changes" eyebrow="STOCKHALE" close={() => { if (!reviewActing) setReviewOpen(false); }}>
         <div className={styles.syncReview}>
           <div className={styles.syncReviewBody} tabIndex={0} role="region" aria-label="Sync review details">

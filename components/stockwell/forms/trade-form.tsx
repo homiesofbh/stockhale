@@ -3,15 +3,22 @@ import { BarcodeInput } from "@/components/stockwell/barcode-input";
 import { GlassSelect } from "@/components/stockwell/glass-select";
 import { Field, Modal, Table } from "@/components/stockwell/ui";
 import { ServerPagination } from "@/components/stockwell/ui";
+import { matchesProductQuery } from "@/lib/stockwell/record-selectors";
 import { ProductForm } from "./product-form";
 import type { InvoicePaper } from "@/lib/stockwell/invoice-pdf";
 import {
   availableUnits,
+  availableAdvancePayments,
+  applyAdvanceToTrade,
+  contactBalance,
   money,
   recordTrade,
+  recordPayment,
   round,
   stock,
   subtotal,
+  supplierPayableBalance,
+  total,
   today,
   uid,
   type Line,
@@ -109,15 +116,19 @@ export function TradeForm({
   const [contact, setContact] = useState("");
   const [contactQuery, setContactQuery] = useState("");
   const [productQuery, setProductQuery] = useState("");
+  const [productCategory, setProductCategory] = useState("");
+  const [productColor, setProductColor] = useState("");
+  const [productGsm, setProductGsm] = useState("");
+  const [productUnit, setProductUnit] = useState("");
   const [savingProduct, setSavingProduct] = useState(false);
   const [workingStore, setWorkingStore] = useState(s);
   const contactPage = useServerCollection<any>({ collection: modal === "Purchase" ? "suppliers" : "customers", module: modal === "Purchase" ? "Suppliers" : "Customers", query: contactQuery, pageSize: 12 });
-  const productPage = useServerCollection<any>({ collection: "products", query: productQuery, status: "Active", pageSize: 12, enabled: true });
   useEffect(() => { setWorkingStore(current => current.products.length > s.products.length ? current : s); }, [s]);
   const [addingProduct, setAddingProduct] = useState(false);
   const [productError, setProductError] = useState("");
   const [method, setMethod] = useState("Cash");
   const [paidAmount, setPaidAmount] = useState(billTotal);
+  const [applyAdvance, setApplyAdvance] = useState(false);
   const [addingSupplier, setAddingSupplier] = useState(false);
   const [supplierError, setSupplierError] = useState("");
   const [supplier, setSupplier] = useState({ name: "", phone: "", email: "", address: "" });
@@ -128,9 +139,23 @@ export function TradeForm({
   const contacts = modal === "Purchase" ? s.suppliers : s.customers;
   const contactSearch = contactQuery.trim().toLowerCase();
   const matchingContacts = contactPage.records;
-  const productSearch = productQuery.trim().toLowerCase();
-  const selectableProducts = productPage.records;
+  const activeProducts = workingStore.products.filter(product => product.active !== false);
+  const productCategories = [...new Set(activeProducts.map(product => product.category).filter(Boolean))].sort((a, b) => a.localeCompare(b));
+  const productColors = [...new Set(activeProducts.map(product => product.color).filter((color): color is string => !!color))].sort((a, b) => a.localeCompare(b));
+  const productGsms = [...new Set(activeProducts.map(product => product.gsm).filter((gsm): gsm is number => gsm !== undefined && gsm !== null))].sort((a, b) => a - b);
+  const productUnits = [...new Set(activeProducts.map(product => product.unit || "piece"))].sort((a, b) => a.localeCompare(b));
+  const selectableProducts = activeProducts.filter(product => matchesProductQuery(productQuery, product) &&
+    (!productCategory || product.category === productCategory) &&
+    (!productColor || product.color === productColor) &&
+    (!productGsm || String(product.gsm) === productGsm) &&
+    (!productUnit || (product.unit || "piece") === productUnit));
+  const hasProductFilters = !!(productQuery.trim() || productCategory || productColor || productGsm || productUnit);
   const units = availableUnits(workingStore.units, workingStore.products.map(product => product.unit));
+  const contactKind = modal === "Purchase" ? "Supplier" : "Customer";
+  const advanceSources = contact ? availableAdvancePayments(workingStore, contactKind, contact) : [];
+  const availableAdvance = round(advanceSources.reduce((sum, source) => sum + source.amount, 0));
+  const advanceToApply = applyAdvance ? round(Math.min(availableAdvance, billTotal)) : 0;
+  const currentContactBalance = contact ? (modal === "Purchase" ? supplierPayableBalance(workingStore, contact) : contactBalance(workingStore, "Customer", contact)) : 0;
   const unpaidWalkIn = modal === "Bill" && !contact && paidAmount < billTotal;
   const insufficientStock = modal === "Bill"
     ? Array.from(lines.reduce((demand, line) => demand.set(line.productId, (demand.get(line.productId) || 0) + line.qty), new Map<string, number>()))
@@ -138,7 +163,7 @@ export function TradeForm({
         .map(([productId, quantity]) => ({ productId, quantity, available: stock(workingStore, productId) }))
     : [];
   const belowCost = modal === "Bill" && lines.some(line => line.price < line.cost);
-  useEffect(() => setPaidAmount(billTotal), [billTotal]);
+  useEffect(() => setPaidAmount(Math.max(0, round(billTotal - advanceToApply))), [billTotal, advanceToApply]);
   function saveSupplier() {
     try {
       const draft = Object.fromEntries(Object.entries(supplier).map(([key, value]) => [key, value.trim()])) as typeof supplier;
@@ -203,12 +228,15 @@ export function TradeForm({
             walkInAddress: modal === "Bill" && !text(f, "contact") ? text(f, "walkInAddress") : "",
             walkInPhone: modal === "Bill" && !text(f, "contact") ? text(f, "walkInPhone") : "",
           };
-          const recorded = recordTrade(
-            workingStore,
-            modal === "Bill" ? "Sale" : "Purchase",
-            t,
-          );
-          const savedTrade = (modal === "Bill" ? recorded.invoices : recorded.purchases).at(-1)!;
+          if (applyAdvance && t.status === "draft") throw new Error("Save the draft without applying the advance. You can apply it when you post this bill.");
+          const kind = modal === "Bill" ? "Sale" : "Purchase";
+          const billPaid = Math.min(t.paid, Math.max(0, round(total(t) - advanceToApply)));
+          const excess = t.status === "draft" ? 0 : round(t.paid - billPaid);
+          let recorded = recordTrade(workingStore, kind, { ...t, paid: t.status === "draft" ? t.paid : billPaid });
+          const saved = (kind === "Sale" ? recorded.invoices : recorded.purchases).at(-1)!;
+          if (advanceToApply > 0 && t.status !== "draft") recorded = applyAdvanceToTrade(recorded, saved, advanceToApply, t.date);
+          if (excess > 0 && saved.contactId) recorded = recordPayment(recorded, { id: uid(), date: t.date, kind: kind === "Sale" ? "Customer" : "Supplier", contactId: saved.contactId, tradeId: "", advance: true, amount: excess, method: t.method, head: t.head, notes: `Excess paid with ${saved.number}`, chequeNumber: t.chequeNumber, chequeBank: t.chequeBank, chequeDate: t.chequeDate });
+          const savedTrade = (modal === "Bill" ? recorded.invoices : recorded.purchases).find(item => item.id === saved.id)!;
           const snapshot = financialBalanceSnapshot(recorded);
           const next = modal === "Bill"
             ? { ...recorded, invoices: recorded.invoices.map(item => item.id === savedTrade.id ? { ...item, balanceAfter: snapshot } : item) }
@@ -238,14 +266,14 @@ export function TradeForm({
           {contactSearch && <div className="contact-results" role="listbox" aria-label={modal === "Purchase" ? "Matching suppliers" : "Matching customers"}>
             {matchingContacts
               .map((c) => (
-                <button type="button" role="option" aria-selected={contact === c.id} className={contact === c.id ? "contact-result selected" : "contact-result"} key={c.id} onClick={() => { setContact(c.id); setContactQuery(""); }}>
+                <button type="button" role="option" aria-selected={contact === c.id} className={contact === c.id ? "contact-result selected" : "contact-result"} key={c.id} onClick={() => { setContact(c.id); setContactQuery(""); setApplyAdvance(false); }}>
                 {modal === "Purchase" ? c.name : [c.name, c.company, c.phone || c.mobile].filter(Boolean).join(" · ")}
               </button>
               ))}
             {matchingContacts.length === 0 && <p className="field-help">No matching {modal === "Purchase" ? "suppliers" : "customers"}.</p>}
           </div>}
           {contactSearch && <ServerPagination page={contactPage.page} pageCount={contactPage.pageCount} count={contactPage.count} pageSize={contactPage.pageSize} setPage={contactPage.setPage} />}
-          {contact && !contactSearch && <p className="selected-contact">Selected: <b>{contactPage.records.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.company}</b> <button type="button" className="link" onClick={() => setContact("")}>Clear</button></p>}
+          {contact && !contactSearch && <p className="selected-contact">Selected: <b>{contactPage.records.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.name || contacts.find((c) => c.id === contact)?.company}</b> <button type="button" className="link" onClick={() => { setContact(""); setApplyAdvance(false); }}>Clear</button></p>}
           <p className="field-help">Type a name, company, phone, mobile, or email to search. Select a result below.</p>
           </div>
           </Field>
@@ -309,7 +337,16 @@ export function TradeForm({
       )}
       <BarcodeInput inputRef={scanInput} value={scan} onChange={setScan} onScan={scanProduct} />
       {modal === "Purchase" && canAddProduct && <button type="button" className="secondary-button" onClick={() => { setProductError(""); setAddingProduct(true); }}>+ Add product</button>}
-      <div className="product-picker-search"><Field label="Search stock / product"><div><input value={productQuery} onChange={(e) => setProductQuery(e.target.value)} placeholder="Search by product, SKU, barcode, colour, GSM, or UOM" />{productQuery.trim() && <div className="product-search-results" role="listbox" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map((p) => <button key={p.id} type="button" className="product-search-result" onClick={() => { addLine(p.id); setProductQuery(""); }}><span><strong>{p.name}</strong><small>{[p.sku, p.color, p.gsm ? `${p.gsm} GSM` : "", p.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(workingStore, p.id)} in stock</small></button>) : <p className="field-help">No active stock product matches “{productQuery.trim()}”.</p>}<ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} /></div>}</div></Field>
+      <div className="product-picker-search">
+        <Field label="Search stock / product"><input value={productQuery} onChange={event => setProductQuery(event.target.value)} placeholder="Search name, SKU, barcode, colour, GSM, category, or UOM" /></Field>
+        <div className="product-filter-grid">
+          <Field label="Category"><GlassSelect aria-label="Filter products by category" value={productCategory} onValueChange={setProductCategory}><option value="">All categories</option>{productCategories.map(value => <option key={value} value={value}>{value}</option>)}</GlassSelect></Field>
+          <Field label="Colour"><GlassSelect aria-label="Filter products by colour" value={productColor} onValueChange={setProductColor}><option value="">All colours</option>{productColors.map(value => <option key={value} value={value}>{value}</option>)}</GlassSelect></Field>
+          <Field label="GSM"><GlassSelect aria-label="Filter products by GSM" value={productGsm} onValueChange={setProductGsm}><option value="">All GSM</option>{productGsms.map(value => <option key={value} value={String(value)}>{value}</option>)}</GlassSelect></Field>
+          <Field label="UOM"><GlassSelect aria-label="Filter products by unit" value={productUnit} onValueChange={setProductUnit}><option value="">All units</option>{productUnits.map(value => <option key={value} value={value}>{value}</option>)}</GlassSelect></Field>
+        </div>
+        {hasProductFilters && <div className="product-filter-summary"><span>{selectableProducts.length} matching products</span><button type="button" className="link" onClick={() => { setProductQuery(""); setProductCategory(""); setProductColor(""); setProductGsm(""); setProductUnit(""); }}>Clear filters</button></div>}
+        {productQuery.trim() && <div className="product-search-results" role="group" aria-label="Matching stock products">{selectableProducts.length ? selectableProducts.map(product => <button key={product.id} type="button" className="product-search-result" onClick={() => { addLine(product.id); setProductQuery(""); }}><span><strong>{product.name}</strong><small>{[product.sku, product.color, product.gsm != null ? `${product.gsm} GSM` : "", product.unit || "piece"].filter(Boolean).join(" · ")}</small></span><small>{stock(workingStore, product.id)} in stock</small></button>) : <p className="field-help">No matching stock product.</p>}</div>}
       <Field label="Or choose a product"><div className="server-select-field">
         <GlassSelect value="" onValueChange={(e) => { addLine(e); setProductQuery(""); }}>
           <option value="">Select product to add</option>
@@ -319,7 +356,6 @@ export function TradeForm({
             </option>
           ))}
         </GlassSelect>
-        <ServerPagination page={productPage.page} pageCount={productPage.pageCount} count={productPage.count} pageSize={productPage.pageSize} setPage={productPage.setPage} />
         </div>
       </Field>
       </div>
@@ -341,7 +377,7 @@ export function TradeForm({
               <>
                 {pName(l.productId)}
                 <small>
-                  {workingStore.products.find((p) => p.id === l.productId)?.sku}
+                  {[workingStore.products.find((p) => p.id === l.productId)?.sku, workingStore.products.find((p) => p.id === l.productId)?.gsm ? `${workingStore.products.find((p) => p.id === l.productId)?.gsm} GSM` : ""].filter(Boolean).join(" · ")}
                 </small>
               </>,
               workingStore.products.find((p) => p.id === l.productId)?.color || "—",
@@ -349,7 +385,7 @@ export function TradeForm({
                 aria-label={`Quantity for ${pName(l.productId)}`}
                 data-barcode-quantity={l.productId}
                 type="number"
-                min="0.001"
+                min="0.5"
                 step="0.001"
                 required
                 value={l.qty}
@@ -366,7 +402,7 @@ export function TradeForm({
               <input
                 aria-label={`Price for ${pName(l.productId)}`}
                 type="number"
-                min="0"
+                min="1"
                 step="0.01"
                 required
                 value={l.price}
@@ -447,7 +483,6 @@ export function TradeForm({
             name="paid"
             type="number"
             min="0"
-            max={Math.max(0, billTotal)}
             step="0.01"
             value={paidAmount}
             onChange={(e) => setPaidAmount(Number(e.target.value))}
@@ -479,6 +514,11 @@ export function TradeForm({
           )}
         </Field>
       </div>
+      {contact && <div className="payment-balance-summary" aria-live="polite">
+        <div><span>{currentContactBalance > 0 ? modal === "Bill" ? "Customer balance due" : "Payable to supplier" : modal === "Bill" ? "Customer credit balance" : "Supplier credit due back"}</span><strong>{money(Math.abs(currentContactBalance))}</strong></div>
+        <div><span>{modal === "Bill" ? "Available customer advance" : "Available supplier advance"}</span><strong>{money(availableAdvance)}</strong>{availableAdvance > 0 && <label className="checkbox-row payment-advance-toggle"><input type="checkbox" checked={applyAdvance} onChange={event => setApplyAdvance(event.target.checked)} /> Apply up to {money(Math.min(availableAdvance, billTotal))} of this advance to this {modal === "Bill" ? "invoice" : "purchase"}</label>}</div>
+        {applyAdvance && <p className="field-help">Advance applied: {money(advanceToApply)} · paid now: {money(paidAmount)} · remaining due after posting: {money(Math.max(0, billTotal - advanceToApply - paidAmount))}</p>}
+      </div>}
       <p className="form-hint">
         {modal === "Bill"
           ? contact

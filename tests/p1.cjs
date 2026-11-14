@@ -25,6 +25,74 @@ test('supplier advances reduce cash and negative advances are rejected', () => {
  assert.equal(m.financialRows(next).filter(row => row.type === 'Supplier payment').reduce((sum, row) => sum + row.cash, 0), -25);
  assert.throws(() => m.recordPayment(s, { ...payment, amount: -25 }), /greater than zero/);
 });
+test('payments allocate once across customer and supplier bills', () => {
+ const s = fixture();
+ let sales = m.recordTrade(s, 'Sale', bill({ id: 'sale-a', contactId: 'customer' }));
+ sales = m.recordTrade(sales, 'Sale', bill({ id: 'sale-b', contactId: 'customer' }));
+ const customerPayment = m.recordPayment(sales, { id: 'customer-multi', date: day, kind: 'Customer', contactId: 'customer', tradeId: '', allocations: [{ tradeId: 'sale-a', amount: 10 }, { tradeId: 'sale-b', amount: 10 }], amount: 20, method: 'Cash', head: 'Customer payments', notes: '' });
+ assert.equal(m.balance(customerPayment, customerPayment.invoices.find(t => t.id === 'sale-a')), 10);
+ assert.equal(m.balance(customerPayment, customerPayment.invoices.find(t => t.id === 'sale-b')), 10);
+ w.verifyChange(sales, customerPayment, 'Payments', context(clerk));
+ let purchases = m.recordTrade(s, 'Purchase', bill({ id: 'purchase-a', contactId: 'supplier', head: 'Purchases' }));
+ purchases = m.recordTrade(purchases, 'Purchase', bill({ id: 'purchase-b', contactId: 'supplier', head: 'Purchases' }));
+ const supplierPayment = m.recordPayment(purchases, { id: 'supplier-multi', date: day, kind: 'Supplier', contactId: 'supplier', tradeId: '', allocations: [{ tradeId: 'purchase-a', amount: 10 }, { tradeId: 'purchase-b', amount: 10 }], amount: 20, method: 'Cash', head: 'Supplier payments', notes: '' });
+ assert.equal(m.balance(supplierPayment, supplierPayment.purchases.find(t => t.id === 'purchase-a')), 10);
+ assert.equal(m.balance(supplierPayment, supplierPayment.purchases.find(t => t.id === 'purchase-b')), 10);
+ w.verifyChange(purchases, supplierPayment, 'Payments', context(clerk));
+});
+test('allocated payments lock bill corrections and allocated cheques validate each bill before clearing', () => {
+ const base = fixture();
+ let sales = m.recordTrade(base, 'Sale', bill({ id: 'sale-a', contactId: 'customer' }));
+ sales = m.recordTrade(sales, 'Sale', bill({ id: 'sale-b', contactId: 'customer' }));
+ const allocated = m.recordPayment(sales, { id: 'allocated-cheque', date: day, kind: 'Customer', contactId: 'customer', tradeId: '', allocations: [{ tradeId: 'sale-a', amount: 10 }, { tradeId: 'sale-b', amount: 10 }], amount: 20, method: 'Cheque', head: 'Customer payments', notes: '', chequeNumber: 'A1', chequeBank: 'HBL', chequeDate: day });
+ assert.throws(() => o.correctTrade(allocated, 'Sale', allocated.invoices[0], 'Edit', owner), /linked payments/);
+ const lowerBalance = { ...allocated, invoices: allocated.invoices.map(trade => trade.id === 'sale-a' ? { ...trade, paid: 15 } : trade) };
+ assert.throws(() => o.changeCheque(lowerBalance, 'allocated-cheque', 'cleared', day, 'cash', 'Clear', clerk), /allocation exceeds/);
+});
+test('sync collisions preserve posted references and assign independent draft references', () => {
+ const base = fixture();
+ const server = m.recordTrade(m.recordTrade(base, 'Sale', bill({ id: 'server-posted', date: day })), 'Sale', bill({ id: 'server-draft', date: day, status: 'draft' }));
+ const local = m.recordTrade(m.recordTrade(base, 'Sale', bill({ id: 'local-posted', date: day })), 'Sale', bill({ id: 'local-draft', date: day, status: 'draft' }));
+ const candidate = { ...server, invoices: [...server.invoices, ...local.invoices], movements: [...server.movements, ...local.movements] };
+ const resolved = w.resolveTradeReferenceCollisions(server, candidate);
+ assert.equal(resolved.invoices.find(item => item.id === 'server-posted').number, 'INV-00001');
+ assert.equal(resolved.invoices.find(item => item.id === 'local-posted').number, 'INV-00002');
+ assert.equal(resolved.invoices.find(item => item.id === 'server-draft').number, 'SL-00001');
+ assert.equal(resolved.invoices.find(item => item.id === 'local-draft').number, 'SL-00002');
+ const movement = resolved.movements.find(item => item.reference === 'INV-00002' && item.type === 'Sale');
+ assert.ok(movement);
+});
+test('owner expense correction preserves original creator and creation time', () => {
+ const s = fixture();
+ const expense = o.saveExpense(s, { id: 'expense-edit', date: day, category: 'General', head: 'Expenses', amount: 5, method: 'Cash', notes: 'First' }, clerk, new Date().toISOString());
+ const edited = o.saveExpense(expense, { ...expense.expenses[0], amount: 8, notes: 'Corrected' }, owner, new Date().toISOString());
+ assert.equal(edited.expenses[0].amount, 8);
+ assert.equal(edited.expenses[0].createdBy, clerk.id);
+ assert.equal(edited.expenses[0].createdAt, expense.expenses[0].createdAt);
+ assert.throws(() => o.saveExpense(expense, { ...expense.expenses[0], amount: 9 }, clerk), /Only the owner/);
+ const activeAccount = { ...s, financialAccounts: [{ id: 'inactive', name: 'Closed bank', type: 'Bank', active: true }] };
+ const historical = o.saveExpense(activeAccount, { id: 'old-bank-expense', date: day, category: 'General', head: 'Expenses', amount: 4, method: 'Closed bank', notes: '' }, owner);
+ const deactivated = { ...historical, financialAccounts: historical.financialAccounts.map(account => ({ ...account, active: false })) };
+ assert.doesNotThrow(() => o.saveExpense(deactivated, { ...historical.expenses[0], amount: 6 }, owner));
+});
+test('contact opening balances require owner authorization and remain locked after transactions', () => {
+ const s = fixture();
+ const opened = m.saveContact(s, 'Customer', { id: 'opening', name: 'Opening customer', phone: '', email: '', address: '', openingBalance: 5, openingBalanceDate: day });
+ const added = { ...s, customers: [...s.customers, opened.customers.find(contact => contact.id === 'opening')] };
+ assert.throws(() => w.verifyChange(s, added, 'Customers', context(clerk)), /workspace owner/);
+ const withTrade = m.recordTrade(opened, 'Sale', bill({ id: 'opening-sale', date: day, contactId: 'opening' }));
+ const changed = { ...withTrade, customers: withTrade.customers.map(contact => contact.id === 'opening' ? { ...contact, openingBalance: 6 } : contact) };
+ assert.throws(() => w.verifyChange(withTrade, changed, 'Customers', context(owner)), /locked after transactions/);
+});
+test('receivables and payables reports filter unapplied advances by selected contact', () => {
+ const s = fixture();
+ let withAdvances = m.recordPayment(s, { id: 'customer-advance', date: day, kind: 'Customer', contactId: 'customer', tradeId: '', advance: true, amount: 5, method: 'Cash', head: 'Customer payments', notes: '' });
+ withAdvances = m.recordPayment(withAdvances, { id: 'supplier-advance', date: day, kind: 'Supplier', contactId: 'supplier', tradeId: '', advance: true, amount: 7, method: 'Cash', head: 'Supplier payments', notes: '' });
+ const customerRows = r.createReportData(withAdvances, { ...opts('Receivables report'), reportContact: 'customer' }).rows;
+ const supplierRows = r.createReportData(withAdvances, { ...opts('Payables report'), reportContact: 'supplier' }).rows;
+ assert.deepEqual(customerRows.map(row => row[0]), ['ADVANCE']);
+ assert.deepEqual(supplierRows.map(row => row[0]), ['ADVANCE']);
+});
 test('sync recovery preserves independent edits and rejects overlapping edits', () => {
  const base = fixture();
  const local = { ...base, customers: [...base.customers, { id: 'local', name: 'Local', phone: '', address: '', email: '' }] };
@@ -57,6 +125,35 @@ test('draft bills have no stock, cash, balance or profit effect; posting applies
  assert.equal(m.stock(post, 'p'), 18); assert.equal(m.financialRows(post)[0].cash, 20);
  w.verifyChange(draft, post, 'Billing', context(clerk));
  assert.throws(() => o.postTrade(post, 'Sale', 'bill'), /draft/);
+});
+test('sales drafts can be deleted by their creator or owner only', () => {
+ const s = fixture(), draft = m.recordTrade(s, 'Sale', bill({ date: day, status: 'draft', createdBy: clerk.id }));
+ const deleted = o.deleteDraft(draft, 'Sale', 'bill');
+ w.verifyChange(draft, deleted, 'Billing', context(clerk));
+ w.verifyChange(draft, deleted, 'Billing', context(owner));
+ assert.throws(() => w.verifyChange(draft, deleted, 'Billing', context({ ...clerk, id: 'other' })), /creator or workspace owner/);
+ const paidDraft = m.recordTrade(fixture(), 'Sale', bill({ id: 'paid-draft', date: day, status: 'draft', paid: 5, createdBy: owner.id }));
+ assert.throws(() => o.deleteDraft(paidDraft, 'Sale', 'paid-draft'), /Only unpaid drafts/);
+ assert.throws(() => w.verifyChange(paidDraft, { ...paidDraft, invoices: [] }, 'Billing', context(owner)), /Only unpaid drafts/);
+});
+test('legacy bill lines below new minimums do not block unrelated updates', () => {
+ const s = m.recordTrade(fixture(), 'Sale', bill());
+ const legacy = { ...s, invoices: s.invoices.map(trade => ({ ...trade, lines: trade.lines.map(line => ({ ...line, qty: 0.25, price: 0.5 })) })) };
+ const changed = { ...legacy, customers: [...legacy.customers, { id: 'new-customer', name: 'New customer', phone: '', email: '', address: '' }] };
+ assert.doesNotThrow(() => w.verifyChange(legacy, changed, 'Customers', context(owner)));
+});
+test('owners can delete paid purchases while retaining advances and reversing stock', () => {
+ const s = fixture();
+ const purchase = m.recordTrade(s, 'Purchase', bill({ id: 'paid-purchase', date: day, contactId: 'supplier', head: 'Purchases', paid: 4, lines: [{ productId: 'p', qty: 2, price: 8, cost: 8 }] }));
+ assert.throws(() => o.deletePaidPurchase(purchase, 'paid-purchase', clerk), /workspace owner/);
+ const deleted = o.deletePaidPurchase(purchase, 'paid-purchase', owner);
+ assert.equal(deleted.purchases.some(item => item.id === 'paid-purchase'), false);
+ assert.equal(m.stock(deleted, 'p'), 20);
+ assert.equal(m.unappliedAdvanceBalance(deleted, 'Supplier', 'supplier'), 4);
+ const deletionRows = m.financialRows(deleted).filter(row => row.reference === 'PUR-00001' && ['Purchase', 'Purchase deletion reversal'].includes(row.type));
+ assert.equal(deletionRows.filter(row => row.type === 'Purchase').reduce((sum, row) => sum + row.amount, 0), -16);
+ assert.equal(deletionRows.filter(row => row.type === 'Purchase deletion reversal').reduce((sum, row) => sum + row.amount, 0), 16);
+ assert.doesNotThrow(() => w.verifyChange(purchase, deleted, 'Purchases', context(owner)));
 });
 test('purchase drafts preserve costs; posting updates only the cost and stock', () => {
  const s = fixture(), draft = m.recordTrade(s, 'Purchase', bill({ status: 'draft', contactId: 'supplier', head: 'Purchases', lines: [{ productId: 'p', qty: 2, price: 8, cost: 8 }] }));
@@ -92,6 +189,14 @@ test('owner corrections update stock and preserve historical reports and audit s
  assert.throws(() => o.correctTrade(s, 'Sale', original, 'Reason', clerk), /owner/);
  const forged = { ...s, invoices: [{ ...original, paid: 20 }] };
  assert.throws(() => w.verifyChange(s, forged, 'Billing', context(owner)), /locked/);
+});
+test('bill correction excess paid is retained as a customer advance', () => {
+ const s = m.recordTrade(fixture(), 'Sale', bill({ id: 'excess-correction', date: day, paid: 20 }));
+ const corrected = o.correctTrade(s, 'Sale', { ...s.invoices[0], lines: [{ ...s.invoices[0].lines[0], qty: 0.5 }] }, 'Correct quantity', owner, day);
+ assert.equal(corrected.invoices[0].paid, 5);
+ assert.equal(m.unappliedAdvanceBalance(corrected, 'Customer', 'customer'), 15);
+ assert.equal(m.balance(corrected, corrected.invoices[0]), 0);
+ w.verifyChange(s, corrected, 'Billing', context(owner));
 });
 test('bill reversals preserve historical cash and restore stock without deleting originals', () => {
  const s = m.recordTrade(fixture(), 'Sale', bill({ paid: 20 }));
@@ -149,6 +254,14 @@ test('pending cheque cancellation leaves bill due and immutable history rejects 
  w.verifyChange(s, cancel, 'Payments', context(owner)); assert.equal(m.balance(cancel, cancel.invoices[0]), 20);
  const direct = { ...s, payments: s.payments.map(p => ({ ...p, chequeStatus: 'cleared', clearedDate: yesterday })) };
  assert.throws(() => w.verifyChange(s, direct, 'Payments', context(owner)), /locked/);
+});
+test('cancelling a forwarded cheque updates both lifecycle records', () => {
+ const s = pendingCheque();
+ const forwarded = { ...s, crossCheques: [{ id: 'forwarded', sourcePaymentId: 'cheque', date: before, customerId: 'customer', destinationKind: 'Supplier', destinationId: 'supplier', destinationName: 'Supplier', amount: 20, status: 'pending', notes: '' }] };
+ const cancelled = o.changeCheque(forwarded, 'cheque', 'cancelled', yesterday, '', 'Supplier declined cheque', owner);
+ assert.equal(cancelled.payments.find(payment => payment.id === 'cheque').chequeStatus, 'cancelled');
+ assert.equal(cancelled.crossCheques[0].status, 'cancelled');
+ w.verifyChange(forwarded, cancelled, 'Payments', context(owner));
 });
 test('cash flow excludes bank transfers while bank statements retain both sides', () => {
  let s = linked(fixture());
@@ -231,7 +344,7 @@ test('unposting retains a reversal and a replacement draft without duplicate sto
  assert.equal(m.stock(unposted, 'p'), 20); assert.equal(o.cashStatement(unposted, '', day).closing, 0);
  const reposted = o.postTrade(unposted, 'Sale', unposted.invoices[1].id);
  w.verifyChange(unposted, reposted, 'Billing', context(owner));
- assert.equal(m.stock(reposted, 'p'), 18); assert.equal(o.cashStatement(reposted, '', day).closing, 20);
+ assert.equal(m.stock(reposted, 'p'), 18); assert.equal(o.cashStatement(reposted, '', day).closing, 0);
 });
 
 test('new Excel backups contain a complete validated JSON recovery snapshot', async () => {
@@ -286,7 +399,7 @@ test('fractional stock corrections preserve thousandths and duplicate lines do n
  assert.equal(m.stock(corrected, 'p'), 18.998);
  w.verifyChange(fractional, corrected, 'Billing', context(owner));
  const small = { ...base, movements: [{ id: 'small-stock', productId: 'p', qty: 0.3, date: before, type: 'Opening stock', reference: 'P1', reason: 'Opening' }] };
- assert.doesNotThrow(() => m.recordTrade(small, 'Sale', bill({ lines: [{ productId: 'p', qty: 0.1, price: 10, cost: 5 }, { productId: 'p', qty: 0.2, price: 10, cost: 5 }] })));
+ assert.throws(() => m.recordTrade(small, 'Sale', bill({ lines: [{ productId: 'p', qty: 0.5, price: 10, cost: 5 }, { productId: 'p', qty: 0.5, price: 10, cost: 5 }] })), /Insufficient stock/);
 });
 test('drafts cannot be issued as invoice PDFs', () => {
  const pdf = require(path.join(process.env.STOCKWELL_TEST_DIR, 'invoice-pdf.js'));

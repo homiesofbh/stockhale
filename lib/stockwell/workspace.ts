@@ -300,11 +300,32 @@ export function resolveTradeReferenceCollisions(server: Store, candidate: Store)
   // Invoice and purchase references share one uniqueness constraint.
   const seen = new Set([...server.invoices, ...server.purchases].map((trade) => trade.number));
   let nextNumber = (number: string) => Number(number.split("-")[1]) || 0;
-  let sequence = Math.max(...Array.from(used, nextNumber), 0);
+  let sequence = Math.max(...[...server.invoices, ...server.purchases, ...candidate.invoices, ...candidate.purchases].filter(trade => trade.status !== "draft").map(trade => nextNumber(trade.number)), 0);
 
   for (const key of ["invoices", "purchases"] as const) {
     const prefix = key === "invoices" ? "INV" : "PUR";
     result[key] = result[key].map((trade) => {
+      if (trade.status === "draft") {
+        if (serverIds.has(trade.id)) {
+          seen.add(trade.number);
+          return trade;
+        }
+        if (!seen.has(trade.number)) {
+          seen.add(trade.number);
+          return trade;
+        }
+        const draftPrefix = key === "invoices" ? "SL" : "PRO";
+        let draftSequence = Math.max(0, ...[...result.invoices, ...result.purchases].filter(item => item.status === "draft").map(item => Number(new RegExp(`^${key === "invoices" ? "SL" : "PRO"}-(\\d{5})$`).exec(item.number)?.[1] || 0)));
+        let number = "";
+        do {
+          draftSequence += 1;
+          if (draftSequence > 99999) throw new Error(`The ${draftPrefix === "PRO" ? "purchase order" : "sales draft"} reference sequence is full.`);
+          number = `${draftPrefix}-${String(draftSequence).padStart(5, "0")}`;
+        } while (used.has(number) || seen.has(number));
+        used.add(number);
+        seen.add(number);
+        return { ...trade, number };
+      }
       // Keep the bill if the server already has it, or its number is free.
       if (serverIds.has(trade.id) || !seen.has(trade.number)) {
         seen.add(trade.number);
