@@ -98,6 +98,14 @@ export type Movement = {
   financialHead?: string;
   financialContactId?: string;
 };
+export type StockCount = {
+  id: string;
+  date: string;
+  status: "draft" | "posted";
+  createdAt: number;
+  postedAt?: number;
+  lines: { productId: string; expected: number; counted?: number }[];
+};
 export type PartnerEntry = {
   createdAt?: number;
   balanceAfter?: FinancialBalanceSnapshot;
@@ -173,6 +181,7 @@ export type Attachment = {
 export type ReturnRecord = {
   createdAt?: number;
   id: string;
+  number?: string;
   date: string;
   kind: "Sales return" | "Purchase return" | "Damaged stock";
   tradeId: string;
@@ -182,6 +191,41 @@ export type ReturnRecord = {
   cost: number;
   reason: string;
 };
+export function assignReturnNumbers(returns: ReturnRecord[]): ReturnRecord[] {
+  const ordered = returns.slice().sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.date.localeCompare(b.date) || a.id.localeCompare(b.id));
+  const used = new Set(ordered.map(item => Number(/^RTN-(\d+)$/.exec(item.number || "")?.[1] || 0).toString()).filter(value => value !== "0"));
+  let next = Math.max(0, ...ordered.map(item => Number(/^RTN-(\d+)$/.exec(item.number || "")?.[1] || 0))) + 1;
+  const numbered = new Map(ordered.map(item => {
+    if (item.number) return item;
+    while (used.has(String(next))) next++;
+    const number = `RTN-${String(next).padStart(5, "0")}`;
+    used.add(String(next++));
+    return { ...item, number };
+  }).map(item => [item.id, item] as const));
+  return returns.map(item => numbered.get(item.id) || item);
+}
+export function returnNotesWithNumbers(payment: Payment, returns: ReturnRecord[], hideUnmatched = false): string {
+  const prefix = "Automatic refund for return";
+  if (payment.amount >= 0 || !payment.notes?.startsWith(prefix + " ")) return payment.notes;
+  const uuid = /^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i;
+  const kind = payment.kind === "Supplier" ? "Purchase return" : "Sales return";
+  const linked = returns.filter(item => item.kind === kind && item.tradeId === payment.tradeId && !!payment.tradeId);
+  const references = payment.notes.slice(prefix.length).trim().split(/,\s*/);
+  const claimed = new Set(linked.filter(item => references.includes(item.id) || (!!item.number && references.includes(item.number))).map(item => item.id));
+  const resolved = references.map(reference => {
+    if (!uuid.test(reference)) return reference;
+    const exact = linked.find(item => item.id === reference);
+    if (exact) { claimed.add(exact.id); return exact.number; }
+    const matching = linked.filter(item => item.productId === reference && item.date === payment.date);
+    const available = matching.filter(item => !claimed.has(item.id)).sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0) || a.id.localeCompare(b.id));
+    const match = available[0];
+    if (match) claimed.add(match.id);
+    return match?.number;
+  });
+  if (!hideUnmatched && resolved.some(reference => !reference)) return payment.notes;
+  const numbers = [...new Set(resolved.filter(Boolean))].join(", ");
+  return numbers ? `${prefix} ${numbers}` : prefix;
+}
 export type RecipeIngredient = { productId: string; quantity: number };
 export type Recipe = { id: string; name: string; outputProductId: string; outputQuantity: number; ingredients: RecipeIngredient[] };
 export type ProductionRunIngredient = RecipeIngredient & { unitCost: number };
@@ -204,6 +248,7 @@ export type Store = {
   purchases: Trade[];
   invoices: Trade[];
   movements: Movement[];
+  stockCounts?: StockCount[];
   payments: Payment[];
   expenses: Expense[];
   returns: ReturnRecord[];
@@ -270,6 +315,7 @@ export const emptyStore = (): Store => ({
   purchases: [],
   invoices: [],
   movements: [],
+  stockCounts: [],
   payments: [],
   expenses: [],
   returns: [],
@@ -300,6 +346,7 @@ export function normalizeStore(value: Store): Store {
     walkInLinks: value.walkInLinks || [],
     chequeEvents: value.chequeEvents || [],
     dailyCloses: value.dailyCloses || [],
+    stockCounts: value.stockCounts || [],
     financialAccounts: (value.financialAccounts || []).filter(
       (account) => !["jazzcash", "easypaisa", "nayapay"].includes(account.id),
     ),
@@ -317,6 +364,43 @@ export const stock = (s: Store, id: string) =>
       .filter((m) => m.productId === id)
       .reduce((n, m) => n + m.qty, 0),
   );
+export function startStockCount(s: Store, date = today()): Store {
+  requireOpenDate(s, date);
+  assert(s.products.some(product => product.active !== false), "Add an active product before starting a stock count.");
+  const count: StockCount = {
+    id: uid(),
+    date,
+    status: "draft",
+    createdAt: Date.now(),
+    lines: s.products.filter(product => product.active !== false).map(product => ({ productId: product.id, expected: stock(s, product.id) })),
+  };
+  return { ...s, stockCounts: [...(s.stockCounts || []), count] };
+}
+export function postStockCount(s: Store, countId: string, quantities: Record<string, number>): Store {
+  const count = (s.stockCounts || []).find(item => item.id === countId);
+  assert(!!count && count.status === "draft", "This stock count is no longer open.");
+  if (!count || count.status !== "draft") throw new Error("This stock count is no longer open.");
+  requireOpenDate(s, count.date);
+  let next = s;
+  const lines = count.lines.map(line => {
+    const counted = quantities[line.productId];
+    assert(Number.isFinite(counted) && counted >= 0 && roundQty(counted) === counted, "Enter a valid counted quantity for every product.");
+    assert(stock(s, line.productId) === line.expected, "Stock changed after this count began. Start a new count before posting.");
+    const delta = roundQty(counted - line.expected);
+    if (delta) next = {
+      ...next,
+      movements: [...next.movements, {
+        id: uid(), createdAt: Date.now(), productId: line.productId, qty: delta, date: count.date,
+        type: delta > 0 ? "Stock in" : "Stock out", reference: `COUNT-${count.id}`, reason: "Physical stock count",
+      }],
+    };
+    return { ...line, counted };
+  });
+  return {
+    ...next,
+    stockCounts: (next.stockCounts || []).map(item => item.id === countId ? { ...item, status: "posted", postedAt: Date.now(), lines } : item),
+  };
+}
 export const subtotal = (t: Pick<Trade, "lines">) =>
   round(t.lines.reduce((n, l) => n + l.qty * l.price, 0));
 export const lineDiscount = (t: Pick<Trade, "lines">) =>
@@ -803,6 +887,7 @@ export function recordReturn(s: Store, r: ReturnRecord): Store {
   );
   const entry = {
     ...r,
+    number: r.number || `RTN-${String(Math.max(0, ...s.returns.map(item => Number(/^RTN-(\d+)$/.exec(item.number || "")?.[1] || 0))) + 1).padStart(5, "0")}`,
     createdAt: Date.now(),
     tradeId: r.kind === "Damaged stock" ? "" : r.tradeId,
     amount,

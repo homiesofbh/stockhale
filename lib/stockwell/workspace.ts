@@ -205,6 +205,7 @@ export const collectionModules: Record<string, string[]> = {
   categories: ["Inventory"],
   units: ["Inventory"],
   movements: ["Inventory", "Purchases", "Billing", "Returns & Damage", "Production"],
+  stockCounts: ["Inventory"],
   customers: ["Customers", "Billing"],
   suppliers: ["Suppliers"],
   heads: ["Accounts Heads"],
@@ -238,6 +239,7 @@ export const recordCollectionLabels: Record<string, string> = {
   categories: "product categories",
   units: "units",
   movements: "stock movements",
+  stockCounts: "stock counts",
   customers: "customers",
   suppliers: "suppliers",
   heads: "account heads",
@@ -455,7 +457,7 @@ export function recoverPendingQueue(
     }
 
     // Renumber any bills whose reference clashes with one already on the server.
-    const rebased = resolveTradeReferenceCollisions(merged, next);
+    const rebased = resolveSequentialDocumentCollisions(merged, resolveTradeReferenceCollisions(merged, next));
 
     // Re-validate the merged result and keep the change only if it still changes something.
     if (changesBetween(merged, next).length) {
@@ -476,6 +478,25 @@ export function recoverPendingQueue(
     revision: server.revision,
     baseStore: normalizeStore(server.store),
   };
+}
+
+/** Keep server-assigned return numbers and move colliding offline returns to the next free number. */
+export function resolveSequentialDocumentCollisions(server: Store, candidate: Store): Store {
+  const result = { ...candidate, returns: [...candidate.returns] };
+  const numberedServerIds = new Set(server.returns.filter(item => item.number).map(item => item.id));
+  const used = new Set(server.returns.map(item => item.number).filter((number): number is string => !!number));
+  let sequence = Math.max(0, ...[...server.returns, ...candidate.returns].map(item => Number(/^RTN-(\d+)$/.exec(item.number || "")?.[1] || 0)));
+  result.returns = result.returns.map(item => {
+    if (numberedServerIds.has(item.id) || !item.number || !used.has(item.number)) {
+      if (item.number) used.add(item.number);
+      return item;
+    }
+    let number = "";
+    do { sequence += 1; number = `RTN-${String(sequence).padStart(5, "0")}`; } while (used.has(number));
+    used.add(number);
+    return { ...item, number };
+  });
+  return result;
 }
 
 /**

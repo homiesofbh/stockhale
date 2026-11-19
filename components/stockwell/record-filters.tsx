@@ -105,6 +105,7 @@ export function RecordFilters({
             <option>In Stock</option>
             <option>Low Stock</option>
             <option>Out of stock</option>
+            <option value="Inactive">Inactive products</option>
           </GlassSelect>
         </>
       )}

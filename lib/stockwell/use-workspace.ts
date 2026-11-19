@@ -222,7 +222,7 @@ export function useWorkspace() {
       if ("unchanged" in submitted) {
         retryAttempt.current = 0;
         retryAt.current = 0;
-        setSyncStatus("Synced");
+        setSyncStatus(current.current?.queue.length ? "Pending sync" : "Synced");
         setSyncError("");
         return;
       }
@@ -410,7 +410,7 @@ export function useWorkspace() {
     )
       throw new Error("You do not have permission for this module.");
     const occurredAt = store.expenses.find(e => !c.workspace.store.expenses.some(old => old.id === e.id))?.createdAt || new Date().toISOString();
-    verifyChange(c.workspace.store, store, module, { actor: c.workspace.member, occurredAt });
+    verifyChange(c.workspace.store, store, module, { actor: c.workspace.member, occurredAt, workspaceId: c.workspace.id });
     const location = await liveLocation();
     await withCacheLock(() => {
       // Read the latest shared state inside the lock. This protects rapid

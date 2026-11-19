@@ -1,6 +1,6 @@
 "use client";
 import { Table } from "@/components/stockwell/ui";
-import { attachmentDownloadUrl, deleteAttachment } from "@/lib/stockwell/attachment-client";
+import { attachmentDownloadUrl, scheduleAttachmentDeletion } from "@/lib/stockwell/attachment-client";
 import { useState } from "react";
 import { money, type Expense, type Store } from "@/lib/stockwell/model";
 type Props = {
@@ -11,12 +11,14 @@ type Props = {
   open: (name: string) => void;
   owner: boolean;
   memberName: (id?: string, name?: string) => string;
-  commit: (next: Store, message: string) => void;
+  commit: (next: Store, message: string) => Promise<unknown>;
+  workspaceId: string;
+  actorId: string;
   onEdit: (expense: Expense) => void;
 };
-export function ExpensesView({ s, inRange, matches, category, open, owner, memberName, commit, onEdit }: Props) {
+export function ExpensesView({ s, inRange, matches, category, open, owner, memberName, commit, workspaceId, actorId, onEdit }: Props) {
   const [error, setError] = useState("");
-  const links = (attachments: any[] = [], expenseId = "") => <>{attachments.map(a => <span key={a.id}><button className="link" onClick={async () => { try { window.open(await attachmentDownloadUrl(a.key), "_blank", "noopener,noreferrer"); } catch (e) { setError(e instanceof Error ? e.message : "The attachment could not be opened. Check your connection and try again."); } }}>{a.name}</button>{owner && <button className="link" onClick={async () => { if (!confirm("Delete this attachment?")) return; try { await deleteAttachment(a.key); commit({ ...s, expenses: s.expenses.map(e => e.id === expenseId ? { ...e, attachments: (e.attachments || []).filter(x => x.id !== a.id) } : e) }, "Attachment deleted."); } catch (e) { setError(e instanceof Error ? e.message : "The attachment could not be deleted. Check your access and connection, then try again."); } }}>Delete</button>}</span>)}</>;
+  const links = (attachments: any[] = [], expenseId = "") => <>{attachments.map(a => <span key={a.id}><button className="link" onClick={async () => { try { window.open(await attachmentDownloadUrl(a.key), "_blank", "noopener,noreferrer"); } catch (e) { setError(e instanceof Error ? e.message : "The attachment could not be opened. Check your connection and try again."); } }}>{a.name}</button>{owner && <button className="link" onClick={async () => { if (!confirm("Delete this attachment?")) return; try { await scheduleAttachmentDeletion({ workspaceId, actorId, key: a.key }); await commit({ ...s, expenses: s.expenses.map(e => e.id === expenseId ? { ...e, attachments: (e.attachments || []).filter(x => x.id !== a.id) } : e) }, "Attachment removed. Cleanup will finish after sync."); } catch (e) { setError(e instanceof Error ? e.message : "The attachment could not be removed. Check your connection and try again."); } }}>Delete</button>}</span>)}</>;
   const visibleExpenses = s.expenses.filter(
     (e) => inRange(e.date) && (category === "All" || e.category === category) && matches(e.category, e.notes, e.head),
   );

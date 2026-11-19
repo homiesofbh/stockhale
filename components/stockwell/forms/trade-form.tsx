@@ -30,7 +30,7 @@ import { financialBalanceSnapshot } from "@/lib/stockwell/operations";
 import { X } from "lucide-react";
 import type { Dispatch, RefObject, SetStateAction } from "react";
 import { useEffect, useState, type FormEvent } from "react";
-import { uploadAttachment } from "@/lib/stockwell/attachment-client";
+import { uploadAndSaveAttachment } from "@/lib/stockwell/attachment-client";
 import { useServerCollection } from "@/lib/stockwell/use-server-collection";
 const searchableContactText = (contact: Contact) => {
   const text = [contact.name, contact.company, contact.phone, contact.mobile, contact.email]
@@ -45,6 +45,7 @@ const searchableContactText = (contact: Contact) => {
 };
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
+  saving: boolean;
   text: (f: FormData, key: string) => string;
   num: (f: FormData, key: string) => number;
   s: Store;
@@ -52,7 +53,7 @@ type Props = {
   isOwner: boolean;
   creator: { id: string; name: string };
   workspaceId: string;
-  commit: (next: Store, message: string) => void;
+  commit: (next: Store, message: string) => Promise<void>;
   setInvoice: Dispatch<SetStateAction<Trade | null>>;
   setPaper: Dispatch<SetStateAction<InvoicePaper>>;
   scanInput: RefObject<HTMLInputElement | null>;
@@ -80,6 +81,7 @@ type Props = {
 };
 export function TradeForm({
   submit,
+  saving,
   text,
   num,
   s,
@@ -203,7 +205,6 @@ export function TradeForm({
           if (addingSupplier || addingCustomer) throw new Error("Save or cancel the new contact before saving the transaction.");
           const id = uid();
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
-          const attachment = modal === "Purchase" && file ? await uploadAttachment(file, "purchase", id, workspaceId) : undefined;
           const t: Trade = {
             status: (e.nativeEvent as SubmitEvent).submitter?.getAttribute("value") === "draft" ? "draft" : "posted",
             id,
@@ -211,7 +212,6 @@ export function TradeForm({
             createdByName: creator.name,
             number: "",
             reference: text(f, "reference"),
-            attachments: attachment ? [attachment] : undefined,
             date: text(f, "date"),
             contactId: text(f, "contact"),
             lines,
@@ -241,10 +241,13 @@ export function TradeForm({
           const next = modal === "Bill"
             ? { ...recorded, invoices: recorded.invoices.map(item => item.id === savedTrade.id ? { ...item, balanceAfter: snapshot } : item) }
             : { ...recorded, purchases: recorded.purchases.map(item => item.id === savedTrade.id ? { ...item, balanceAfter: snapshot } : item) };
-          await commit(
-            next,
-            t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? unpaidWalkIn ? "Unpaid bill recorded. Payment and remaining balance saved." : "Bill posted. Inventory and customer balance updated." : "Purchase posted. Inventory updated.",
-          );
+          const message = t.status === "draft" ? "Draft saved. Stock and balances unchanged." : modal === "Bill" ? unpaidWalkIn ? "Unpaid bill recorded. Payment and remaining balance saved." : "Bill posted. Inventory and customer balance updated." : "Purchase posted. Inventory updated.";
+          const save = (uploaded?: import("@/lib/stockwell/model").Attachment) => commit(uploaded ? {
+            ...next,
+            purchases: next.purchases.map(item => item.id === savedTrade.id ? { ...item, attachments: [...(item.attachments || []), uploaded] } : item),
+          } : next, message);
+          if (modal === "Purchase" && file) await uploadAndSaveAttachment(file, "purchase", id, save, { workspaceId, actorId: creator.id });
+          else await save();
           if (modal === "Bill" && t.status !== "draft") {
             setInvoice(next.invoices[next.invoices.length - 1]);
             setPaper("A4");
@@ -563,8 +566,8 @@ export function TradeForm({
         >
           Cancel
         </button>
-        <button className="secondary" value="draft" disabled={!lines.length || addingSupplier || addingCustomer || savingProduct}>Save draft</button>
-        <button className="primary" value={unpaidWalkIn ? "unpaid" : "post"} disabled={!lines.length || addingSupplier || addingCustomer || savingProduct || !!insufficientStock.length}>
+        <button className="secondary" value="draft" disabled={!lines.length || addingSupplier || addingCustomer || savingProduct || saving}>Save draft</button>
+        <button className="primary" value={unpaidWalkIn ? "unpaid" : "post"} disabled={!lines.length || addingSupplier || addingCustomer || savingProduct || saving || !!insufficientStock.length}>
           {unpaidWalkIn ? "Record unpaid bill" : `Post ${modal === "Bill" ? "bill" : "purchase"}`}
         </button>
       </div>

@@ -1,9 +1,9 @@
 import { chartAccounts } from "./accounts";
-import { balance, emptyStore, isPosted, isSettledPayment, recordPayment, recordReturn, recordTrade, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
+import { balance, emptyStore, isPosted, isSettledPayment, recordPayment, recordReturn, recordTrade, returnNotesWithNumbers, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
 import { productionMovements, validateRecipe } from "./production";
 import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, deletePaidPurchase, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
-export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?: string; allowLateExpense?: boolean };
+export type ValidationContext = { actor: Actor; occurredAt: string; receivedAt?: string; allowLateExpense?: boolean; workspaceId?: string };
 const clean = (value: any): any => Array.isArray(value) ? value.map(clean) : value && typeof value === "object" ? Object.fromEntries(Object.keys(value).sort().filter(k => value[k] !== undefined).map(k => [k, clean(value[k])])) : value;
 export const same = (a: unknown, b: unknown) => JSON.stringify(clean(a)) === JSON.stringify(clean(b));
 const without = (value: any, keys: string[]) => Object.fromEntries(Object.entries(value).filter(([k]) => !keys.includes(k)));
@@ -101,7 +101,16 @@ export function validateStore(s: Store, before?: Store) {
     check(applied <= source.amount, "Advance applications exceed the available balance.");
   }
   for (const e of s.expenses) check(validDate(e.date) && Number.isFinite(e.amount) && e.amount > 0 && round(e.amount) === e.amount && s.heads.includes(e.head) && s.expenseCategories.includes(e.category), "Invalid expense.");
-  for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && productIds.has(r.productId) && (r.kind === "Damaged stock" || (tradeById.has(r.tradeId) && isPosted(tradeById.get(r.tradeId)!))), "Invalid return.");
+  for (const r of s.returns) check(validDate(r.date) && Number.isFinite(r.qty) && r.qty > 0 && Number.isFinite(r.amount) && r.amount >= 0 && (!r.number || /^RTN-\d{5,}$/.test(r.number)) && productIds.has(r.productId) && (r.kind === "Damaged stock" || (tradeById.has(r.tradeId) && isPosted(tradeById.get(r.tradeId)!))), "Invalid return.");
+  check(new Set(s.returns.map(r => r.number).filter(Boolean)).size === s.returns.filter(r => r.number).length, "Return numbers must be unique.");
+  for (const count of s.stockCounts || []) {
+    check(!!count && validDate(count.date) && ["draft", "posted"].includes(count.status) && Number.isFinite(count.createdAt) && Array.isArray(count.lines) && count.lines.length > 0 && count.lines.every(line =>
+      !!line && productIds.has(line.productId) && Number.isFinite(line.expected) && line.expected >= 0 && roundQty(line.expected) === line.expected &&
+      (line.counted === undefined || Number.isFinite(line.counted) && line.counted >= 0 && roundQty(line.counted) === line.counted)), "Stock count must contain valid products and non-negative quantities.");
+    check(count.status !== "draft" || count.postedAt === undefined && count.lines.every(line => line.counted === undefined), "Draft stock counts cannot contain posted values.");
+    check(count.status !== "posted" || Number.isFinite(count.postedAt) && count.postedAt! >= count.createdAt && count.lines.every(line => line.counted !== undefined), "Posted stock counts require counted quantities and a posting time.");
+    check(new Set(count.lines.map(line => line.productId)).size === count.lines.length, "A product can appear only once in a stock count.");
+  }
   for (const m of s.movements) check(validDate(m.date) && Number.isFinite(m.qty) && productIds.has(m.productId), "Invalid stock movement.");
   for (const recipe of s.recipes || []) validateRecipe(s, recipe);
   check(new Set((s.recipes || []).map(recipe => recipe.id)).size === (s.recipes || []).length, "Duplicate recipe IDs.");
@@ -163,11 +172,62 @@ export function validateOperations(before: Store, after: Store, module: string, 
   immutable(before.chequeEvents || [], after.chequeEvents || [], "Cheque history");
   immutable(before.movements, after.movements, "Stock movements");
   immutable(before.productionRuns || [], after.productionRuns || [], "Production runs");
-  immutable(before.returns, after.returns, "Returns");
+  const oldCounts = before.stockCounts || [], newCounts = after.stockCounts || [];
+  check(oldCounts.every(old => newCounts.some(next => next.id === old.id)), "Stock count history cannot be deleted.");
+  const countPosts = new Set<string>();
+  for (const old of oldCounts) {
+    const next = newCounts.find(item => item.id === old.id);
+    if (!next || same(old, next)) continue;
+    check(module === "Inventory" && old.status === "draft" && next.status === "posted" &&
+      old.date === next.date && old.createdAt === next.createdAt && old.lines.length === next.lines.length &&
+      same(without(old, ["status", "postedAt", "lines"]), without(next, ["status", "postedAt", "lines"])) &&
+      old.lines.every((line, index) => line.productId === next.lines[index].productId && line.expected === next.lines[index].expected &&
+        Number.isFinite(next.lines[index].counted) && next.lines[index].counted! >= 0 && roundQty(next.lines[index].counted!) === next.lines[index].counted) &&
+      Number.isFinite(next.postedAt), "Stock count history is locked except when posting a complete draft.");
+    requireOpenDate(before, old.date);
+    for (const line of old.lines) check(stock(before, line.productId) === line.expected, "Stock changed after this count began. Start a new count before posting.");
+    countPosts.add(old.id);
+  }
+  const addedCounts = additions(oldCounts, newCounts);
+  for (const count of addedCounts) {
+    check(module === "Inventory" && count.status === "draft" && count.postedAt === undefined && count.lines.every(line => line.counted === undefined), "A stock count must be started as an unposted draft from Inventory.");
+    requireOpenDate(before, count.date);
+    check(same(count.lines.map(line => ({ productId: line.productId, expected: line.expected })),
+      before.products.filter(product => product.active !== false).map(product => ({ productId: product.id, expected: stock(before, product.id) }))),
+    "Stock count must snapshot every active product at its current quantity.");
+  }
+  const oldReturnIds = new Set(before.returns.map(item => item.id));
+  check(before.returns.every(old => {
+    const next = after.returns.find(item => item.id === old.id);
+    if (!next) return false;
+    if (same(old, next)) return true;
+    return module === "Returns & Damage" && actor.role === "owner" && !old.number && !!next.number && same({ ...old, number: undefined }, { ...next, number: undefined });
+  }), "Existing return details cannot be changed; only a missing return number may be assigned.");
+  check(after.returns.filter(item => oldReturnIds.has(item.id)).length === before.returns.length, "Existing returns cannot be removed.");
   for (const old of before.expenses) {
     const next = after.expenses.find(expense => expense.id === old.id);
     check(!!next, "Expenses cannot be deleted.");
-    if (!same(old, next)) check(actor.role === "owner" && next!.createdAt === old.createdAt && next!.createdBy === old.createdBy && next!.createdByName === old.createdByName && same(next!.attachments || [], old.attachments || []), "Only the owner can correct an expense while preserving its original creator, date, and attachments.");
+    if (!same(old, next)) {
+      const { attachments: oldAttachments = [], ...oldDetails } = old;
+      const { attachments: nextAttachments = [], ...nextDetails } = next!;
+      check(Array.isArray(oldAttachments) && Array.isArray(nextAttachments) && nextAttachments.every(item => item && typeof item.id === "string" && typeof item.key === "string"), "Expense attachments have an invalid format.");
+      const priorById = new Map(oldAttachments.map(item => [item.id, item]));
+      const nextById = new Map(nextAttachments.map(item => [item.id, item]));
+      check(nextById.size === nextAttachments.length, "Expense attachments cannot reuse an attachment ID.");
+      const validAttachmentChanges = oldAttachments.every(prior => {
+        const current = nextById.get(prior.id);
+        if (!current) return actor.role === "owner";
+        if (same(prior, current)) return true;
+        if (typeof current.key !== "string") return false;
+        const keyParts = current.key.split("/");
+        return prior.status === "pending" && current.status === "uploaded" && prior.id === current.id && prior.name === current.name && prior.contentType === current.contentType && prior.size === current.size && keyParts.length === 4 && (!context.workspaceId || keyParts[0] === context.workspaceId) && keyParts[1] === "expense" && keyParts[2] === old.id;
+      }) && nextAttachments.every(item => {
+        if (priorById.has(item.id)) return true;
+        const keyParts = item.key.split("/");
+        return item.status === "pending" && item.key === `pending/${item.id}` || item.status === "uploaded" && keyParts.length === 4 && (!context.workspaceId || keyParts[0] === context.workspaceId) && keyParts[1] === "expense" && keyParts[2] === old.id;
+      });
+      check(actor.role === "owner" && next!.createdAt === old.createdAt && next!.createdBy === old.createdBy && next!.createdByName === old.createdByName && same(oldDetails, nextDetails) && validAttachmentChanges, "Only the owner can correct an expense. Attachments must keep their identity and workspace link, and pending files may only transition to uploaded.");
+    }
   }
   const afterProducts = new Map(after.products.map(product => [product.id, product]));
   const manufacturingProducts = new Set<string>();
@@ -339,7 +399,11 @@ export function validateOperations(before: Store, after: Store, module: string, 
     const next = after.payments.find(a => a.id === p.id);
     check(!!next, "Payments cannot be deleted.");
     const detachedPurchasePayment = p.kind === "Supplier" && !!p.tradeId && !after.purchases.some(trade => trade.id === p.tradeId) && next!.tradeId === "" && next!.advance === true;
-    if (!same(p, next) && !detachedPurchasePayment && !newLinks.some(link => link.tradeId === p.tradeId)) check(additions(before.chequeEvents || [], after.chequeEvents || []).some(e => e.paymentId === p.id), "Payments are locked; use the cheque lifecycle or a refund.");
+    if (!same(p, next) && !detachedPurchasePayment && !newLinks.some(link => link.tradeId === p.tradeId)) {
+      const migratedNotes = { ...p, notes: returnNotesWithNumbers(p, after.returns) };
+      const returnNoteMigration = module === "Payments" && actor.role === "owner" && same(migratedNotes, next);
+      check(returnNoteMigration || additions(before.chequeEvents || [], after.chequeEvents || []).some(e => e.paymentId === p.id), "Payments are locked; use the cheque lifecycle or a refund.");
+    }
   }
   let paymentBase = { ...before, invoices: after.invoices, purchases: after.purchases, customers: after.customers };
   for (const p of additions(before.payments, after.payments)) {
@@ -364,7 +428,25 @@ export function validateOperations(before: Store, after: Store, module: string, 
   }
   const addedMovements = additions(before.movements, after.movements);
   if (module === "Inventory") {
-    addedMovements.forEach(m => { requireOpenDate(before, m.date); check(["Opening stock", "Stock in", "Stock out"].includes(m.type) && !!m.reason?.trim() && (m.type !== "Opening stock" || m.qty > 0 && !before.products.some(p => p.id === m.productId)), "Use a valid stock adjustment with a reason."); });
+    const countMovements = addedMovements.filter(m => typeof m.reference === "string" && m.reference.startsWith("COUNT-"));
+    const expectedCountMovements: Store["movements"] = [];
+    for (const id of countPosts) {
+      const count = after.stockCounts!.find(item => item.id === id)!;
+      const previous = before.stockCounts!.find(item => item.id === id)!;
+      for (let index = 0; index < count.lines.length; index++) {
+        const line = count.lines[index];
+        const delta = roundQty(line.counted! - previous.lines[index].expected);
+        if (delta) expectedCountMovements.push({ id: "", productId: line.productId, qty: delta, date: count.date, type: delta > 0 ? "Stock in" : "Stock out", reference: `COUNT-${id}`, reason: "Physical stock count" });
+      }
+    }
+    check(same(countMovements.map(movementKey).sort(), expectedCountMovements.map(movementKey).sort()), "Stock count adjustments must match the posted count quantities exactly.");
+    addedMovements.forEach(m => {
+      requireOpenDate(before, m.date);
+      check(["Opening stock", "Stock in", "Stock out"].includes(m.type) && !!m.reason?.trim() &&
+        (m.type !== "Opening stock" || m.qty > 0 && !before.products.some(p => p.id === m.productId)) &&
+        (!(typeof m.reference === "string" && m.reference.startsWith("COUNT-")) || countMovements.includes(m)),
+      "Use a valid stock adjustment with a reason.");
+    });
   } else {
     const verifiedMovements = addedMovements;
     check(same(verifiedMovements.map(movementKey).sort(), expectedMovements.map(movementKey).sort()), "Stock movements do not match bills, returns, or corrections.");

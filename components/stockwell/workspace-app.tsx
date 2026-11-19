@@ -3,6 +3,7 @@ import { bankStatement } from "@/lib/stockwell/bank-vouchers";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   balance,
+  assignReturnNumbers,
   contactBalance,
   findProductByCode,
   emptyStore,
@@ -11,6 +12,7 @@ import {
   money,
   paid,
   periodMatch,
+  returnNotesWithNumbers,
   returned,
   round,
   subtotal,
@@ -34,7 +36,7 @@ import { useWorkspace } from "@/lib/stockwell/use-workspace";
 import { AdjustmentForm } from "@/components/stockwell/forms/adjustment-form";
 import { ContactForm } from "@/components/stockwell/forms/contact-form";
 import { ExpenseForm } from "@/components/stockwell/forms/expense-form";
-import { acknowledgeAttachmentQueue, retryAttachmentQueue } from "@/lib/stockwell/attachment-client";
+import { acknowledgeAttachmentQueue, discardOrphanedAttachments, retryAttachmentDeletions, retryAttachmentQueue } from "@/lib/stockwell/attachment-client";
 import { MovementsForm } from "@/components/stockwell/forms/movements-form";
 import { PaymentForm } from "@/components/stockwell/forms/payment-form";
 import { ProductForm } from "@/components/stockwell/forms/product-form";
@@ -87,7 +89,11 @@ export function WorkspaceApp() {
   const [category, setCategory] = useState("All");
   const [modal, setModal] = useState("");
   const [error, setError] = useState("");
+  const [attachmentSyncError, setAttachmentSyncError] = useState<{ module?: string; message: string } | null>(null);
+  const [returnBackfillError, setReturnBackfillError] = useState("");
   const [notice, setNotice] = useState("");
+  const [saving, setSaving] = useState(false);
+  const saveLock = useRef(false);
   const [editProduct, setEditProduct] = useState<Product | null>(null);
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
   const [editContact, setEditContact] = useState<Contact | null>(null);
@@ -115,6 +121,7 @@ export function WorkspaceApp() {
   const [selectedTrade, setSelectedTrade] = useState("");
   const scanInput = useRef<HTMLInputElement>(null);
   const savedRaw = useRef<string | null>(null);
+  const returnBackfillAttempt = useRef("");
   useEffect(() => {
     const hash = window.location.hash.slice(1);
     const savedModule = (Object.keys(descriptions) as Module[]).find(
@@ -147,25 +154,67 @@ export function WorkspaceApp() {
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);
   useEffect(() => {
+    const cache = workspace.cache;
+    if (!cache || cache.queue.length || cache.workspace.member.role !== "owner" || !navigator.onLine) return;
+    const store = cache.workspace.store;
+    const returns = assignReturnNumbers(store.returns);
+    const numbersChanged = returns.some((item, index) => item.number !== store.returns[index]?.number);
+    const payments = store.payments.map(payment => ({ ...payment, notes: returnNotesWithNumbers(payment, returns) }));
+    const notesChanged = payments.some((payment, index) => payment.notes !== store.payments[index]?.notes);
+    if (!numbersChanged && !notesChanged) { returnBackfillAttempt.current = ""; setReturnBackfillError(""); return; }
+    const moduleName = numbersChanged ? "Returns & Damage" : "Payments";
+    const attempt = `${cache.workspace.id}/${cache.revision}/${moduleName}`;
+    if (returnBackfillAttempt.current === attempt) return;
+    returnBackfillAttempt.current = attempt;
+    const next = numbersChanged ? { ...store, returns } : { ...store, payments };
+    void workspace.commit(next, moduleName, numbersChanged ? "Assigned return numbers to existing returns." : "Updated automatic refund references to return numbers.")
+      .catch(reason => {
+        if (returnBackfillAttempt.current === attempt) returnBackfillAttempt.current = "";
+        setReturnBackfillError(reason instanceof Error ? reason.message : "Return references could not be updated.");
+      });
+  }, [workspace.cache]);
+  useEffect(() => {
     const retry = async () => {
       if (!navigator.onLine || !workspace.cache) return;
-      await retryAttachmentQueue(workspace.cache.workspace.id, async completed => {
+      let attachmentModule: string | undefined;
+      try {
+        const identity = { workspaceId: workspace.cache.workspace.id, actorId: workspace.cache.workspace.member.id };
+        await retryAttachmentDeletions(identity);
+        const cachedStore = workspace.cache.workspace.store;
+        await discardOrphanedAttachments(identity, item => {
+          const records = item.recordType === "expense" ? cachedStore.expenses : cachedStore.purchases;
+          return records.some(record => record.id === item.recordId && record.attachments?.some(attachment => attachment.id === item.pendingId));
+        });
+        await retryAttachmentQueue(identity, async completed => {
         const byModule = new Map<string, typeof completed>();
         for (const item of completed) {
           const moduleName = item.recordType === "expense" ? "Expenses" : "Purchases";
           byModule.set(moduleName, [...(byModule.get(moduleName) || []), item]);
         }
         for (const [moduleName, items] of byModule) {
+          attachmentModule = moduleName;
           const base = workspace.cache!.workspace.store;
           const key = moduleName === "Expenses" ? "expenses" : "purchases";
-          const attached = items.filter(item => item.workspaceId === workspace.cache!.workspace.id && base[key].some((record: any) => record.id === item.recordId && (record.attachments || []).some((attachment: any) => attachment.id === item.pendingId)));
+          const attached = items.filter(item => item.workspaceId === workspace.cache!.workspace.id && (!item.actorId || item.actorId === workspace.cache!.workspace.member.id) && base[key].some((record: any) => record.id === item.recordId && (record.attachments || []).some((attachment: any) => attachment.id === item.pendingId)));
           if (!attached.length) continue;
-          const next = { ...base, [key]: base[key].map((record: any) => record.id && attached.some(item => item.recordId === record.id) ? { ...record, attachments: (record.attachments || []).map((attachment: any) => attached.find(item => item.pendingId === attachment.id) || attachment) } : record) };
-          await workspace.commit(next, moduleName, "Offline attachments uploaded.");
+          const needsUpdate = attached.some(item => {
+            const record = base[key].find((candidate: any) => candidate.id === item.recordId) as any;
+            const current = record?.attachments?.find((attachment: any) => attachment.id === item.pendingId);
+            const uploaded = { id: item.id, key: item.key, name: item.name, contentType: item.contentType, size: item.size, status: item.status, uploadedAt: item.uploadedAt };
+            return JSON.stringify(current) !== JSON.stringify(uploaded);
+          });
+          if (needsUpdate) {
+            const next = { ...base, [key]: base[key].map((record: any) => record.id && attached.some(item => item.recordId === record.id) ? { ...record, attachments: (record.attachments || []).map((attachment: any) => attached.find(item => item.pendingId === attachment.id) || attachment) } : record) };
+            await workspace.commit(next, moduleName, "Offline attachments uploaded.");
+          }
           await acknowledgeAttachmentQueue(attached.map(item => item.pendingId));
         }
         setS(workspace.cache!.workspace.store);
-      });
+        setAttachmentSyncError(null);
+        });
+      } catch (reason) {
+        setAttachmentSyncError({ module: attachmentModule, message: reason instanceof Error ? reason.message : "Attachment sync could not finish. Pending files remain on this device." });
+      }
     };
     window.addEventListener("online", retry);
     void retry();
@@ -309,11 +358,18 @@ export function WorkspaceApp() {
   }
   async function submit(e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) {
     e.preventDefault();
+    if (saveLock.current) return;
+    saveLock.current = true;
+    setSaving(true);
+    const form = e.currentTarget;
     setError("");
     try {
-      await fn(new FormData(e.currentTarget));
+      await fn(new FormData(form));
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Could not save this record.");
+      if (form.isConnected) setError(e instanceof Error ? e.message : "Could not save this record.");
+    } finally {
+      saveLock.current = false;
+      setSaving(false);
     }
   }
   const text = (f: FormData, key: string) => String(f.get(key) || "").trim();
@@ -615,6 +671,8 @@ export function WorkspaceApp() {
                       {storageError}
                     </div>
                   )}
+                  {(module === "Returns & Damage" || module === "Payments") && returnBackfillError && <div className="error-banner" role="alert">Return references could not be updated: {returnBackfillError}</div>}
+                  {attachmentSyncError && (attachmentSyncError.module ? module === attachmentSyncError.module : module === "Expenses" || module === "Purchases") && <div className="error-banner" role="alert">{attachmentSyncError.message}</div>}
                   {notice && (
                     <div className="toast" role="status">
                       {notice}
@@ -684,6 +742,12 @@ export function WorkspaceApp() {
                           status={status}
                           setEditProduct={setEditProduct}
                           selectProduct={(product) => { setDetailProduct(product); open("Product details"); }}
+                          commit={async (next, message) => {
+                            await workspace.commit(next, "Inventory", message);
+                            setS(next);
+                            setNotice(message);
+                            setError("");
+                          }}
                         />
                       )}
                       {module === "Billing" && account.member.role !== "owner" && <p className="field-help billing-record-policy">New sales appear in this billing register and the Sales report. Staff can create sales dated today; posted bills can only be corrected by the owner, with changes recorded in the activity log.</p>}
@@ -739,7 +803,14 @@ export function WorkspaceApp() {
                           open={open}
                           owner={account.member.role === "owner"}
                           memberName={(id, name) => name || account.members.find(member => member.id === id)?.name || "Not recorded"}
-                          commit={commit}
+                          workspaceId={account.id}
+                          actorId={account.member.id}
+                          commit={async (next, message) => {
+                            const result = await workspace.commit(next, "Expenses", message);
+                            setS(next);
+                            setNotice(message);
+                            return result;
+                          }}
                           onEdit={(expense) => { setEditExpense(expense); open("Edit expense"); }}
                         />
                       )}
@@ -921,6 +992,7 @@ export function WorkspaceApp() {
           {(modal === "Purchase" || modal === "Bill") && (
             <TradeForm
               submit={submit}
+              saving={saving}
               text={text}
               num={num}
               s={s}

@@ -74,11 +74,12 @@ export function filterTrades(
 export function filterInventory(store: Store, query: string, category: string, status: string) {
   return store.products.filter(product => {
     const quantity = stock(store, product.id);
+    const activityMatches = status === "Inactive" ? product.active === false : status === "All" || product.active !== false;
     const categoryMatches = category === "All" || product.category === category;
-    const statusMatches = status === "All" ||
+    const statusMatches = status === "All" || status === "Inactive" ||
       (status === "Out of stock" ? quantity === 0 :
         status === "Low Stock" || status === "Low stock" ? quantity > 0 && quantity <= product.low : quantity > product.low);
-    return categoryMatches && statusMatches && matchesQuery(query, product.name, product.sku, product.barcode, product.category, product.color, product.gsm, product.gsm ? `${product.gsm} GSM` : "");
+    return activityMatches && categoryMatches && statusMatches && matchesQuery(query, product.name, product.sku, product.barcode, product.category, product.color, product.gsm, product.gsm ? `${product.gsm} GSM` : "");
   });
 }
 

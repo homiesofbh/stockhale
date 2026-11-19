@@ -11,3 +11,29 @@ export function validateAttachment(file: { name: string; type: string; size: num
 export function attachmentKey(workspaceId: string, recordType: "expense" | "purchase", recordId: string, attachmentId: string) {
   return `${workspaceId}/${recordType}/${recordId}/${attachmentId}`;
 }
+
+export function canAccessAttachment(member: { role: string; modules: string[] }, store: { expenses: { attachments?: { key: string }[] }[]; purchases: { attachments?: { key: string }[] }[] }, key: string) {
+  const parts = key.split("/");
+  if (parts.length !== 4 || !parts.every(Boolean)) return false;
+  const [, type] = parts;
+  if (type === "expense") return (member.role === "owner" || member.modules.includes("Expenses")) && store.expenses.some(record => record.attachments?.some(item => item.key === key));
+  if (type === "purchase") return (member.role === "owner" || member.modules.includes("Purchases")) && store.purchases.some(record => record.attachments?.some(item => item.key === key));
+  return false;
+}
+
+export function canUploadAttachment(store: { expenses: { attachments?: { key: string }[] }[]; purchases: { attachments?: { key: string }[] }[] }, workspaceId: string, type: "expense" | "purchase", recordId: string, attachmentId: string) {
+  const records = type === "expense" ? store.expenses : store.purchases;
+  const key = attachmentKey(workspaceId, type, recordId, attachmentId);
+  return !records.some(record => record.attachments?.some(item => item.key === key));
+}
+
+export function canDeleteAttachment(member: { role: string; modules: string[] }, store: { expenses: { attachments?: { key: string }[] }[]; purchases: { attachments?: { key: string }[] }[] }, workspaceId: string, key: string) {
+  const parts = key.split("/");
+  if (parts.length !== 4 || !parts.every(Boolean) || parts[0] !== workspaceId) return false;
+  const type = parts[1];
+  const records = type === "expense" ? store.expenses : type === "purchase" ? store.purchases : null;
+  const module = type === "expense" ? "Expenses" : type === "purchase" ? "Purchases" : null;
+  if (!records || !module || (member.role !== "owner" && !member.modules.includes(module))) return false;
+  const attached = records.some(record => record.attachments?.some(item => item.key === key));
+  return !attached || member.role === "owner";
+}

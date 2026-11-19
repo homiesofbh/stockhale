@@ -307,7 +307,9 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       const stockFilter = status === "out of stock" ? `${quantity}=0`
         : status === "low stock" ? `${quantity}>0 AND ${quantity}<=${threshold}`
         : status === "in stock" ? `${quantity}>${threshold}`
-        : status === "active" ? "record->>'active' IS DISTINCT FROM 'false'"
+        : "TRUE";
+      const activityFilter = status === "inactive" ? "record->>'active'='false'"
+        : status && status !== "all" ? "record->>'active' IS DISTINCT FROM 'false'"
         : "TRUE";
       const source = `FROM (
         SELECT record, ordinal, record_id
@@ -319,7 +321,7 @@ export async function workspaceCollection(user: Row, options: { collection: stri
         WHERE m.workspace=$1 AND m.collection='movements'
           AND m.record->>'productId'=products.record->>'id'
       ) stock ON TRUE
-      WHERE ${stockFilter}`;
+      WHERE ${stockFilter} AND ${activityFilter}`;
       const aggregate = await row(`SELECT COUNT(*)::int AS count,
         SUM(COALESCE((record->>'cost')::numeric,0)*${quantity}) AS stock_value,
         SUM(${quantity}) AS stock_units,
@@ -472,7 +474,7 @@ export async function workspaceCollection(user: Row, options: { collection: stri
       const searchParts: string[] = [];
       for (const termValue of [options.query, options.secondaryQuery].filter(Boolean)) {
         returnArgs.push(`%${termValue!.trim()}%`);
-        searchParts.push(`(r.record->>'id' ILIKE $${returnArgs.length} OR r.record->>'kind' ILIKE $${returnArgs.length} OR r.record->>'reason' ILIKE $${returnArgs.length} OR r.record->>'date' ILIKE $${returnArgs.length} OR EXISTS (SELECT 1 FROM workspace_records p WHERE p.workspace=r.workspace AND p.collection='products' AND p.record->>'id'=r.record->>'productId' AND concat_ws(' ',p.record->>'name',p.record->>'unit',p.record->>'sku') ILIKE $${returnArgs.length}) OR EXISTS (SELECT 1 FROM workspace_records t WHERE t.workspace=r.workspace AND t.collection IN ('invoices','purchases') AND t.record->>'id'=r.record->>'tradeId' AND t.record->>'number' ILIKE $${returnArgs.length}))`);
+        searchParts.push(`(r.record->>'id' ILIKE $${returnArgs.length} OR r.record->>'number' ILIKE $${returnArgs.length} OR r.record->>'kind' ILIKE $${returnArgs.length} OR r.record->>'reason' ILIKE $${returnArgs.length} OR r.record->>'date' ILIKE $${returnArgs.length} OR EXISTS (SELECT 1 FROM workspace_records p WHERE p.workspace=r.workspace AND p.collection='products' AND p.record->>'id'=r.record->>'productId' AND concat_ws(' ',p.record->>'name',p.record->>'unit',p.record->>'sku') ILIKE $${returnArgs.length}) OR EXISTS (SELECT 1 FROM workspace_records t WHERE t.workspace=r.workspace AND t.collection IN ('invoices','purchases') AND t.record->>'id'=r.record->>'tradeId' AND t.record->>'number' ILIKE $${returnArgs.length}))`);
       }
       conditions.push(...searchParts);
       const returnWhere = conditions.join(" AND ");
@@ -1084,7 +1086,7 @@ export async function mutate(user: Row, body: Row) {
           ? applyStoreDelta(store, c.delta)
           : c.store ? normalizeStore(c.store) : (() => { throw new Error("Invalid sync change."); })();
         const validationStartedAt = Date.now();
-        const { store: nextStore, records } = prepareSyncChange(store, { ...c, store: submittedStore }, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString() });
+        const { store: nextStore, records } = prepareSyncChange(store, { ...c, store: submittedStore }, { actor: m, occurredAt: c.occurredAt, receivedAt: new Date().toISOString(), workspaceId: w.id });
         console.info("Workspace sync validation timing", { validationMs: Date.now() - validationStartedAt });
         canonicalDelta = createStoreDelta(submittedStore, nextStore);
         await event(w, user, c.module, c.action, records, c.id, c.occurredAt);

@@ -323,13 +323,25 @@ export function createReportData(
   if (report === "Stock aging report") {
     const through = to || today();
     const rows = s.products.filter(p => (!reportProduct || p.id === reportProduct) && matches(p.name, p.sku, p.category)).map(p => {
-      const movements = s.movements.filter(m => m.productId === p.id && m.date <= through && m.qty > 0).sort((a, b) => a.date.localeCompare(b.date));
-      const qty = stock(s, p.id);
-      const oldest = movements[0]?.date || "";
+      const movements = s.movements.filter(m => m.productId === p.id && m.date <= through)
+        .sort((a, b) => a.date.localeCompare(b.date) || (a.createdAt || 0) - (b.createdAt || 0));
+      const qty = roundQty(movements.reduce((sum, movement) => sum + movement.qty, 0));
+      let remaining = qty;
+      let oldest = "";
+      for (const movement of movements.slice().reverse()) {
+        if (remaining <= 0) break;
+        if (movement.qty <= 0) continue;
+        oldest = movement.date;
+        remaining = roundQty(remaining - movement.qty);
+      }
       const days = oldest ? Math.max(0, Math.floor((Date.parse(`${through}T12:00:00Z`) - Date.parse(`${oldest}T12:00:00Z`)) / 86400000)) : 0;
-      return [p.sku, p.name, qty, oldest || "—", days, round(qty * p.cost)];
+      const purchases = s.purchases.filter(trade => isPosted(trade) && trade.date <= through)
+        .flatMap(trade => trade.lines.filter(line => line.productId === p.id && line.qty > 0).map(line => ({ qty: line.qty, cost: line.cost ?? line.price })));
+      const purchasedQty = purchases.reduce((sum, item) => sum + item.qty, 0);
+      const historicalCost = purchasedQty > 0 ? round(purchases.reduce((sum, item) => sum + item.qty * item.cost, 0) / purchasedQty) : p.cost;
+      return [p.sku, p.name, qty, oldest || "—", days, round(qty * historicalCost)];
     }).filter(row => Number(row[2]) > 0);
-    return { columns: ["SKU", "Product", "Current stock", "Oldest receipt", "Age (days)", "Stock value"], rows };
+    return { columns: ["SKU", "Product", "Stock at cutoff", "Oldest receipt", "Age (days)", "Stock value"], rows };
   }
   if (report === "Daily cash sheet") {
     const firstDate = from || to || today();

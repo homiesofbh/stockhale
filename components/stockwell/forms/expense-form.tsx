@@ -4,7 +4,7 @@ import { Field } from "@/components/stockwell/ui";
 import { saveExpense, previousDate, type Actor } from "@/lib/stockwell/operations";
 import { paymentAccountId, round, today, uid, type Expense, type Store } from "@/lib/stockwell/model";
 import { useState, type FormEvent } from "react";
-import { uploadAttachment } from "@/lib/stockwell/attachment-client";
+import { uploadAndSaveAttachment } from "@/lib/stockwell/attachment-client";
 type Props = {
   submit: (e: FormEvent<HTMLFormElement>, fn: (data: FormData) => void | Promise<void>) => void;
   num: (f: FormData, key: string) => number;
@@ -34,11 +34,12 @@ export function ExpenseForm({ submit, num, commit, commitInline, s, text, actor,
           const id = expense?.id || uid();
           const next = saveExpense(s, { ...(expense || {}), id, date: text(f, "date"), category, head, amount: round(amount), financialAccountId: paymentAccountId(s, method) ?? (expense?.method === method ? expense.financialAccountId : undefined), method, notes: text(f, "notes"), createdBy: expense?.createdBy || actor.id, createdByName: expense?.createdByName || actor.name, attachments: expense?.attachments }, actor);
           const file = (f.get("attachment") as File)?.size ? (f.get("attachment") as File) : undefined;
-          const attachment = file ? await uploadAttachment(file, "expense", id, workspaceId) : undefined;
-          await commit(
+          const save = (attachment?: import("@/lib/stockwell/model").Attachment) => commit(
             attachment ? { ...next, expenses: next.expenses.map(item => item.id === id ? { ...item, attachments: [...(item.attachments || []), attachment] } : item) } : next,
             expense ? "Expense updated." : "Expense recorded.",
           );
+          if (file) await uploadAndSaveAttachment(file, "expense", id, save, { workspaceId, actorId: actor.id });
+          else await save();
           onSaved?.();
         })
       }

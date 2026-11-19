@@ -125,7 +125,7 @@ export function ReturnForm({
               amount: -credit,
               method: text(f, "refundMethod") || "Cash",
               head: kind === "Sales return" ? "Customer payments" : "Supplier payments",
-              notes: `Automatic refund for return ${lines.map((line) => line.productId).join(", ")}`,
+              notes: `Automatic refund for return ${returned.returns.slice(s.returns.length).map(entry => entry.number).filter(Boolean).join(", ")}`,
             })
             : returned;
           const keepAsAdvance = credit > 0 && hasParty && refundMode === "Keep as advance";

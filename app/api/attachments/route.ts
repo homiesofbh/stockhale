@@ -1,7 +1,7 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand, ListObjectsV2Command } from "@aws-sdk/client-s3";
 import { getSignedUrl } from "@aws-sdk/s3-request-presigner";
 import { authorize, snapshot, recordAudit } from "@/lib/stockwell/server";
-import { ATTACHMENT_BUCKET, ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENT_BYTES, attachmentKey } from "@/lib/stockwell/attachments";
+import { ATTACHMENT_BUCKET, ALLOWED_ATTACHMENT_TYPES, MAX_ATTACHMENT_BYTES, attachmentKey, canAccessAttachment, canDeleteAttachment, canUploadAttachment } from "@/lib/stockwell/attachments";
 import { randomUUID } from "node:crypto";
 import { readJsonBody } from "@/lib/stockwell/request-body";
 import { withDatabase, transaction } from "@/lib/stockwell/database";
@@ -25,10 +25,13 @@ export async function POST(request: Request) {
       const body = await readJsonBody(request, 32_768) as Record<string, any>; policy(body);
       const snap = await snapshot(user);
       if (typeof body.workspaceId !== "string" || body.workspaceId !== snap.id) return Response.json({ error: "The active workspace changed. Select it again before uploading this attachment." }, { status: 409 });
+      if (body.actorId !== undefined && body.actorId !== snap.member.id) return Response.json({ error: "Sign in to the workspace member who created this attachment." }, { status: 403 });
       if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
       const module = body.recordType === "expense" ? "Expenses" : "Purchases";
       if (!allowed(snap.member, module)) return Response.json({ error: "You do not have access to this module." }, { status: 403 });
-      const id = randomUUID(), key = attachmentKey(snap.id, body.recordType, body.recordId, id);
+      if (body.attachmentId !== undefined && (typeof body.attachmentId !== "string" || !/^[0-9a-f-]{36}$/i.test(body.attachmentId))) throw new Error("The attachment could not be identified. Choose the file again and retry.");
+      const id = body.attachmentId || randomUUID(), key = attachmentKey(snap.id, body.recordType, body.recordId, id);
+      if (!canUploadAttachment(snap.store, snap.id, body.recordType, body.recordId, id)) return Response.json({ error: "This attachment is already saved. Choose the file again." }, { status: 409 });
       const client = s3();
       const result = await transaction(async (db) => {
         await db.query("SELECT pg_advisory_xact_lock(hashtext($1))", [`stockwell:attachment-quota:${snap.id}`]);
@@ -36,14 +39,14 @@ export async function POST(request: Request) {
         let storedBytes = 0, continuationToken: string | undefined;
         do {
           const page = await client.send(new ListObjectsV2Command({ Bucket: ATTACHMENT_BUCKET, Prefix: `${snap.id}/`, ContinuationToken: continuationToken }));
-          storedBytes += (page.Contents || []).reduce((sum, object) => sum + (object.Size || 0), 0);
+          storedBytes += (page.Contents || []).reduce((sum, object) => sum + (object.Key === key ? 0 : object.Size || 0), 0);
           continuationToken = page.IsTruncated ? page.NextContinuationToken : undefined;
         } while (continuationToken);
-        const reserved = await db.query("SELECT COALESCE(SUM(size), 0)::bigint AS bytes FROM attachment_upload_reservations WHERE workspace=$1", [snap.id]);
+        const reserved = await db.query("SELECT COALESCE(SUM(size), 0)::bigint AS bytes FROM attachment_upload_reservations WHERE workspace=$1 AND object_key<>$2", [snap.id, key]);
         if (storedBytes + Number(reserved.rows[0].bytes) + body.size > WORKSPACE_ATTACHMENT_QUOTA_BYTES)
           throw Object.assign(new Error("Workspace attachment storage limit reached (100 MB). Delete an existing attachment before uploading another."), { statusCode: 413 });
-        await db.query("INSERT INTO attachment_upload_reservations(workspace, object_key, size, expires) VALUES($1,$2,$3,$4)", [snap.id, key, body.size, Date.now() + RESERVATION_TTL_MS]);
-        const uploadUrl = await getSignedUrl(client, new PutObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: key, ContentType: body.contentType, ContentLength: body.size }), { expiresIn: 900 });
+        await db.query("INSERT INTO attachment_upload_reservations(workspace, object_key, size, expires) VALUES($1,$2,$3,$4) ON CONFLICT(object_key) DO UPDATE SET size=EXCLUDED.size, expires=EXCLUDED.expires", [snap.id, key, body.size, Date.now() + RESERVATION_TTL_MS]);
+        const uploadUrl = await getSignedUrl(client, new PutObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: key, ContentType: body.contentType, ContentLength: body.size, IfNoneMatch: "*" }), { expiresIn: 900 });
         return { id, key, uploadUrl, expiresIn: 900 };
       });
       return Response.json(result);
@@ -56,7 +59,7 @@ export async function GET(request: Request) {
     const url = new URL(request.url), key = url.searchParams.get("key") || "";
     const snap = await snapshot(user);
     if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
-    if (!key.startsWith(`${snap.id}/`)) return Response.json({ error: "Invalid attachment scope." }, { status: 403 });
+    if (!canAccessAttachment(snap.member, snap.store, key)) return Response.json({ error: "You do not have access to this attachment." }, { status: 403 });
     const downloadUrl = await getSignedUrl(s3(), new GetObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: key }), { expiresIn: 900 });
     return Response.json({ downloadUrl, expiresIn: 900 });
   } catch (error) { return Response.json({ error: error instanceof Error ? error.message : "Attachment download unavailable." }, { status: 400 }); }
@@ -67,8 +70,8 @@ export async function DELETE(request: Request) {
     const body = await readJsonBody(request, 32_768) as Record<string, any>;
     const snap = await snapshot(user);
     if (snap.locked) return Response.json({ error: "Your 3-day trial has ended. Choose a plan to continue." }, { status: 402 });
-    if (snap.member.role !== "owner") return Response.json({ error: "Only the workspace owner can delete attachments." }, { status: 403 });
-    if (typeof body?.key !== "string" || !body.key.startsWith(`${snap.id}/`)) return Response.json({ error: "Invalid attachment scope." }, { status: 403 });
+    if (typeof body?.key !== "string" || !canDeleteAttachment(snap.member, snap.store, snap.id, body.key)) return Response.json({ error: "You cannot delete this attachment. Check your module access and whether the file is already attached to a saved record." }, { status: 403 });
+    if (body.unreferencedOnly && canAccessAttachment(snap.member, snap.store, body.key)) return Response.json({ error: "This attachment is already referenced by a saved record." }, { status: 409 });
     await s3().send(new DeleteObjectCommand({ Bucket: ATTACHMENT_BUCKET, Key: body.key }));
     await recordAudit(user, body.module === "Purchases" ? "Purchases" : "Expenses", "Attachment deleted", body.key);
     return Response.json({ ok: true });
