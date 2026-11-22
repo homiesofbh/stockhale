@@ -71,10 +71,11 @@ export function DashboardView({
   const todaySalesSummary = useServerCollection<Trade>({ collection: "invoices", module: "Billing", from: today(), to: today(), pageSize: 1, enabled: canAccess("Billing") });
   const inventoryPage = useServerCollection<Product>({ collection: "products", status: "Low stock", pageSize: 5, enabled: canAccess("Inventory") });
   const inventoryAll = useServerCollection<Product>({ collection: "products", query: quickProductQuery, pageSize: 10, enabled: canAccess("Inventory") });
-  const receivableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", pageSize: 1, enabled: canAccess("Billing") });
-  const payableStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Purchases", pageSize: 1, enabled: canAccess("Purchases") });
+  const allDashboardStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Dashboard", pageSize: 1, enabled: canAccess("Billing") || canAccess("Purchases") });
   const periodStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", from: dashboardFrom, to: today(), pageSize: 1, enabled: canAccess("Billing") });
-  const allProfitStats = useServerCollection<any>({ collection: "dashboardSummary", module: "Billing", pageSize: 1, enabled: canAccess("Billing") });
+  const receivableStats = allDashboardStats;
+  const payableStats = allDashboardStats;
+  const allProfitStats = allDashboardStats;
   const periodInvoiceCount = Number(periodStats.aggregates?.invoiceCount || 0);
   const lowStockCount = Number(inventoryPage.aggregates?.lowStock || 0);
   const productionRuns = useServerCollection<any>({ collection: "productionRuns", from: dashboardFrom || undefined, to: today(), pageSize: 1, enabled: manufacturer });
@@ -306,12 +307,12 @@ export function DashboardView({
         />
         <Stat
           label="Receivables"
-          value={money(receivableStats.aggregates?.balance || 0)}
+          value={money(receivableStats.aggregates?.receivables || 0)}
           detail="Outstanding customer bills"
         />
         <Stat
           label="Payables"
-          value={money(payableStats.aggregates?.balance || 0)}
+          value={money(payableStats.aggregates?.payables || 0)}
           detail="Outstanding supplier purchases"
         />
         <Stat

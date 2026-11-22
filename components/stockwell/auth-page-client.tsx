@@ -41,14 +41,37 @@ export function AuthPageClient({
         ),
         invite,
         action: teamSignup ? "team-signup" : signup ? "signup" : "signin",
+        compactAuth: true,
       });
+      if (!w.id) throw new Error("Sign-in succeeded but StockHale could not identify your workspace. Please retry.");
       const existing = localStorage.getItem(cacheKey(w.id));
       const cached = existing ? migrateCache(JSON.parse(existing)) : null;
+      if (!w.member) throw new Error("StockHale could not identify your workspace membership. Please sign in again.");
+      if (w.compactAuth === true) {
+        if (cached?.queue.length && cached.workspace.member.id !== w.member.id) {
+          throw new Error("Sign in as the user who created the pending changes before switching accounts.");
+        }
+        if (!cached || cached.workspace.member.id !== w.member.id) {
+          const snapshot = await workspaceRequest();
+          if (snapshot.id !== w.id || snapshot.member?.id !== w.member.id) throw new Error("The active workspace changed. Please sign in again.");
+          localStorage.setItem(cacheKey(w.id), JSON.stringify({ version: CACHE_VERSION, workspace: snapshot, revision: snapshot.revision, queue: [] }));
+          localStorage.setItem("stockhale.active", w.id);
+          location.assign("/workspace");
+          return;
+        }
+        localStorage.setItem(cacheKey(w.id), JSON.stringify({
+          ...cached,
+          workspace: { ...cached.workspace, member: w.member },
+        }));
+        localStorage.setItem("stockhale.active", w.id);
+        location.assign("/workspace");
+        return;
+      }
       if (cached?.queue?.length && cached.workspace.member.id !== w.member.id)
         throw new Error(
           "Pending records belong to another user. Sign in as that user to sync them first."
         );
-      const workspace = w.locked && cached
+      const workspace = w.locked && cached && cached.workspace.member.id === w.member.id
         ? { ...w, store: cached.workspace.store, revision: cached.workspace.revision }
         : w;
       localStorage.setItem(

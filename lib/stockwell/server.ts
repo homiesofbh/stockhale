@@ -196,14 +196,14 @@ export async function recordAudit(user: Row, module: string, action: string, rec
   const w = await workspace(user);
   await event(w, user, module, action, records);
 }
-export async function snapshot(user: Row, options: { details?: boolean } = {}) {
+export async function snapshot(user: Row, options: { details?: boolean; includeStore?: boolean } = {}) {
   return transaction(async () => {
     await query("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY");
     const w = await workspace(user);
     const access = trialAccess(w);
-    if (!access.locked) return readSnapshot(user, w, options.details !== false);
+    if (!access.locked) return readSnapshot(user, w, options.details !== false, options.includeStore !== false);
     return {
-      ...access, id: w.id, name: w.name, businessType: w.business_type || null, image: "", revision: 0,
+      ...access, id: w.id, name: w.name, businessType: w.business_type || null, image: "", revision: Number(w.revision) || 0,
       store: emptyStore(), member: await member(w, user), members: [], audit: [],
       readEvent: "", emailConfigured: false,
     };
@@ -266,7 +266,7 @@ export async function workspaceCollection(user: Row, options: { collection: stri
     requireWorkspaceAccess(w);
     const memberRecord = await member(w, user);
     const moduleForCollection: Record<string, string> = { products: "Inventory", customers: "Customers", suppliers: "Suppliers", purchases: "Purchases", invoices: "Sales", movements: "Inventory", walkInReview: "Billing", dashboardSummary: "Billing", payments: "Payments", chequeEvents: "Payments", chequeRegister: "Payments", paymentHistory: "Payments", expenses: "Expenses", returns: "Returns & Damage", partners: "Payments", partnerLedger: "Payments", bankVouchers: "Accounts Heads", journals: "Accounts Heads", productionRuns: "Production", recipes: "Production", dailyCloses: "Closing", accounts: "Accounts Heads", financialAccounts: "Accounts Heads", accountDirectory: "Accounts Heads", activityLog: "Notifications", financialTransactions: "Accounts Heads" };
-    const allowedModules = options.collection === "dashboardSummary" ? [options.module === "Purchases" ? "Purchases" : "Billing"] : options.collection === "invoices" ? [options.module === "Billing" ? "Billing" : options.module === "Inventory" ? "Inventory" : "Sales"] : [options.collection === "purchases" && options.module === "Inventory" || options.collection === "productionRuns" && options.module === "Inventory" ? "Inventory" : moduleForCollection[options.collection]];
+    const allowedModules = options.collection === "dashboardSummary" ? (options.module === "Dashboard" ? ["Billing", "Purchases"] : [options.module === "Purchases" ? "Purchases" : "Billing"]) : options.collection === "invoices" ? [options.module === "Billing" ? "Billing" : options.module === "Inventory" ? "Inventory" : "Sales"] : [options.collection === "purchases" && options.module === "Inventory" || options.collection === "productionRuns" && options.module === "Inventory" ? "Inventory" : moduleForCollection[options.collection]];
     if (memberRecord.role !== "owner" && !allowedModules.some(name => memberRecord.modules.includes(name)))
       throw Object.assign(new Error("You do not have permission to view this collection."), { status: 403 });
     const conditions = ["workspace=$1", "collection=$2"];
@@ -339,21 +339,45 @@ export async function workspaceCollection(user: Row, options: { collection: stri
         meta: { lowStockCount: lowStock },
       };
     }
+    if (options.collection === "dashboardSummary") {
+      const store = await loadWorkspaceStore(w);
+      const invoices = store.invoices.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
+      const purchases = store.purchases.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
+      if (options.module === "Dashboard") {
+        const visible = { Billing: memberRecord.role === "owner" || memberRecord.modules.includes("Billing"), Purchases: memberRecord.role === "owner" || memberRecord.modules.includes("Purchases") };
+        const customerIds = new Set(store.customers.map(contact => contact.id));
+        const supplierIds = new Set(store.suppliers.map(contact => contact.id));
+        const receivables = visible.Billing ? store.customers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Customer", contact.id), 0), 0) + invoices.filter(trade => !trade.contactId || !customerIds.has(trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0) : 0;
+        const payables = visible.Purchases ? store.suppliers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Supplier", contact.id), 0), 0) + purchases.filter(trade => !trade.contactId || !supplierIds.has(trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0) : 0;
+        return { records: [], count: 0, page, pageSize, aggregates: { receivables, payables, profit: visible.Billing ? profit(store) : null } };
+      }
+      const trades = options.module === "Purchases" ? purchases : invoices;
+      if ((options.from || options.to) && options.module === "Billing") {
+        return {
+          records: trades.slice(offset, offset + pageSize),
+          count: trades.length,
+          page,
+          pageSize,
+          aggregates: { invoiceCount: invoices.length, profit: profit(store, options.from || "", options.to || "") },
+        };
+      }
+      const balanceAmount = options.module === "Purchases"
+        ? store.suppliers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Supplier", contact.id), 0), 0) + purchases.filter(trade => !trade.contactId || !store.suppliers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0)
+        : store.customers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Customer", contact.id), 0), 0) + invoices.filter(trade => !trade.contactId || !store.customers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0);
+      const result: Record<string, unknown> = { records: trades.slice(offset, offset + pageSize), count: trades.length, page, pageSize };
+      if (options.from || options.to) {
+        result.aggregates = {
+          invoiceCount: invoices.length,
+          ...(options.module === "Billing" ? { profit: profit(store, options.from || "", options.to || "") } : {}),
+        };
+      } else result.aggregates = { balance: balanceAmount, ...(options.module === "Billing" ? { profit: profit(store) } : {}) };
+      return result;
+    }
     const count = Number((await row(`SELECT COUNT(*)::int AS count FROM workspace_records WHERE ${where}`, ...args))?.count || 0);
     let aggregates: Record<string, number> | undefined;
     if (options.collection === "expenses") {
       const aggregate = await row(`SELECT COALESCE(SUM((record->>'amount')::numeric),0) AS total FROM workspace_records WHERE ${where}`, ...args);
       aggregates = { total: Number(aggregate?.total || 0) };
-    }
-    if (options.collection === "dashboardSummary") {
-      const store = await loadWorkspaceStore(w);
-      const invoices = store.invoices.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
-      const purchases = store.purchases.filter(trade => trade.status !== "draft" && trade.status !== "void" && (!options.from || trade.date >= options.from) && (!options.to || trade.date <= options.to));
-      const trades = options.module === "Purchases" ? purchases : invoices;
-      const balanceAmount = options.module === "Purchases"
-        ? store.suppliers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Supplier", contact.id), 0), 0) + purchases.filter(trade => !trade.contactId || !store.suppliers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0)
-        : store.customers.reduce((sum, contact) => sum + Math.max(contactBalance(store, "Customer", contact.id), 0), 0) + invoices.filter(trade => !trade.contactId || !store.customers.some(contact => contact.id === trade.contactId)).reduce((sum, trade) => sum + Math.max(balance(store, trade), 0), 0);
-      return { records: trades.slice(offset, offset + pageSize), count: trades.length, page, pageSize, aggregates: { balance: balanceAmount, profit: profit(store, options.from || "", options.to || ""), invoiceCount: invoices.length } };
     }
     if (options.collection === "financialTransactions") {
       const store = await loadWorkspaceStore(w);
@@ -871,7 +895,7 @@ export async function reviewTestimonial(user: Row, body: Row) {
   if (!result.rowCount) throw Object.assign(new Error("This testimonial is no longer pending."), { status: 409 });
   return { ok: true };
 }
-async function readSnapshot(user: Row, existingWorkspace?: Row, details = true) {
+async function readSnapshot(user: Row, existingWorkspace?: Row, details = true, includeStore = true) {
   const w = existingWorkspace || await workspace(user);
   const m = await member(w, user);
   return {
@@ -881,7 +905,7 @@ async function readSnapshot(user: Row, existingWorkspace?: Row, details = true) 
     image: w.image,
     timeZone: w.time_zone || "UTC",
     revision: w.revision,
-    store: await loadWorkspaceStore(w),
+    store: includeStore ? await loadWorkspaceStore(w) : emptyStore(),
     member: m,
     members:
       details && m.role === "owner"
@@ -1039,12 +1063,18 @@ export async function mutate(user: Row, body: Row) {
       // revision can be acknowledged before later snapshots are attempted.
       if (!Array.isArray(body.changes) || body.changes.length > 1)
         throw new Error("Invalid sync batch.");
+      const accepted: string[] = [];
+      let canonicalDelta: StoreDelta = {};
+      if (body.changes.length === 1 && body.revision !== w.revision) {
+        const replay = body.changes[0];
+        if (replay.actorId === user.id && await row("SELECT id FROM events WHERE id=$1 AND workspace=$2", replay.id, w.id)) {
+          return { accepted: [replay.id], revision: Number(w.revision), canonicalDelta: {}, workspaceId: w.id, needsSnapshot: true };
+        }
+        throw Object.assign(new Error("Records changed on the server. Export pending changes, then resolve the conflict before retrying."), { status: 409 });
+      }
       const beforeStore = await loadWorkspaceStore(w);
       let store = beforeStore,
         revision = w.revision;
-      const accepted: string[] = [];
-      let canonicalDelta: StoreDelta = {};
-      let needsSnapshot = false;
       for (const c of body.changes) {
         if (c.actorId !== user.id)
           throw Object.assign(
@@ -1058,9 +1088,7 @@ export async function mutate(user: Row, body: Row) {
             w.id,
           )
         ) {
-          accepted.push(c.id);
-          needsSnapshot = true;
-          continue;
+          return { accepted: [c.id], revision: Number(w.revision), canonicalDelta: {}, workspaceId: w.id, needsSnapshot: true };
         }
         if (body.revision + accepted.length !== revision)
           throw Object.assign(
@@ -1097,7 +1125,7 @@ export async function mutate(user: Row, body: Row) {
       const writeStartedAt = Date.now();
       await persistWorkspaceStore(w, beforeStore, store, revision);
       console.info("Workspace sync write timing", { writeMs: Date.now() - writeStartedAt });
-      return { accepted, revision, canonicalDelta, workspaceId: w.id, needsSnapshot };
+      return { accepted, revision, canonicalDelta, workspaceId: w.id };
     }
     if (body.action === "reopen-day") {
       const m = await member(w, user);

@@ -112,9 +112,9 @@ The source is opened read-only. The import preserves user/workspace IDs, legacy 
 
 - Better Auth runs in the app; it adds no hosted authentication subscription.
 - Neon can start on its Free plan. Current allowances and paid usage rates are on [Neon's pricing page](https://neon.com/pricing). Vercel hosting and optional Resend email are billed separately under the applicable plans.
-- The app uses a small reusable connection pool, Neon's external pooler, and Vercel's pool suspension helper. Background tabs stop polling, allowing idle databases to suspend. Visible workspaces poll every 15 seconds; active usage still consumes compute.
+- The app uses a small reusable connection pool, Neon's external pooler, and Vercel's pool suspension helper. Background tabs stop polling, allowing idle databases to suspend. Visible workspaces poll every 5 minutes; active usage still consumes compute.
 - Inventory updates lock the workspace row and check revisions inside a transaction. Concurrent stale writes return a conflict rather than silently overwriting records.
-- Email retries remain durable in Postgres. A Cloudflare scheduled trigger checks once per minute; API activity and the Settings retry action also drain due work.
+- Email retries remain durable in Postgres. A Cloudflare scheduled trigger checks every five minutes; API activity and the Settings retry action also drain due work.
 
 See [workspace operation](docs/WORKSPACE.md) for offline queues and permissions.
 

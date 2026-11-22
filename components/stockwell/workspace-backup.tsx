@@ -25,7 +25,7 @@ export function WorkspaceBackup({ cache, settings, action, audit = cache.workspa
       catch { setDue(true); }
     };
     check();
-    const timer = window.setInterval(check, 60000);
+    const timer = window.setInterval(() => { if (!document.hidden) check(); }, 300000);
     window.addEventListener("focus", check);
     window.addEventListener("storage", check);
     return () => {

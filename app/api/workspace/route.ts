@@ -197,9 +197,11 @@ export async function POST(request: Request) {
         const authStartedAt = Date.now();
         const { user, headers: authHeaders } = await authenticate(payload, request);
         console.info("Workspace auth timing", { action: payload.action, authMs: Date.now() - authStartedAt });
-        const snapshotStartedAt = Date.now();
-        const overview = await snapshot(user, { details: false });
-        console.info("Workspace auth snapshot timing", { action: payload.action, snapshotMs: Date.now() - snapshotStartedAt });
+        const overview = await snapshot(user, { details: false, includeStore: payload.compactAuth !== true });
+        if (payload.compactAuth === true && !overview.locked) {
+          const { store, members, audit, ...identity } = overview;
+          return Response.json({ ...identity, compactAuth: true }, { headers: sessionHeaders(authHeaders) });
+        }
         return Response.json(overview, {
           headers: sessionHeaders(authHeaders),
         });
@@ -233,6 +235,9 @@ export async function POST(request: Request) {
       console.info("Workspace mutation timing", { action: payload.action || "sync", mutationMs: Date.now() - requestStartedAt });
       if (payload.action === "retry-email") {
         await deliverEmails();
+        return Response.json(result, { headers: sessionHeaders(authHeaders) });
+      }
+      if (payload.action === "backup" || payload.action === "backup-recovery") {
         return Response.json(result, { headers: sessionHeaders(authHeaders) });
       }
       if (payload.action === "sync" && payload.compactSync === true && !(result as { needsSnapshot?: boolean }).needsSnapshot) {

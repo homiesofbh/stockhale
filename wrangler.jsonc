@@ -32,7 +32,7 @@
 		}
 	],
 	"triggers": {
-		"crons": ["* * * * *"]
+		"crons": ["*/5 * * * *"]
 	},
 	"vars": {
 		"NEXT_PUBLIC_SITE_URL": "https://stockhale.app",

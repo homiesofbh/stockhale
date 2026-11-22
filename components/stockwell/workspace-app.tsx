@@ -149,7 +149,7 @@ export function WorkspaceApp() {
         setTrialExpired(paidExpired || trialExpiredNow);
       };
       refreshTrial();
-      const timer = window.setInterval(refreshTrial, 1000);
+      const timer = window.setInterval(refreshTrial, 15000);
       return () => window.clearInterval(timer);
     } else if (workspace.ready) setReady(true);
   }, [workspace.cache, workspace.ready]);

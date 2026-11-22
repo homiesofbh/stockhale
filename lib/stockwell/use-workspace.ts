@@ -166,6 +166,10 @@ export function useWorkspace() {
           if (check.unchanged) return { c, unchanged: true as const };
           return { c, w: check as Workspace };
         }
+        if (!c) {
+          const initial = await workspaceRequest(undefined, signal);
+          return { c, w: initial as Workspace };
+        }
         const raw = await workspaceRequest(first
           ? { action: "sync", compactSync: true, revision: c!.revision, changes: [c!.baseStore
             ? { actorId: first.actorId, id: first.id, module: first.module, action: first.action, occurredAt: first.occurredAt, location: first.location, delta: createStoreDelta(c!.baseStore, first.store) }
@@ -351,8 +355,8 @@ export function useWorkspace() {
       if (!cacheLoadBlocked.current) void sync();
     }, current.current && !current.current.queue.length ? 250 : 0);
     const timer = setInterval(() => {
-      if (!document.hidden) void sync();
-    }, 60000);
+      if (!document.hidden && navigator.onLine) void sync();
+    }, 300000);
     const online = () => void sync();
     const offline = () => {
       setSyncing(false);
@@ -470,6 +474,7 @@ export function useWorkspace() {
         ? { ...body as Record<string, unknown>, location }
         : body;
       const w = await workspaceRequest(request);
+      if (actionName === "backup" || actionName === "backup-recovery") return w;
       save({ workspace: w, queue: [], revision: w.revision });
       return w;
     } finally {
