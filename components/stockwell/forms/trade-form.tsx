@@ -13,6 +13,8 @@ import {
   contactBalance,
   money,
   recordTrade,
+  requiresWholeQuantity,
+  tradeLineUnit,
   recordPayment,
   round,
   stock,
@@ -376,77 +378,83 @@ export function TradeForm({
               "Total",
               "",
             ]}
-            rows={lines.map((l, i) => [
-              <>
-                {pName(l.productId)}
-                <small>
-                  {[workingStore.products.find((p) => p.id === l.productId)?.sku, workingStore.products.find((p) => p.id === l.productId)?.gsm ? `${workingStore.products.find((p) => p.id === l.productId)?.gsm} GSM` : ""].filter(Boolean).join(" · ")}
-                </small>
-              </>,
-              workingStore.products.find((p) => p.id === l.productId)?.color || "—",
-              <input
-                aria-label={`Quantity for ${pName(l.productId)}`}
-                data-barcode-quantity={l.productId}
-                type="number"
-                min="0.5"
-                step="0.001"
-                required
-                value={l.qty}
-                onChange={(e) =>
-                  setLines(
-                    lines.map((x, n) =>
-                      n === i ? { ...x, qty: Number(e.target.value), discount: Math.min(x.discount || 0, Number(e.target.value) * x.price) } : x,
-                    ),
-                  )
-                }
-              />,
-              <GlassSelect aria-label={`UOM for ${pName(l.productId)}`} value={l.unit || workingStore.products.find((p) => p.id === l.productId)?.unit || "piece"} onValueChange={(value) => setLines(lines.map((x, n) => n === i ? { ...x, unit: value } : x))}>{units.map(unit => <option key={unit}>{unit}</option>)}</GlassSelect>,
-              <input aria-label={`Number of rolls for ${pName(l.productId)}`} type="number" min="0" step="1" placeholder="Rolls" value={l.packageCount ?? ""} onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))} />,
-              <input
-                aria-label={`Price for ${pName(l.productId)}`}
-                type="number"
-                min="1"
-                step="0.01"
-                required
-                value={l.price}
-                onChange={(e) =>
-                  setLines(
-                    lines.map((x, n) =>
-                      n === i
-                        ? {
-                            ...x,
-                            price: Number(e.target.value),
-                            discount: Math.min(x.discount || 0, x.qty * Number(e.target.value)),
-                            cost:
-                              modal === "Purchase"
-                                ? Number(e.target.value)
-                                : x.cost,
-                          }
-                        : x,
-                    ),
-                  )
-                }
-              />,
-              <input
-                aria-label={`Line discount for ${pName(l.productId)}`}
-                type="number"
-                min="0"
-                max={l.qty * l.price}
-                step="0.01"
-                value={l.discount || 0}
-                onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Math.min(Number(e.target.value), x.qty * x.price) } : x))}
-              />,
-              money(l.qty * l.price - (l.discount || 0)),
-              <button
-                type="button"
-                className="icon-button"
-                aria-label={`Remove ${pName(l.productId)}`}
-                onClick={() => setLines(lines.filter((_, n) => n !== i))}
-              >
-                <X size={16} />
-              </button>,
-            ])}
-              />
+            rows={lines.map((l, i) => {
+              const product = workingStore.products.find(p => p.id === l.productId);
+              const unit = tradeLineUnit(l, product);
+              const wholeQuantity = requiresWholeQuantity(unit);
+              return [
+                <>
+                  {pName(l.productId)}
+                  <small>
+                    {[product?.sku, product?.gsm ? `${product.gsm} GSM` : ""].filter(Boolean).join(" · ")}
+                  </small>
+                </>,
+                product?.color || "—",
+                <input
+                  aria-label={`Quantity for ${pName(l.productId)}`}
+                  data-barcode-quantity={l.productId}
+                  className="trade-quantity-input"
+                  type="number"
+                  min={wholeQuantity ? 1 : 0.5}
+                  step={wholeQuantity ? 1 : 0.001}
+                  required
+                  value={l.qty}
+                  onChange={(e) =>
+                    setLines(
+                      lines.map((x, n) =>
+                        n === i ? { ...x, qty: Number(e.target.value), discount: Math.min(x.discount || 0, Number(e.target.value) * x.price) } : x,
+                      ),
+                    )
+                  }
+                />,
+                <GlassSelect aria-label={`UOM for ${pName(l.productId)}`} value={unit} onValueChange={(value) => setLines(lines.map((x, n) => n === i ? { ...x, unit: value } : x))}>{units.map(unit => <option key={unit}>{unit}</option>)}</GlassSelect>,
+                <input aria-label={`Number of rolls for ${pName(l.productId)}`} type="number" min="0" step="1" placeholder="Rolls" value={l.packageCount ?? ""} onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, packageCount: e.target.value ? Number(e.target.value) : undefined } : x))} />,
+                <input
+                  aria-label={`Price for ${pName(l.productId)}`}
+                  type="number"
+                  min="1"
+                  step="0.01"
+                  required
+                  value={l.price}
+                  onChange={(e) =>
+                    setLines(
+                      lines.map((x, n) =>
+                        n === i
+                          ? {
+                              ...x,
+                              price: Number(e.target.value),
+                              discount: Math.min(x.discount || 0, x.qty * Number(e.target.value)),
+                              cost:
+                                modal === "Purchase"
+                                  ? Number(e.target.value)
+                                  : x.cost,
+                            }
+                          : x,
+                      ),
+                    )
+                  }
+                />,
+                <input
+                  aria-label={`Line discount for ${pName(l.productId)}`}
+                  type="number"
+                  min="0"
+                  max={l.qty * l.price}
+                  step="0.01"
+                  value={l.discount || 0}
+                  onChange={(e) => setLines(lines.map((x, n) => n === i ? { ...x, discount: Math.min(Number(e.target.value), x.qty * x.price) } : x))}
+                />,
+                money(l.qty * l.price - (l.discount || 0)),
+                <button
+                  type="button"
+                  className="icon-button"
+                  aria-label={`Remove ${pName(l.productId)}`}
+                  onClick={() => setLines(lines.filter((_, n) => n !== i))}
+                >
+                  <X size={16} />
+                </button>,
+              ];
+            })}
+          />
         ) : (
           <div className="line-placeholder">
             Scan or select a product to start your{" "}

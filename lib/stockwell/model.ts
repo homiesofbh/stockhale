@@ -275,6 +275,21 @@ export const money = (n: number) =>
     maximumFractionDigits: 2,
   }).format(n);
 export const standardUnits = ["yard", "meter", "kg", "piece", "g", "liter", "ml", "box", "pack", "dozen"];
+const wholeQuantityUnits = new Set([
+  "piece", "pieces", "pc", "pcs", "each", "ea", "unit", "units",
+  "box", "boxes", "pack", "packs", "dozen", "dozens", "pair", "pairs",
+  "roll", "rolls", "bundle", "bundles", "carton", "cartons", "set", "sets",
+]);
+export function requiresWholeQuantity(unit: string) {
+  return wholeQuantityUnits.has(unit.trim().toLowerCase());
+}
+export function tradeLineUnit(line: Line, product?: Product) {
+  return line.unit?.trim() || product?.unit?.trim() || "piece";
+}
+export function validateTradeQuantity(line: Line, product?: Product) {
+  const unit = tradeLineUnit(line, product);
+  assert(!requiresWholeQuantity(unit) || Number.isInteger(line.qty), `Enter a whole-number quantity for ${product?.name || "this product"} (${unit}).`);
+}
 export function orderedUnits(units: string[] = standardUnits) {
   const order = new Map(standardUnits.map((unit, index) => [unit, index]));
   return units
@@ -647,10 +662,9 @@ export function recordTrade(
   );
   const demand = new Map<string, number>();
   t.lines.forEach((l) => {
-    assert(
-      s.products.some((p) => p.id === l.productId && p.active !== false),
-      "A selected product no longer exists.",
-    );
+    const product = s.products.find(p => p.id === l.productId && p.active !== false);
+    assert(!!product, "A selected product no longer exists.");
+    validateTradeQuantity(l, product);
     assert(
       validNumber(l.qty, 0.5) && roundQty(l.qty) === l.qty && validNumber(l.price, 1) && validNumber(l.cost) && validNumber(l.discount || 0) && (l.discount || 0) <= l.qty * l.price,
       "Quantities must be at least 0.5 with up to three decimals, rates at least 1, and line discounts within the line subtotal.",

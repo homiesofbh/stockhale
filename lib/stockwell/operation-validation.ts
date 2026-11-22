@@ -1,5 +1,5 @@
 import { chartAccounts } from "./accounts";
-import { balance, emptyStore, isPosted, isSettledPayment, recordPayment, recordReturn, recordTrade, returnNotesWithNumbers, saveContact, round, roundQty, stock, today, total, type Store, type Trade } from "./model";
+import { balance, emptyStore, isPosted, isSettledPayment, recordPayment, recordReturn, recordTrade, returnNotesWithNumbers, saveContact, round, roundQty, stock, today, total, validateTradeQuantity, type Store, type Trade } from "./model";
 import { bankVoucherLines } from "./bank-vouchers";
 import { productionMovements, validateRecipe } from "./production";
 import { cashChequeSettlement, cashStatement, cashFlow, changeCheque, check, closeDay, correctTrade, deletePaidPurchase, linkLegacyWalkIn, expenseDateAllowed, tradeDateAllowed, previousDate, requireOpenDate, validDate, type Actor } from "./operations";
@@ -154,7 +154,12 @@ export function validateOperations(before: Store, after: Store, module: string, 
   }
   for (const key of ["invoices", "purchases"] as const) for (const trade of after[key]) {
     const old = before[key].find(candidate => candidate.id === trade.id);
-    if (!old || !same(old.lines, trade.lines)) check(trade.lines.every(line => line.qty >= 0.5 && line.price >= 1), "Bill quantities must be at least 0.5 and rates at least 1.");
+    if (!old || !same(old.lines, trade.lines)) {
+      check(trade.lines.every(line => line.qty >= 0.5 && line.price >= 1), "Bill quantities must be at least 0.5 and rates at least 1.");
+      for (const line of trade.lines) {
+        validateTradeQuantity(line, after.products.find(product => product.id === line.productId));
+      }
+    }
   }
   check(Number.isFinite(Date.parse(context.occurredAt)) && Date.parse(context.occurredAt) <= Date.parse(received) + 300000, "Invalid creation time or device clock. Pending data has been preserved.");
   if (actor.role !== "owner") {

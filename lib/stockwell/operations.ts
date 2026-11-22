@@ -1,4 +1,4 @@
-import { applyAdvanceToTrade, availableAdvancePayments, balance, financialRows, isPosted, recordPayment, recordTrade, round, roundQty, stock, today, total, uid, type Expense, type FinancialBalanceSnapshot, type Payment, type Store, type Trade } from "./model";
+import { applyAdvanceToTrade, availableAdvancePayments, balance, financialRows, isPosted, recordPayment, recordTrade, round, roundQty, stock, today, total, uid, validateTradeQuantity, type Expense, type FinancialBalanceSnapshot, type Payment, type Store, type Trade } from "./model";
 import { chartAccounts } from "./accounts";
 import { bankBalanceSummary, bankStatement, saveBankVoucher } from "./bank-vouchers";
 import { saveJournal } from "./journals";
@@ -57,6 +57,11 @@ export function correctTrade(s: Store, kind: "Sale" | "Purchase", replacement: T
   check(date >= old!.date && date <= today(), "Correction date must be on or after the bill date and no later than today.");
   check(["id", "number", "date", "contactId", "method", "financialAccountId", "createdAt", "postedAt", "replacementOf"].every(k => (old as any)[k] === (replacement as any)[k]), "Bill identity, date, customer/supplier, and payment account cannot change after posting.");
   check(replacement.status === "void" || replacement.status === "posted" || !replacement.status, "Invalid correction status.");
+  if (replacement.status !== "void") {
+    for (const line of replacement.lines) {
+      validateTradeQuantity(line, s.products.find(product => product.id === line.productId));
+    }
+  }
   const normalized = kind === "Purchase" ? { ...replacement, lines: replacement.lines.map(l => ({ ...l, cost: l.price })), costBefore: Object.fromEntries(replacement.lines.map(l => [l.productId, old!.costBefore?.[l.productId] ?? s.products.find(p => p.id === l.productId)?.cost ?? l.cost])) } : replacement;
   const excessPaid = replacement.status === "void" ? 0 : round(Math.max(0, normalized.paid - total(normalized)));
   if (replacement.status !== "void") normalized.paid = Math.min(normalized.paid, total(normalized));

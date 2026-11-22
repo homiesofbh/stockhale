@@ -191,7 +191,7 @@ test('owner corrections update stock and preserve historical reports and audit s
  assert.throws(() => w.verifyChange(s, forged, 'Billing', context(owner)), /locked/);
 });
 test('bill correction excess paid is retained as a customer advance', () => {
- const s = m.recordTrade(fixture(), 'Sale', bill({ id: 'excess-correction', date: day, paid: 20 }));
+ const s = m.recordTrade(fixture(), 'Sale', bill({ id: 'excess-correction', date: day, paid: 20, lines: [{ productId: 'p', qty: 2, price: 10, cost: 5, unit: 'meter' }] }));
  const corrected = o.correctTrade(s, 'Sale', { ...s.invoices[0], lines: [{ ...s.invoices[0].lines[0], qty: 0.5 }] }, 'Correct quantity', owner, day);
  assert.equal(corrected.invoices[0].paid, 5);
  assert.equal(m.unappliedAdvanceBalance(corrected, 'Customer', 'customer'), 15);
@@ -393,13 +393,22 @@ test('financial reports reconcile to the canonical ledger fixture', () => {
 });
 
 test('fractional stock corrections preserve thousandths and duplicate lines do not oversell', () => {
- const base = fixture(), fractional = m.recordTrade(base, 'Sale', bill({ lines: [{ productId: 'p', qty: 1.001, price: 10, cost: 5 }] }));
+ const base = fixture(), fractional = m.recordTrade(base, 'Sale', bill({ lines: [{ productId: 'p', qty: 1.001, price: 10, cost: 5, unit: 'meter' }] }));
  assert.equal(m.stock(fractional, 'p'), 18.999);
- const corrected = o.correctTrade(fractional, 'Sale', { ...fractional.invoices[0], lines: [{ productId: 'p', qty: 1.002, price: 10, cost: 5 }] }, 'Small quantity adjustment', owner, yesterday);
+ const corrected = o.correctTrade(fractional, 'Sale', { ...fractional.invoices[0], lines: [{ productId: 'p', qty: 1.002, price: 10, cost: 5, unit: 'meter' }] }, 'Small quantity adjustment', owner, yesterday);
  assert.equal(m.stock(corrected, 'p'), 18.998);
  w.verifyChange(fractional, corrected, 'Billing', context(owner));
  const small = { ...base, movements: [{ id: 'small-stock', productId: 'p', qty: 0.3, date: before, type: 'Opening stock', reference: 'P1', reason: 'Opening' }] };
- assert.throws(() => m.recordTrade(small, 'Sale', bill({ lines: [{ productId: 'p', qty: 0.5, price: 10, cost: 5 }, { productId: 'p', qty: 0.5, price: 10, cost: 5 }] })), /Insufficient stock/);
+ assert.throws(() => m.recordTrade(small, 'Sale', bill({ lines: [{ productId: 'p', qty: 0.5, price: 10, cost: 5, unit: 'meter' }, { productId: 'p', qty: 0.5, price: 10, cost: 5, unit: 'meter' }] })), /Insufficient stock/);
+});
+test('countable bill quantities must be whole numbers', () => {
+ const base = fixture();
+ const line = { productId: 'p', qty: 1.25, price: 10, cost: 5 };
+ for (const unit of [undefined, ' PIECES ', 'box', 'packs', 'dozen']) {
+  assert.throws(() => m.recordTrade(base, 'Sale', bill({ lines: [{ ...line, unit }] })), /whole-number quantity/);
+ }
+ const saved = m.recordTrade(base, 'Sale', bill({ lines: [{ ...line, qty: 2, unit: 'piece' }] }));
+ assert.throws(() => o.correctTrade(saved, 'Sale', { ...saved.invoices[0], lines: [line] }, 'Change quantity', owner, yesterday), /whole-number quantity/);
 });
 test('drafts cannot be issued as invoice PDFs', () => {
  const pdf = require(path.join(process.env.STOCKWELL_TEST_DIR, 'invoice-pdf.js'));
