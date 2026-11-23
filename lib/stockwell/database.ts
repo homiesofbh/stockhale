@@ -1,50 +1,17 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { Pool, type PoolClient } from "pg";
-import { getCloudflareContext } from "@opennextjs/cloudflare";
 
 const transactions = new AsyncLocalStorage<PoolClient>();
 const scope = new AsyncLocalStorage<{ pool: Pool }>();
 
 let standalone: Pool | undefined;
 
-function inWorker() {
-  try {
-    getCloudflareContext();
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-
 function connectionString(): string | undefined {
-  try {
-    const env = getCloudflareContext().env as unknown as {
-      HYPERDRIVE?: { connectionString: string };
-    };
-    if (env.HYPERDRIVE?.connectionString) {
-      // Wrangler's local Hyperdrive shim may expose the placeholder from
-      // wrangler.jsonc (HOST). In Next dev, use the real local .env URL;
-      // deployed Workers still use the bound Hyperdrive connection.
-      try {
-        const host = new URL(env.HYPERDRIVE.connectionString).hostname.toLowerCase();
-        if (!['host', 'user', 'password', 'dbname'].includes(host)) return env.HYPERDRIVE.connectionString;
-      } catch {
-        // Fall through to DATABASE_URL when the local binding is a template.
-      }
-    }
-  } catch {
-    // not running under the Cloudflare runtime (local dev)
-  }
   return process.env.DATABASE_URL;
 }
 
 export function defer(p: Promise<unknown>) {
-  try {
-    getCloudflareContext().ctx.waitUntil(p);
-  } catch {
-    // local dev: the promise just runs unattended
-  }
+  void p.catch(() => {});
 }
 
 export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
@@ -69,9 +36,7 @@ export async function withDatabase<T>(fn: () => Promise<T>): Promise<T> {
 export function db(): Pool {
   const s = scope.getStore();
   if (s) return s.pool;
-  // Scripts, tests and local tooling only. Never reuse a global pool on Workers.
-  if (inWorker())
-    throw new Error("db() called outside withDatabase().");
+  // Scripts, tests and local tooling only.
   if (!standalone) {
     const cs = process.env.DATABASE_URL;
     if (!cs)

@@ -22,7 +22,7 @@ const all = async (sql: string, ...args: unknown[]) =>
 const digest = (s: string) => createHash("sha256").update(s).digest("hex");
 function trustedClientIp(request: Request) {
   const header =
-    process.env.STOCKHALE_TRUSTED_CLIENT_IP_HEADER || "cf-connecting-ip";
+    process.env.STOCKHALE_TRUSTED_CLIENT_IP_HEADER || "x-forwarded-for";
   if (!/^[a-z0-9-]+$/i.test(header)) return undefined;
   const value = request.headers.get(header)?.trim();
   return value && isIP(value) ? value : undefined;

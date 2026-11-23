@@ -2,7 +2,6 @@ export async function register() {
   if (
     process.env.NEXT_RUNTIME === "nodejs" &&
     !process.env.VERCEL &&
-    process.env.STOCKHALE_RUNTIME !== "cloudflare" &&
     process.env.RESEND_API_KEY &&
     process.env.RESEND_FROM
   ) {

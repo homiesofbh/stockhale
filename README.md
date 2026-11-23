@@ -16,77 +16,18 @@ Requires Node 24+ and PostgreSQL (Neon or a local database).
 
 No demo account is seeded. Sign-in requires an account created in the configured database.
 
-## Deploy on Cloudflare Workers with Neon and Better Auth
-
-`wrangler.jsonc` targets the `stockhale` Worker and `https://stockhale.app`.
-`open-next.config.ts` uses an R2 incremental cache. The existing self-managed
-Better Auth implementation uses Neon PostgreSQL; enabling managed Neon Auth
-is not required.
-
-1. Add `stockhale.app` as an active zone in your Cloudflare account and configure
-   the registrar's nameservers as Cloudflare instructs.
-2. Run `pnpm exec wrangler login`, then
-   `pnpm exec wrangler r2 bucket create stockhale-opennext-cache` once.
-3. Store the Neon pooled connection string with
-   `pnpm exec wrangler secret put DATABASE_URL`. Store a stable, random secret
-   of at least 32 characters with `pnpm exec wrangler secret put BETTER_AUTH_SECRET`.
-   Enter values at the prompts; never commit secrets to Wrangler configuration.
-4. Configure your local `.env.local` for the intended Neon branch and run
-   `pnpm db:migrate`. Use `DATABASE_MIGRATION_URL` for a direct migration connection.
-5. Run `pnpm deploy`. Wrangler binds the custom domain configured in the file.
-   Verify signup, signin, session restoration, and workspace writes on the deployed Worker.
-   Sign-in and password-reset throttles use the trusted client IP header named by
-   `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` (Cloudflare's `cf-connecting-ip` by default).
-   On another host, set this variable to a header that the hosting proxy overwrites
-   with the verified client IP; production auth requests fail closed if it is absent.
-
-### Cloudflare Workers Builds settings
-
-In the Worker’s **Settings → Build → Build configuration**, set:
-
-- Build command: `pnpm run build:cloudflare`
-- Deploy command: `pnpm run deploy:cloudflare`
-- Root directory: the repository root containing `package.json` and `wrangler.jsonc`.
-
-`pnpm run build` builds Next.js only. OpenNext’s build additionally creates
-`.open-next/worker.js`, assets and the compiled adapter config required by deploy.
-A plain Next.js build followed by `npx wrangler deploy` fails with “Could not find
-compiled Open Next config”. Keep the two CI stages separate to avoid building twice.
-The local `pnpm deploy` script intentionally builds and deploys together.
-These dashboard settings must be changed outside the repo; documenting them does
-not update Cloudflare or deploy anything.
-
-For Worker preview, put `DATABASE_URL`, `BETTER_AUTH_SECRET`,
-`BETTER_AUTH_URL=http://localhost:8787`, and `STOCKHALE_RUNTIME=cloudflare` in
-the ignored `.dev.vars` file, using an isolated Neon development branch. Run
-`pnpm preview`; update the local auth URL if Wrangler uses another port.
-Use `.env.local` and `pnpm dev` for ordinary Next.js development.
-Run `pnpm cf-typegen` to generate Cloudflare binding types.
-
-Password reset and optional activity-email delivery need `RESEND_API_KEY` and
-`RESEND_FROM` Worker secrets. Scheduled digest delivery also needs a random
-`EMAIL_DRAIN_SECRET` configured with `pnpm exec wrangler secret put EMAIL_DRAIN_SECRET`;
-the scheduled handler uses it to call the private email-drain route. `RESEND_FROM`
-must be a sender on a Resend-verified domain. The sign-in page exposes
-**Forgot your password?** once the reset credentials are configured; reset links
-are single-use, expire after one hour, and invalidate existing sessions after a
-successful reset.
-Cloudflare checks the durable email outbox every minute. Activity digests are
-sent at 11:58 PM in each workspace's configured time zone; API activity also
-drains due messages as a fallback.
-The configuration alone does not provision Neon, apply migrations, create the R2
-bucket, configure registrar DNS, or deploy the Worker.
-
-## Deploy on Vercel with Neon
+## Deploy on Vercel with Neon and Better Auth
 
 1. Create a Neon project, starting on its Free plan. Choose a database region close to the Vercel function region. Leave scale-to-zero enabled.
 2. Copy Neon's **pooled** connection string (the hostname contains `-pooler`) to the Vercel `DATABASE_URL` environment variable. Keep the SSL parameters supplied by Neon.
 3. Set a random `BETTER_AUTH_SECRET`, and set `BETTER_AUTH_URL=https://stockhale.app` for this production deployment. Keep the secret stable across releases; changing it invalidates sessions.
-   Also set `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` to a single-IP header that Vercel
-   provides and overwrites. Sign-in and reset requests fail closed in production
-   when this trusted client address is unavailable.
+   Set `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` to the trusted client-IP header
+   configured for your Vercel deployment. Sign-in and reset requests fail closed
+   in production when this trusted client address is unavailable.
 4. Configure the same values in a trusted local environment, then run `pnpm db:migrate` against the intended database. Optionally use `DATABASE_MIGRATION_URL` for Neon's direct connection. Migrations run explicitly, never during a build or on sign-in.
-5. Deploy/redeploy on Vercel and create your account. New instances and deployments now share persistent data and sessions.
+5. Import this repository into Vercel with the default Next.js build settings
+   (`pnpm install` and `pnpm run build`), then create your account. New instances
+   and deployments share persistent data and sessions.
 
 Production and Preview deployments should use separate Neon branches and their own exact `BETTER_AUTH_URL`. Do not point unreviewed preview deployments at production data. Never use `NEXT_PUBLIC_` for the database URL or auth secret.
 
@@ -114,7 +55,9 @@ The source is opened read-only. The import preserves user/workspace IDs, legacy 
 - Neon can start on its Free plan. Current allowances and paid usage rates are on [Neon's pricing page](https://neon.com/pricing). Vercel hosting and optional Resend email are billed separately under the applicable plans.
 - The app uses a small reusable connection pool, Neon's external pooler, and Vercel's pool suspension helper. Background tabs stop polling, allowing idle databases to suspend. Visible workspaces poll every 5 minutes; active usage still consumes compute.
 - Inventory updates lock the workspace row and check revisions inside a transaction. Concurrent stale writes return a conflict rather than silently overwriting records.
-- Email retries remain durable in Postgres. A Cloudflare scheduled trigger checks every five minutes; API activity and the Settings retry action also drain due work.
+- Email retries remain durable in Postgres. API activity and the Settings retry
+  action drain due work. Configure a Vercel scheduled invocation of the protected
+  email drain route if unattended scheduled delivery is required.
 
 See [workspace operation](docs/WORKSPACE.md) for offline queues and permissions.
 

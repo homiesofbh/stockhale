@@ -3,46 +3,24 @@
 The canonical production origin is `https://stockhale.app`. Repository configuration
 is prepared for this origin; no deployment or external settings were changed.
 
-## Hosting settings to apply outside this repository
+## Deploy on Vercel
 
-Use only the hosting provider serving production; do not run both as active writers.
-
-### Cloudflare Workers (configured target)
-
-- Make the `stockhale.app` zone active and set the registrar nameservers to the
-  exact nameservers assigned by Cloudflare.
-- In Worker **stockhale → Settings → Domains & Routes**, bind Custom Domain
-  `stockhale.app` to this Worker. The repo already declares this binding, but it
-  takes effect only when applied externally or during a later authorized deployment.
-- In **Settings → Build → Build configuration**, set Build command to
-  `pnpm run build:cloudflare`, Deploy command to `pnpm run deploy:cloudflare`,
-  and Root directory to the repository root. A plain `pnpm run build` does not
-  produce the OpenNext adapter output required for Worker deployment.
-- Ensure the domain has an active TLS certificate and serves HTTPS.
-- Set the Worker variables `NEXT_PUBLIC_SITE_URL` and `BETTER_AUTH_URL` to
-  `https://stockhale.app`, and `STOCKHALE_RUNTIME` to `cloudflare`. The site URL
-  drives canonicals, Open Graph/Twitter URLs, JSON-LD, `robots.txt`, and `sitemap.xml`.
-- Store `BETTER_AUTH_SECRET` as a Worker **secret**, not a plain variable. A
-  plaintext value was removed from `wrangler.jsonc`. If that value was used or
-  shared, replace it with a fresh random value of at least 32 characters. Rotation
-  invalidates existing sessions. Otherwise preserve the existing secure secret.
-- Preserve the production `DATABASE_URL` secret. Confirm the
-  `NEXT_INC_CACHE_R2_BUCKET` binding points to `stockhale-opennext-cache`.
-- Decide whether `www.stockhale.app` should redirect to `https://stockhale.app`;
-  if enabled, configure DNS, HTTPS and the redirect externally. The app does not
-  accept www as an additional authentication origin.
-
-### Vercel (only if retained as production host)
-
-- Add `stockhale.app` to the production project's **Settings → Domains** and
-  apply the exact DNS records shown there; do not guess record values.
-- Set **Settings → Environment Variables → Production → NEXT_PUBLIC_SITE_URL**
-  and **BETTER_AUTH_URL** to `https://stockhale.app`. Preserve the production
-  database and secure auth secret.
-- Redirect the old production hostname to the new origin; configure www as a
-  redirect if desired. Apply environment changes through a later authorized
-  production redeployment.
-- Keep preview origins and database branches separate from production.
+- Import this repository into Vercel. The default Next.js build settings are
+  sufficient (`pnpm install`, `pnpm run build`); no adapter or custom deploy
+  command is required.
+- Add `stockhale.app` to the project's **Settings → Domains** and apply the
+  exact DNS records Vercel displays. Ensure HTTPS is active.
+- Set Production environment variables `NEXT_PUBLIC_SITE_URL` and
+  `BETTER_AUTH_URL` to `https://stockhale.app`, plus `DATABASE_URL` and a stable
+  random `BETTER_AUTH_SECRET` (at least 32 characters). Set
+  `STOCKHALE_TRUSTED_CLIENT_IP_HEADER` to a single-IP header that Vercel
+  provides and overwrites. Sign-in and reset requests fail closed when this
+  trusted client address is unavailable.
+- Run `pnpm db:migrate` against the intended Neon database from a trusted local
+  environment. Migrations do not run during builds.
+- Keep preview origins and database branches separate from production. Configure
+  `BETTER_AUTH_URL` for each exact deployment origin and exclude untrusted
+  previews from production data.
 
 ## Better Auth settings
 
@@ -62,6 +40,6 @@ separate Better Auth dashboard origin allowlist to update.
 - Existing invitation links contain the origin where they were generated.
   Share new links from the new domain, or retain a working redirect for old links.
 
-After a separately authorized deployment, verify HTTPS, signup/signin, session
+After deployment, verify HTTPS, signup/signin, session
 restoration, invitation links, workspace writes and Excel downloads on the new
 origin. Update any externally maintained bookmarks or links.
