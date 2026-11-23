@@ -1,8 +1,5 @@
-const configuredSiteUrl = process.env.NEXT_PUBLIC_SITE_URL?.trim();
-
-if (!configuredSiteUrl) {
-  throw new Error("Set NEXT_PUBLIC_SITE_URL to the site's public origin.");
-}
+const configuredSiteUrl =
+  process.env.NEXT_PUBLIC_SITE_URL?.trim() || "https://stockhale.app";
 
 const parsedSiteUrl = new URL(configuredSiteUrl);
 if (!/^https?:$/.test(parsedSiteUrl.protocol) || parsedSiteUrl.pathname !== "/" || parsedSiteUrl.search || parsedSiteUrl.hash) {
